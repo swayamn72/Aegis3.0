@@ -173,13 +173,6 @@ teamSchema.index({ aegisRating: -1 });
 teamSchema.index({ status: 1, lookingForPlayers: 1 });
 teamSchema.index({ players: 1 });
 
-// Pre-save middleware to calculate win rate
-teamSchema.pre('save', function(next) {
-  if (this.statistics.matchesPlayed > 0) {
-    this.statistics.winRate = Math.round((this.statistics.matchesWon / this.statistics.matchesPlayed) * 100);
-  }
-  next();
-});
 
 // Static method to find teams by game and region
 teamSchema.statics.findByGameAndRegion = function(game, region, limit = 10) {
