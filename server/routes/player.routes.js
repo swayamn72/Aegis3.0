@@ -1,6 +1,8 @@
 import express from 'express';
 import Player from '../models/player.model.js';
 import Team from '../models/team.model.js';
+import Tournament from '../models/tournament.model.js';
+import Match from '../models/match.model.js';
 import auth from '../middleware/auth.js';
 import upload from '../config/multer.js';
 import cloudinary from '../config/cloudinary.js';
@@ -113,6 +115,320 @@ router.post("/upload-pfp", auth, upload.single('profilePicture'), async (req, re
       return res.status(400).json({ message: error.message });
     }
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Optimized single endpoint for all dashboard data
+router.get('/dashboard-data', auth, async (req, res) => {
+  try {
+    console.log('🔍 Dashboard data endpoint hit');
+    console.log('User from auth middleware:', req.user);
+    
+    // Validate user authentication
+    if (!req.user || !req.user.id) {
+      console.log('❌ No user found in request');
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    const playerId = req.user.id;
+    const { tournamentLimit = 3, matchLimit = 3 } = req.query;
+    
+    console.log('✅ Player ID:', playerId);
+    console.log('📊 Fetching dashboard data...');
+
+    // PARALLEL EXECUTION: Run all queries simultaneously for maximum performance
+    const [playerTeams, openTournaments] = await Promise.all([
+      // Query 1: Get player's teams (needed for matches)
+      Team.find({ players: playerId })
+        .select('_id teamName')
+        .lean(),
+      
+      // Query 2: Get open tournaments (independent query)
+      Tournament.find({
+        isOpenForAll: true,
+        visibility: 'public',
+        registrationStartDate: { $lte: new Date() },
+        registrationEndDate: { $gte: new Date() }
+      })
+        .sort({ startDate: 1 })
+        .limit(parseInt(tournamentLimit))
+        .select(`
+          tournamentName shortName gameTitle region subRegion tier status 
+          startDate endDate prizePool media organizer participatingTeams 
+          statistics slots registrationStartDate registrationEndDate tags
+        `)
+        .populate({
+          path: 'participatingTeams.team',
+          select: 'teamName teamTag logo'
+        })
+        .lean()
+    ]);
+
+    console.log('📋 Player teams found:', playerTeams.length);
+    
+    // Initialize response object
+    const dashboardData = {
+      tournaments: [],
+      matches: [],
+      playerTeamCount: playerTeams.length
+    };
+
+    // Process tournaments with open registration status
+    dashboardData.tournaments = openTournaments
+      .filter(t => {
+        const now = new Date();
+        return now >= new Date(t.registrationStartDate) && 
+               now <= new Date(t.registrationEndDate) &&
+               (t.participatingTeams?.length || 0) < (t.slots?.total || 0);
+      })
+      .map(tournament => ({
+        _id: tournament._id,
+        tournamentName: tournament.tournamentName,
+        shortName: tournament.shortName,
+        gameTitle: tournament.gameTitle,
+        region: tournament.region,
+        subRegion: tournament.subRegion,
+        tier: tournament.tier,
+        status: tournament.status,
+        startDate: tournament.startDate,
+        endDate: tournament.endDate,
+        prizePool: tournament.prizePool,
+        media: tournament.media,
+        organizer: tournament.organizer,
+        participantCount: tournament.participatingTeams?.length || 0,
+        totalSlots: tournament.slots?.total || null,
+        registrationStatus: 'Open',
+        registrationStartDate: tournament.registrationStartDate,
+        registrationEndDate: tournament.registrationEndDate,
+        tags: tournament.tags,
+        statistics: tournament.statistics
+      }));
+
+    // Only fetch matches if player has teams
+    if (playerTeams.length > 0) {
+      const teamIds = playerTeams.map(team => team._id);
+      console.log('🎯 Searching for matches with team IDs:', teamIds);
+
+      // Query 3: Get recent matches (only if player has teams)
+      const matches = await Match.find({
+        'participatingTeams.team': { $in: teamIds },
+        status: 'completed'
+      })
+        .select('participatingTeams map actualEndTime scheduledStartTime tournament')
+        .sort({ actualEndTime: -1 })
+        .limit(parseInt(matchLimit))
+        .populate('participatingTeams.team', 'teamName')
+        .populate('tournament', 'tournamentName')
+        .lean();
+
+      console.log('🎮 Matches found:', matches.length);
+
+      // Process matches efficiently
+      const teamIdStrings = new Set(teamIds.map(id => id.toString()));
+      
+      dashboardData.matches = matches
+        .map(match => {
+          // Find player's team using Set for O(1) lookup
+          const playerTeam = match.participatingTeams.find(team =>
+            team.team && teamIdStrings.has(team.team._id.toString())
+          );
+          
+          if (!playerTeam) {
+            console.log('⚠️ Player team not found in match:', match._id);
+            return null;
+          }
+
+          const otherTeams = match.participatingTeams.filter(
+            team => team.team && !teamIdStrings.has(team.team._id.toString())
+          );
+
+          // Calculate score
+          let score;
+          if (playerTeam.finalPosition === 1) {
+            score = 'Won #1';
+          } else {
+            const playerKills = playerTeam.kills?.total || 0;
+            const otherKills = otherTeams.reduce((sum, t) => sum + (t.kills?.total || 0), 0);
+            score = `${playerKills} - ${otherKills}`;
+          }
+
+          // Format time
+          const date = match.actualEndTime || match.scheduledStartTime;
+          const time = date 
+            ? new Date(date).toLocaleString('en-US', { 
+                month: 'short', 
+                day: 'numeric', 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })
+            : 'Recent';
+
+          return {
+            _id: match._id,
+            time,
+            map: match.map || 'Unknown',
+            team1: playerTeam.team?.teamName || 'Your Team',
+            score,
+            team2: otherTeams[0]?.team?.teamName || 'Others',
+            tournamentName: match.tournament?.tournamentName || 'Unknown Tournament',
+            finalPosition: playerTeam.finalPosition,
+            kills: playerTeam.kills?.total || 0
+          };
+        })
+        .filter(Boolean); // Remove null entries
+    } else {
+      console.log('⚠️ Player has no teams - skipping match query');
+    }
+
+    console.log('✅ Dashboard data compiled successfully');
+    console.log('📊 Summary:', {
+      tournaments: dashboardData.tournaments.length,
+      matches: dashboardData.matches.length,
+      teams: dashboardData.playerTeamCount
+    });
+
+    res.json({
+      success: true,
+      data: dashboardData,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching dashboard data:', error);
+    console.error('Stack:', error.stack);
+    res.status(500).json({ 
+      error: 'Failed to fetch dashboard data',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Optional: Keep individual endpoints for backward compatibility or specific use cases
+// These can call the same logic but with different limits
+
+router.get('/get-recent3-tourney', async (req, res) => {
+  try {
+    const { limit = 3 } = req.query;
+    
+    const tournaments = await Tournament.find({
+      isOpenForAll: true,
+      visibility: 'public',
+      registrationStartDate: { $lte: new Date() },
+      registrationEndDate: { $gte: new Date() }
+    })
+      .sort({ startDate: 1 })
+      .limit(parseInt(limit))
+      .select(`
+        tournamentName shortName gameTitle region subRegion tier status startDate endDate
+        prizePool media organizer participatingTeams statistics slots registrationStartDate registrationEndDate tags
+      `)
+      .populate({
+        path: 'participatingTeams.team',
+        select: 'teamName teamTag logo'
+      })
+      .lean();
+
+    const openTournaments = tournaments.filter(t => {
+      const now = new Date();
+      return now >= new Date(t.registrationStartDate) && 
+             now <= new Date(t.registrationEndDate) &&
+             (t.participatingTeams?.length || 0) < (t.slots?.total || 0);
+    });
+
+    const enrichedTournaments = openTournaments.map(tournament => ({
+      ...tournament,
+      participantCount: tournament.participatingTeams?.length || 0,
+      totalSlots: tournament.slots?.total || null,
+      registrationStatus: 'Open'
+    }));
+
+    res.json({ tournaments: enrichedTournaments });
+  } catch (error) {
+    console.error('Error fetching recent 3 tournaments:', error);
+    res.status(500).json({ error: 'Failed to fetch recent 3 tournaments' });
+  }
+});
+
+router.get('/recent3matches', auth, async (req, res) => {
+  try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    const playerId = req.user.id;
+    const playerTeams = await Team.find({ players: playerId })
+      .select('_id teamName')
+      .lean();
+    
+    const teamIds = playerTeams.map(team => team._id);
+
+    if (teamIds.length === 0) {
+      return res.json({ matches: [] });
+    }
+
+    const matches = await Match.find({
+      'participatingTeams.team': { $in: teamIds },
+      status: 'completed'
+    })
+      .select('participatingTeams map actualEndTime scheduledStartTime tournament')
+      .sort({ actualEndTime: -1 })
+      .limit(3)
+      .populate('participatingTeams.team', 'teamName')
+      .populate('tournament', 'tournamentName')
+      .lean();
+
+    const teamIdStrings = new Set(teamIds.map(id => id.toString()));
+    
+    const formattedMatches = matches
+      .map(match => {
+        const playerTeam = match.participatingTeams.find(team =>
+          team.team && teamIdStrings.has(team.team._id.toString())
+        );
+        
+        if (!playerTeam) return null;
+
+        const otherTeams = match.participatingTeams.filter(
+          team => team.team && !teamIdStrings.has(team.team._id.toString())
+        );
+
+        let score;
+        if (playerTeam.finalPosition === 1) {
+          score = 'Won #1';
+        } else {
+          const playerKills = playerTeam.kills?.total || 0;
+          const otherKills = otherTeams.reduce((sum, t) => sum + (t.kills?.total || 0), 0);
+          score = `${playerKills} - ${otherKills}`;
+        }
+
+        const date = match.actualEndTime || match.scheduledStartTime;
+        const time = date 
+          ? new Date(date).toLocaleString('en-US', { 
+              month: 'short', 
+              day: 'numeric', 
+              hour: '2-digit', 
+              minute: '2-digit' 
+            })
+          : 'Recent';
+
+        return {
+          _id: match._id,
+          time,
+          map: match.map || 'Unknown',
+          team1: playerTeam.team?.teamName || 'Your Team',
+          score,
+          team2: otherTeams[0]?.team?.teamName || 'Others'
+        };
+      })
+      .filter(Boolean);
+    
+    res.json({ matches: formattedMatches });
+    
+  } catch (error) {
+    console.error('Error fetching recent matches:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch recent matches',
+      details: error.message 
+    });
   }
 });
 
