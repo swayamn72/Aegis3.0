@@ -11,6 +11,8 @@ import "./config/cloudinary.js";
 import authRoutes from './routes/auth.routes.js';
 import playerRoutes from './routes/player.routes.js';
 import teamRoutes from './routes/team.routes.js';
+import mobileRoutes from './routes/mobile.routes.js';
+
 
 const app = express();
 
@@ -33,6 +35,8 @@ app.use((req, res, next) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/players', playerRoutes);
 app.use('/api/teams', teamRoutes);
+app.use('/api/mobile', mobileRoutes);
+
 
 // Test route
 app.get("/", (req, res) => {

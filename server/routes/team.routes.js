@@ -4,8 +4,12 @@ import TeamInvitation from '../models/teamInvitation.model.js';
 import Match from '../models/match.model.js';
 import Tournament from '../models/tournament.model.js';
 import Player from '../models/player.model.js';
+import ChatMessage from '../models/chat.model.js';
 import Organization from '../models/organization.model.js';
 import auth from '../middleware/auth.js';
+import upload from '../config/multer.js';
+import cloudinary from '../config/cloudinary.js';
+
 
 const router = express.Router();
 
@@ -117,14 +121,8 @@ router.get('/invitations/received', auth, async (req, res) => {
 // POST /api/teams - Create a new team
 router.post('/', auth, async (req, res) => {
   try {
-    const {
-      teamName,
-      teamTag,
-      primaryGame,
-      region,
-      bio,
-      logo
-    } = req.body;
+
+    const { teamName, teamTag, primaryGame, region, bio, logo } = req.body;
 
     const existingTeamName = await Team.findOne({ teamName });
     if (existingTeamName) {
@@ -138,12 +136,17 @@ router.post('/', auth, async (req, res) => {
       }
     }
 
-    const existingCaptaincy = await Team.findOne({ captain: req.user.id });
-    if (existingCaptaincy) {
-      return res.status(400).json({ message: 'You are already a captain of another team' });
+    const player = await Player.findById(req.user.id);
+
+    if (!player) {
+      return res.status(400).json({ message: 'Player profile not found' });
+    }
+    if (player.team) {
+      return res.status(400).json({ message: 'You are already in a team' });
     }
 
     const newTeam = new Team({
+
       teamName,
       teamTag: teamTag ? teamTag.toUpperCase() : undefined,
       primaryGame: primaryGame || 'BGMI',
@@ -180,8 +183,7 @@ router.post('/', auth, async (req, res) => {
 // POST /api/teams/invitations/:id/accept - Accept team invitation
 router.post('/invitations/:id/accept', auth, async (req, res) => {
   try {
-    const invitation = await TeamInvitation.findById(req.params.id)
-      .populate('team');
+    const invitation = await TeamInvitation.findById(req.params.id);
 
     if (!invitation) {
       return res.status(404).json({ message: 'Invitation not found' });
@@ -198,15 +200,31 @@ router.post('/invitations/:id/accept', auth, async (req, res) => {
     if (invitation.expiresAt < new Date()) {
       invitation.status = 'cancelled';
       await invitation.save();
+
+      await ChatMessage.updateMany(
+        { invitationId: invitation._id },
+        { $set: { invitationStatus: 'cancelled' } }
+      );
+
       return res.status(400).json({ message: 'Invitation has expired' });
     }
 
+
     const player = await Player.findById(req.user.id);
+
+    if (!player) {
+      return res.status(400).json({ message: 'Player profile not found' });
+    }
+
     if (player.team) {
       return res.status(400).json({ message: 'You are already in a team' });
     }
 
     const team = await Team.findById(invitation.team._id);
+    if (!team) {
+      return res.status(400).json({ message: 'Team no longer exists' });
+    }
+
     if (team.players.length >= 5) {
       return res.status(400).json({ message: 'Team is already full' });
     }
@@ -254,6 +272,22 @@ router.post('/invitations/:id/decline', auth, async (req, res) => {
       return res.status(403).json({ message: 'This invitation is not for you' });
     }
 
+    if (invitation.status !== 'pending') {
+      return res.status(400).json({ message: 'Invitation is no longer valid' });
+    }
+    if (invitation.expiresAt < new Date()) {
+      invitation.status = 'cancelled';
+      await invitation.save();
+
+      await ChatMessage.updateMany(
+        { invitationId: invitation._id },
+        { $set: { invitationStatus: 'cancelled' } }
+      );
+
+      return res.status(400).json({ message: 'Invitation has expired' });
+    }
+
+
     invitation.status = 'declined';
     await invitation.save();
 
@@ -291,12 +325,22 @@ router.delete('/:id/players/:playerId', auth, async (req, res) => {
       return res.status(400).json({ message: 'Cannot remove team captain. Transfer captaincy first.' });
     }
 
+    const isMember = team.players.some(p => p.toString() === playerId);
+    if (!isMember) {
+      return res.status(400).json({ message: 'Player is not in this team' });
+    }
+
+    const playerDoc = await Player.findById(playerId);
+    if (!playerDoc) {
+      return res.status(404).json({ message: 'Player not found' });
+    }
+
     team.players = team.players.filter(p => p.toString() !== playerId);
     await team.save();
 
     await Player.findByIdAndUpdate(playerId, {
-      $unset: { team: 1 },
-      teamStatus: 'looking for a team',
+      $unset: { team: "" },
+      $set: { teamStatus: 'looking for a team' },
       $push: {
         previousTeams: {
           team: teamId,
@@ -313,4 +357,307 @@ router.delete('/:id/players/:playerId', auth, async (req, res) => {
   }
 });
 
+// PUT /api/teams/:id - Update team
+router.put('/:id', auth, upload.single('logo'), async (req, res) => {
+  try {
+    const teamId = req.params.id;
+
+    // 1. Load team and check captain permission
+    const team = await Team.findById(teamId);
+    if (!team) {
+      return res.status(404).json({ message: 'Team not found' });
+    }
+
+    if (team.captain.toString() !== req.user.id.toString()) {
+      return res.status(403).json({ message: 'Only team captain can update team details' });
+    }
+
+    const updateData = {};
+
+    // 2. Handle logo upload (if file exists)
+    if (req.file) {
+      const result = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            folder: 'aegis-team-logos',
+            public_id: `team-logo-${teamId}-${Date.now()}`,
+            transformation: [{ width: 300, height: 300, crop: 'fill' }]
+          },
+          (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+          }
+        );
+        stream.end(req.file.buffer);
+      });
+
+      updateData.logo = result.secure_url;
+    }
+
+    // 3. Parse body data correctly (supports multipart + JSON)
+    let bodyData = {};
+
+    // If client sends a "data" field with JSON (common pattern for multipart)
+    if (req.body && req.body.data) {
+      try {
+        bodyData = JSON.parse(req.body.data);
+      } catch (e) {
+        return res.status(400).json({ message: 'Invalid JSON in data field' });
+      }
+    } else if (req.body) {
+      // Normal form-data / json body with individual fields
+      bodyData = req.body;
+    }
+
+    // Normalize teamTag like in create route
+    if (bodyData.teamTag) {
+      bodyData.teamTag = bodyData.teamTag.toUpperCase();
+    }
+
+    // 4. Whitelist fields that are allowed to be updated
+    const allowedFields = [
+      'teamName',
+      'teamTag',
+      'primaryGame',
+      'region',
+      'bio',
+      'status',         // if you have status (active/disbanded/etc.)
+      'socials',        // if you allow editing socials
+      'profileVisibility' // only if you want captain to control this
+      // add more explicitly allowed fields here as needed
+    ];
+
+    for (const field of allowedFields) {
+      if (Object.prototype.hasOwnProperty.call(bodyData, field)) {
+        updateData[field] = bodyData[field];
+      }
+    }
+
+    // 5. If nothing to update, return 400
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ message: 'No valid fields provided to update' });
+    }
+
+    // 6. Apply update and return populated team
+    const updatedTeam = await Team.findByIdAndUpdate(
+      teamId,
+      { $set: updateData },
+      { new: true, runValidators: true }
+    )
+      .populate('captain', 'username profilePicture primaryGame')
+      .populate('players', 'username profilePicture primaryGame')
+      .populate('organization', 'orgName logo');
+
+    res.json({
+      message: 'Team updated successfully',
+      team: updatedTeam
+    });
+  } catch (error) {
+    console.error('Error updating team:', error);
+
+    // Duplicate key error (unique teamName/teamTag)
+    if (error.code === 11000) {
+      return res.status(400).json({ message: 'Team name or tag already exists' });
+    }
+
+    if (error.message === 'Only image files are allowed') {
+      return res.status(400).json({ message: error.message });
+    }
+
+    res.status(500).json({ message: 'Server error updating team' });
+  }
+});
+
+
+// GET /api/teams/search/:query - Search teams and players
+router.get('/search/:query', async (req, res) => {
+  try {
+    let { query } = req.params;
+    let { game, region, limit = 20, searchType = 'all' } = req.query;
+
+    // -------------------------------
+    // 1. Normalize & validate input
+    // -------------------------------
+    query = (query || '').trim();
+    searchType = String(searchType).toLowerCase();
+
+    // Block empty & 1-char queries (prevents DB spam)
+    if (!query || query.length < 2) {
+      return res.status(400).json({
+        message: 'Search query must be at least 2 characters'
+      });
+    }
+
+    // Sanitize limit
+    limit = parseInt(limit, 10);
+    if (Number.isNaN(limit) || limit <= 0 || limit > 50) {
+      limit = 20;
+    }
+
+    // Always return same shape (client-friendly)
+    const results = {
+      teams: [],
+      players: []
+    };
+
+    // -------------------------------
+    // 2. Search Teams
+    // -------------------------------
+    if (searchType === 'all' || searchType === 'teams') {
+      const teamFilter = {
+        profileVisibility: 'public',
+        status: 'active',
+        $or: [
+          { teamName: { $regex: query, $options: 'i' } },
+          { teamTag: { $regex: query, $options: 'i' } }
+        ]
+      };
+
+      if (game) teamFilter.primaryGame = game;
+      if (region) teamFilter.region = region;
+
+      results.teams = await Team.find(teamFilter)
+        .populate('captain', 'username profilePicture primaryGame') // ✅ keep only captain
+        .sort({ aegisRating: -1 })
+        .limit(limit)
+        .select(
+          'teamName teamTag logo primaryGame region aegisRating captain players establishedDate'
+        )
+        .lean();
+    }
+
+    // -------------------------------
+    // 3. Search Players
+    // -------------------------------
+    if (searchType === 'all' || searchType === 'players') {
+      const playerFilter = {
+        profileVisibility: 'public',
+        $or: [
+          { username: { $regex: query, $options: 'i' } },
+          { inGameName: { $regex: query, $options: 'i' } },
+          { realName: { $regex: query, $options: 'i' } }
+        ]
+      };
+
+      if (game) playerFilter.primaryGame = game;
+
+      results.players = await Player.find(playerFilter)
+        .populate('team', 'teamName teamTag')
+        .sort({ aegisRating: -1 })
+        .limit(limit)
+        .select(
+          'username inGameName realName profilePicture primaryGame aegisRating teamStatus team'
+        )
+        .lean();
+    }
+
+    // -------------------------------
+    // 4. Return results
+    // -------------------------------
+    res.json(results);
+  } catch (error) {
+    console.error('Error searching:', error);
+    res.status(500).json({ message: 'Server error searching' });
+  }
+});
+
+
+// POST /api/teams/:id/invite - Send team invitation
+router.post('/:id/invite', auth, async (req, res) => {
+  try {
+    const teamId = req.params.id;
+    const { playerId, message } = req.body;
+
+    // Basic input validation
+    if (!playerId) {
+      return res.status(400).json({ message: 'playerId is required' });
+    }
+
+    const team = await Team.findById(teamId);
+    if (!team) {
+      return res.status(404).json({ message: 'Team not found' });
+    }
+
+    // Only captain can invite
+    if (!team.captain || !req.user?.id) {
+      return res.status(400).json({ message: 'Invalid team captain or user ID' });
+    }
+
+    if (team.captain.toString() !== req.user.id.toString()) {
+      return res.status(403).json({ message: 'Only team captain can invite players' });
+    }
+
+    // Prevent inviting yourself
+    if (playerId === req.user.id.toString()) {
+      return res.status(400).json({ message: 'You cannot invite yourself' });
+    }
+
+    const player = await Player.findById(playerId);
+    if (!player) {
+      return res.status(404).json({ message: 'Player not found' });
+    }
+
+    // If your business rule is 1 team per player, this is correct
+    if (player.team) {
+      return res.status(400).json({ message: 'Player is already in a team' });
+    }
+
+    // Extra safety: if somehow player is already in this team
+    const alreadyInTeam = team.players.some(p => p.toString() === playerId);
+    if (alreadyInTeam) {
+      return res.status(400).json({ message: 'Player is already in this team' });
+    }
+
+    // Hard cap on size
+    if (team.players.length >= 5) {
+      return res.status(400).json({ message: 'Team is already full (max 5 players)' });
+    }
+
+    // Check for existing pending invitation from this team to this player
+    const existingInvitation = await TeamInvitation.findOne({
+      team: team._id,
+      toPlayer: playerId,
+      status: 'pending'
+    });
+
+    if (existingInvitation) {
+      return res.status(400).json({ message: 'Invitation already sent to this player' });
+    }
+
+    const defaultText = `You have been invited to join the team ${team.teamName || 'this team'}.`;
+
+    const invitation = new TeamInvitation({
+      team: team._id,
+      fromPlayer: req.user.id,
+      toPlayer: playerId,
+      message: message || `Join ${team.teamName || 'our team'}!`
+    });
+
+    await invitation.save();
+
+    // Create chat message for invitation
+    const chatMessage = new ChatMessage({
+      senderId: req.user.id,
+      receiverId: playerId,
+      message: message || defaultText,
+      messageType: 'invitation',
+      invitationId: invitation._id
+    });
+
+    await chatMessage.save();
+    console.log('Chat message created for team invitation:', chatMessage._id.toString());
+
+    res.status(201).json({
+      message: 'Team invitation sent successfully',
+      invitation
+    });
+  } catch (error) {
+    console.error('Error sending team invitation:', error);
+    res.status(500).json({ message: 'Server error sending invitation' });
+  }
+});
+
+
+
 export default router;
+
