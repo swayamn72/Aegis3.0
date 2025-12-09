@@ -9,6 +9,7 @@ import AegisProfileCompletionPage from "./pages/AegisProfileCompletionPage";
 import HomePage from "./pages/HomePage";
 import MyTeamsPage from "./pages/MyTeamsPage";
 import DetailedTeamInfoPage from "./pages/DetailedTeamInfoPage";
+import ChatPage from "./pages/ChatPage";
 
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -41,7 +42,8 @@ function App() {
             <Route path="/complete-profile" element={<ProtectedRoute><AegisProfileCompletionPage /></ProtectedRoute>} />
             <Route path="/" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
             <Route path="/my-teams" element={<ProtectedRoute><MyTeamsPage /></ProtectedRoute>} />
-            <Route path="/team/:id" element={<ProtectedRoute><DetailedTeamInfoPage /></ProtectedRoute>} /> {/* ✅ Changed :Id to :id */}
+            <Route path="/team/:id" element={<ProtectedRoute><DetailedTeamInfoPage /></ProtectedRoute>} />
+            <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>

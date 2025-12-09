@@ -9,6 +9,7 @@ import Organization from '../models/organization.model.js';
 import auth from '../middleware/auth.js';
 import upload from '../config/multer.js';
 import cloudinary from '../config/cloudinary.js';
+import mongoose from 'mongoose';
 
 
 const router = express.Router();
@@ -183,7 +184,13 @@ router.post('/', auth, async (req, res) => {
 // POST /api/teams/invitations/:id/accept - Accept team invitation
 router.post('/invitations/:id/accept', auth, async (req, res) => {
   try {
-    const invitation = await TeamInvitation.findById(req.params.id);
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid invitation ID' });
+    }
+
+    const invitation = await TeamInvitation.findById(id);
 
     if (!invitation) {
       return res.status(404).json({ message: 'Invitation not found' });
@@ -197,7 +204,7 @@ router.post('/invitations/:id/accept', auth, async (req, res) => {
       return res.status(400).json({ message: 'Invitation is no longer valid' });
     }
 
-    if (invitation.expiresAt < new Date()) {
+    if (invitation.expiresAt && invitation.expiresAt < new Date()) {
       invitation.status = 'cancelled';
       await invitation.save();
 
@@ -209,7 +216,6 @@ router.post('/invitations/:id/accept', auth, async (req, res) => {
       return res.status(400).json({ message: 'Invitation has expired' });
     }
 
-
     const player = await Player.findById(req.user.id);
 
     if (!player) {
@@ -220,7 +226,8 @@ router.post('/invitations/:id/accept', auth, async (req, res) => {
       return res.status(400).json({ message: 'You are already in a team' });
     }
 
-    const team = await Team.findById(invitation.team._id);
+    const team = await Team.findById(invitation.team); // ✅ FIXED
+
     if (!team) {
       return res.status(400).json({ message: 'Team no longer exists' });
     }
@@ -236,7 +243,7 @@ router.post('/invitations/:id/accept', auth, async (req, res) => {
     // Update player
     await Player.findByIdAndUpdate(req.user.id, {
       team: team._id,
-      teamStatus: 'in a team'
+      teamStatus: 'in a team',
     });
 
     // Update invitation status
@@ -251,7 +258,7 @@ router.post('/invitations/:id/accept', auth, async (req, res) => {
 
     res.json({
       message: 'Team invitation accepted successfully',
-      team
+      team,
     });
   } catch (error) {
     console.error('Error accepting invitation:', error);

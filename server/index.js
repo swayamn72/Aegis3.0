@@ -4,17 +4,25 @@ dotenv.config();
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import { createServer } from 'http';
 
 import connectDB from './config/db.js';
 import "./config/cloudinary.js";
+import initChat from './config/chat.js';
 
 import authRoutes from './routes/auth.routes.js';
 import playerRoutes from './routes/player.routes.js';
 import teamRoutes from './routes/team.routes.js';
 import mobileRoutes from './routes/mobile.routes.js';
-
+import teamTournamentRoutes from './routes/teamTournament.routes.js';
+import teamApplicationRoutes from './routes/teamApplication.routes.js';
+import tryoutChatRoutes from './routes/tryoutChat.routes.js';
+import recruitmentRoutes from './routes/recruitment.routes.js';
+import ChatRoutes from './routes/message.routes.js';
 
 const app = express();
+const server = createServer(app);
+initChat(server);
 
 // Connect to MongoDB
 connectDB();
@@ -36,7 +44,11 @@ app.use('/api/auth', authRoutes);
 app.use('/api/players', playerRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/mobile', mobileRoutes);
-
+app.use('/api/team-tournaments', teamTournamentRoutes);
+app.use('/api/team-applications', teamApplicationRoutes);
+app.use('/api/tryout-chats', tryoutChatRoutes);
+app.use('/api/recruitment', recruitmentRoutes);
+app.use('/api/chat', ChatRoutes);
 
 // Test route
 app.get("/", (req, res) => {
@@ -44,6 +56,6 @@ app.get("/", (req, res) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
