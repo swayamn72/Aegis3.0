@@ -16,6 +16,38 @@ const socket = io(API_URL, {
   withCredentials: true,
 });
 
+// OPTIMIZATION 5: Persistent cache helper functions
+const CACHE_KEY_PREFIX = 'aegis_chat_cache_';
+const CACHE_EXPIRY = 5 * 60 * 1000; // 5 minutes
+
+const getCachedData = (key) => {
+  try {
+    const cached = sessionStorage.getItem(CACHE_KEY_PREFIX + key);
+    if (!cached) return null;
+
+    const { data, timestamp } = JSON.parse(cached);
+    if (Date.now() - timestamp > CACHE_EXPIRY) {
+      sessionStorage.removeItem(CACHE_KEY_PREFIX + key);
+      return null;
+    }
+    return data;
+  } catch (error) {
+    console.error('Cache read error:', error);
+    return null;
+  }
+};
+
+const setCachedData = (key, data) => {
+  try {
+    sessionStorage.setItem(CACHE_KEY_PREFIX + key, JSON.stringify({
+      data,
+      timestamp: Date.now()
+    }));
+  } catch (error) {
+    console.error('Cache write error:', error);
+  }
+};
+
 export default function ChatPage() {
   const { user } = useAuth();
   const userId = user?._id;
@@ -50,10 +82,20 @@ export default function ChatPage() {
 
   // Fetch all users who have chat messages with the current user
   const fetchConnections = async () => {
+    const cacheKey = 'connections';
+    const cached = getCachedData(cacheKey);
+    if (cached) {
+      console.log('✅ Loaded connections from cache');
+      return cached;
+    }
+
     try {
       const res = await fetch(`${API_URL}/api/chat/users/with-chats`, { credentials: 'include' });
       const data = await res.json();
-      return data.users || [];
+      const users = data.users || [];
+      setCachedData(cacheKey, users);
+      console.log('💾 Saved connections to cache');
+      return users;
     } catch (error) {
       console.error('Error fetching chat users:', error);
       return [];
@@ -86,32 +128,45 @@ export default function ChatPage() {
     setConnections(combined);
   };
 
-  // OPTIMIZATION 5: Modified fetchMessages with caching
+  // OPTIMIZATION 5: Modified fetchMessages with persistent caching
   const fetchMessages = async (receiverId, forceRefresh = false) => {
     const cacheKey = `direct_${receiverId}`;
 
-    // Check cache first (unless force refresh)
-    if (!forceRefresh && messageCacheRef.current.has(cacheKey)) {
-      setMessages(messageCacheRef.current.get(cacheKey));
-      return;
+    // Check sessionStorage cache first
+    if (!forceRefresh) {
+      const cached = getCachedData(cacheKey);
+      if (cached) {
+        console.log('✅ Loaded messages from cache:', cacheKey);
+        setMessages(cached);
+        messageCacheRef.current.set(cacheKey, cached);
+        return;
+      }
     }
 
     try {
       const res = await fetch(`${API_URL}/api/chat/${receiverId}`, { credentials: 'include' });
       const msgs = await res.json();
       setMessages(msgs);
+
+      // Update both memory and persistent cache
       messageCacheRef.current.set(cacheKey, msgs);
+      setCachedData(cacheKey, msgs);
+      console.log('💾 Saved messages to cache:', cacheKey);
     } catch (error) {
       console.error('Error fetching messages:', error);
     }
   };
 
-  // OPTIMIZATION 5: Modified fetchSystemMessages with caching
+  // OPTIMIZATION 5: Modified fetchSystemMessages with persistent caching
   const fetchSystemMessages = async () => {
     const cacheKey = 'system';
 
-    if (messageCacheRef.current.has(cacheKey)) {
-      setMessages(messageCacheRef.current.get(cacheKey));
+    // Check sessionStorage cache first
+    const cached = getCachedData(cacheKey);
+    if (cached) {
+      console.log('✅ Loaded system messages from cache');
+      setMessages(cached);
+      messageCacheRef.current.set(cacheKey, cached);
       return;
     }
 
@@ -119,38 +174,33 @@ export default function ChatPage() {
       const res = await fetch(`${API_URL}/api/chat/system`, { credentials: 'include' });
       const msgs = await res.json();
       setMessages(msgs);
+
+      // Update both memory and persistent cache
       messageCacheRef.current.set(cacheKey, msgs);
+      setCachedData(cacheKey, msgs);
+      console.log('💾 Saved system messages to cache');
     } catch (error) {
       console.error('Error fetching system messages:', error);
     }
   };
 
-  // OPTIMIZATION 5: Modified fetchTryoutMessages with caching (optional - tryouts change frequently)
+  // OPTIMIZATION 5: Modified fetchTryoutMessages - no persistent cache for real-time data
   const fetchTryoutMessages = async (chatId, forceRefresh = true) => {
     const cacheKey = `tryout_${chatId}`;
 
-    // For tryouts, we usually force refresh due to frequent updates
-    if (!forceRefresh && messageCacheRef.current.has(cacheKey)) {
-      const cached = messageCacheRef.current.get(cacheKey);
-      setMessages(cached.messages || []);
-      setSelectedChat(cached);
-      return;
-    }
-
+    // Tryouts change frequently - always fetch fresh
     try {
       const res = await fetch(`${API_URL}/api/tryout-chats/${chatId}`, { credentials: 'include' });
       const data = await res.json();
 
-      // FIX: Ensure messages is always an array
       const chatMessages = data.chat?.messages || [];
       setMessages(chatMessages);
       setSelectedChat(data.chat);
 
-      // Cache the entire chat object
+      // Update memory cache only (no persistent cache for tryouts)
       messageCacheRef.current.set(cacheKey, data.chat);
     } catch (error) {
       console.error('Error fetching tryout messages:', error);
-      // FIX: Set empty array on error
       setMessages([]);
     }
   };
@@ -159,12 +209,23 @@ export default function ChatPage() {
   const fetchTeamApplications = async () => {
     if (!user?.team) return;
 
+    const cacheKey = `team_applications_${user.team._id}`;
+    const cached = getCachedData(cacheKey);
+    if (cached) {
+      console.log('✅ Loaded team applications from cache');
+      setTeamApplications(cached);
+      return;
+    }
+
     try {
       const res = await fetch(`${API_URL}/api/team-applications/team/${user.team._id}`, {
         credentials: 'include'
       });
       const data = await res.json();
-      setTeamApplications(data.applications || []);
+      const apps = data.applications || [];
+      setTeamApplications(apps);
+      setCachedData(cacheKey, apps);
+      console.log('💾 Saved team applications to cache');
     } catch (error) {
       console.error('Error fetching applications:', error);
     }
@@ -172,12 +233,23 @@ export default function ChatPage() {
 
   // Fetch tryout chats
   const fetchTryoutChats = async () => {
+    const cacheKey = 'tryout_chats';
+    const cached = getCachedData(cacheKey);
+    if (cached) {
+      console.log('✅ Loaded tryout chats from cache');
+      setTryoutChats(cached);
+      return;
+    }
+
     try {
       const res = await fetch(`${API_URL}/api/tryout-chats/my-chats`, {
         credentials: 'include'
       });
       const data = await res.json();
-      setTryoutChats(data.chats || []);
+      const chats = data.chats || [];
+      setTryoutChats(chats);
+      setCachedData(cacheKey, chats);
+      console.log('💾 Saved tryout chats to cache');
     } catch (error) {
       console.error('Error fetching tryout chats:', error);
     }
@@ -185,12 +257,23 @@ export default function ChatPage() {
 
   // Fetch recruitment approaches
   const fetchRecruitmentApproaches = async () => {
+    const cacheKey = 'recruitment_approaches';
+    const cached = getCachedData(cacheKey);
+    if (cached) {
+      console.log('✅ Loaded recruitment approaches from cache');
+      setRecruitmentApproaches(cached);
+      return;
+    }
+
     try {
       const res = await fetch(`${API_URL}/api/recruitment/my-approaches`, {
         credentials: 'include'
       });
       const data = await res.json();
-      setRecruitmentApproaches(data.approaches || []);
+      const approaches = data.approaches || [];
+      setRecruitmentApproaches(approaches);
+      setCachedData(cacheKey, approaches);
+      console.log('💾 Saved recruitment approaches to cache');
     } catch (error) {
       console.error('Error fetching recruitment approaches:', error);
     }
@@ -242,6 +325,7 @@ export default function ChatPage() {
     socket.emit("join", userId);
 
     const fetchData = async () => {
+      // ✅ Now ALL of these check cache first!
       await fetchTeamApplications();
       await fetchTryoutChats();
       await fetchRecruitmentApproaches();
@@ -287,6 +371,7 @@ export default function ChatPage() {
           // Update cache
           const cacheKey = selectedChat._id === 'system' ? 'system' : `direct_${selectedChat._id}`;
           messageCacheRef.current.set(cacheKey, updated);
+          setCachedData(cacheKey, updated); // ✅ Persist to sessionStorage
           return updated;
         });
       }
@@ -439,11 +524,12 @@ export default function ChatPage() {
       };
       socket.emit("sendMessage", msg);
 
-      // Update state and cache
+      // Update state and BOTH caches
       setMessages((prev) => {
         const updated = [...prev, msg];
         const cacheKey = `direct_${selectedChat._id}`;
         messageCacheRef.current.set(cacheKey, updated);
+        setCachedData(cacheKey, updated); // ✅ Persist to sessionStorage
         return updated;
       });
     } else if (chatType === 'tryout') {
@@ -489,10 +575,14 @@ export default function ChatPage() {
       if (res.ok) {
         const data = await res.json();
         toast.success('Tryout started!');
+
+        // ✅ Clear cache before fetching fresh data
+        sessionStorage.removeItem(CACHE_KEY_PREFIX + `team_applications_${user.team._id}`);
+        sessionStorage.removeItem(CACHE_KEY_PREFIX + 'tryout_chats');
+
         fetchTeamApplications();
         fetchTryoutChats();
 
-        // Switch to tryout chat
         setSelectedChat(data.tryoutChat);
         setChatType('tryout');
         setMessages(data.tryoutChat.messages || []);
@@ -518,6 +608,10 @@ export default function ChatPage() {
 
       if (res.ok) {
         toast.success('Application rejected');
+
+        // ✅ Clear cache
+        sessionStorage.removeItem(CACHE_KEY_PREFIX + `team_applications_${user.team._id}`);
+
         fetchTeamApplications();
       } else {
         const error = await res.json();
@@ -666,11 +760,13 @@ export default function ChatPage() {
         const data = await res.json();
         toast.success('Approach accepted! Tryout chat created.');
 
-        // Refresh data
+        // ✅ Clear cache
+        sessionStorage.removeItem(CACHE_KEY_PREFIX + 'recruitment_approaches');
+        sessionStorage.removeItem(CACHE_KEY_PREFIX + 'tryout_chats');
+
         await fetchRecruitmentApproaches();
         await fetchTryoutChats();
 
-        // Switch to new tryout chat
         setSelectedChat(data.tryoutChat);
         setChatType('tryout');
         setMessages(data.tryoutChat.messages || []);
@@ -696,6 +792,10 @@ export default function ChatPage() {
 
       if (res.ok) {
         toast.success('Approach rejected');
+
+        // ✅ Clear cache
+        sessionStorage.removeItem(CACHE_KEY_PREFIX + 'recruitment_approaches');
+
         await fetchRecruitmentApproaches();
       } else {
         toast.error('Failed to reject approach');
