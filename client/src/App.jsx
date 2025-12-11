@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import { queryClient } from "./config/queryClient";
 import "./App.css";
 
 import SignupPage from "./pages/SignUpPage";
@@ -13,20 +14,6 @@ import ChatPage from "./pages/ChatPage";
 
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
-
-// ✅ Create QueryClient with optimized defaults
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: Infinity, // ✅ Data never becomes stale - only refetch on manual invalidation
-      gcTime: 30 * 60 * 1000, // 30 minutes garbage collection
-      refetchOnWindowFocus: false, // ✅ Never refetch on window focus
-      refetchOnMount: false, // ✅ Never refetch on component mount - use cache
-      refetchOnReconnect: false, // ✅ Never refetch on network reconnect
-      retry: 1, // Retry failed requests once
-    },
-  },
-});
 
 function App() {
   return (
@@ -49,7 +36,7 @@ function App() {
       </AuthProvider>
 
       {/* ✅ React Query Devtools - only in development */}
-      {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
+      <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>
   );
 }

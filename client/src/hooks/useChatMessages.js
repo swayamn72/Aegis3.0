@@ -1,122 +1,109 @@
-import { useState, useCallback, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import axios from '../utils/axiosConfig';
+import { chatKeys } from './queryKeys';
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+// API functions
+const fetchDirectMessages = async (receiverId) => {
+  const { data } = await axios.get(`/api/chat/${receiverId}`);
+  return data;
+};
 
-export const useChatMessages = () => {
-  const [messages, setMessages] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const cacheRef = useRef(new Map());
+const fetchSystemMessages = async () => {
+  const { data } = await axios.get('/api/chat/system');
+  return data;
+};
 
-  // Fetch direct messages with caching
-  const fetchMessages = useCallback(
-    async (receiverId, forceRefresh = false) => {
-      if (!receiverId) return;
+const fetchTryoutMessages = async (chatId) => {
+  const { data } = await axios.get(`/api/tryout-chats/${chatId}`);
+  return data.chat;
+};
 
-      // Check cache first (unless force refresh)
-      const cacheKey = `direct_${receiverId}`;
-      if (!forceRefresh && cacheRef.current.has(cacheKey)) {
-        setMessages(cacheRef.current.get(cacheKey));
-        return;
-      }
+export const useChatMessages = (chatId, chatType = 'direct') => {
+  const queryClient = useQueryClient();
 
-      setLoading(true);
-      try {
-        const res = await fetch(`${API_URL}/api/chat/${receiverId}`, {
-          credentials: 'include',
-        });
-        const msgs = await res.json();
-        setMessages(msgs);
-        cacheRef.current.set(cacheKey, msgs);
-      } catch (error) {
-        console.error('Error fetching messages:', error);
-      } finally {
-        setLoading(false);
-      }
-    },
-    []
-  );
+  // Direct messages query
+  const directMessagesQuery = useQuery({
+    queryKey: chatKeys.messages(chatId),
+    queryFn: () => fetchDirectMessages(chatId),
+    enabled: chatType === 'direct' && !!chatId && chatId !== 'system',
+    staleTime: 2 * 60 * 1000, // 2 minutes
+  });
 
-  // Fetch system messages
-  const fetchSystemMessages = useCallback(async () => {
-    const cacheKey = 'system';
-    if (cacheRef.current.has(cacheKey)) {
-      setMessages(cacheRef.current.get(cacheKey));
-      return;
-    }
+  // System messages query
+  const systemMessagesQuery = useQuery({
+    queryKey: chatKeys.systemMessages(),
+    queryFn: fetchSystemMessages,
+    enabled: chatType === 'direct' && chatId === 'system',
+  });
 
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/api/chat/system`, {
-        credentials: 'include',
+  // Tryout messages query
+  const tryoutMessagesQuery = useQuery({
+    queryKey: chatKeys.tryoutMessages(chatId),
+    queryFn: () => fetchTryoutMessages(chatId),
+    enabled: chatType === 'tryout' && !!chatId,
+    staleTime: 1 * 60 * 1000, // 1 minute for real-time data
+  });
+
+  // Select active query based on chat type
+  const activeQuery = chatType === 'tryout'
+    ? tryoutMessagesQuery
+    : (chatId === 'system' ? systemMessagesQuery : directMessagesQuery);
+
+  // Optimistic message update
+  const addMessage = (newMessage) => {
+    if (chatType === 'direct') {
+      const queryKey = chatId === 'system'
+        ? chatKeys.systemMessages()
+        : chatKeys.messages(chatId);
+
+      queryClient.setQueryData(queryKey, (old) => {
+        return old ? [...old, newMessage] : [newMessage];
       });
-      const msgs = await res.json();
-      setMessages(msgs);
-      cacheRef.current.set(cacheKey, msgs);
-    } catch (error) {
-      console.error('Error fetching system messages:', error);
-    } finally {
-      setLoading(false);
+    } else if (chatType === 'tryout') {
+      queryClient.setQueryData(chatKeys.tryoutMessages(chatId), (old) => {
+        if (!old) return { messages: [newMessage] };
+        return {
+          ...old,
+          messages: [...(old.messages || []), newMessage]
+        };
+      });
     }
-  }, []);
+  };
 
-  // Fetch tryout messages
-  const fetchTryoutMessages = useCallback(
-    async (chatId) => {
-      if (!chatId) return null;
+  // Update message (replace temp ID with real ID)
+  const updateMessage = (tempId, realMessage) => {
+    const queryKey = chatType === 'tryout'
+      ? chatKeys.tryoutMessages(chatId)
+      : (chatId === 'system' ? chatKeys.systemMessages() : chatKeys.messages(chatId));
 
-      setLoading(true);
-      try {
-        const res = await fetch(`${API_URL}/api/tryout-chats/${chatId}`, {
-          credentials: 'include',
-        });
-        const data = await res.json();
-        setMessages(data.chat?.messages || []);
-        return data.chat;
-      } catch (error) {
-        console.error('Error fetching tryout messages:', error);
-        return null;
-      } finally {
-        setLoading(false);
+    queryClient.setQueryData(queryKey, (old) => {
+      if (chatType === 'tryout') {
+        return {
+          ...old,
+          messages: (old.messages || []).map(m =>
+            m._id === tempId ? realMessage : m
+          )
+        };
       }
-    },
-    []
-  );
+      return old ? old.map(m => m._id === tempId ? realMessage : m) : [realMessage];
+    });
+  };
 
-  // Update cache when new message is added
-  const addMessageToCache = useCallback(
-    (chatId, message, chatType = 'direct') => {
-      const cacheKey = chatType === 'direct' ? `direct_${chatId}` : `tryout_${chatId}`;
-      if (cacheRef.current.has(cacheKey)) {
-        const cached = cacheRef.current.get(cacheKey);
-        cacheRef.current.set(cacheKey, [...cached, message]);
-      }
-    },
-    []
-  );
-
-  // Clear specific cache entry
-  const clearCache = useCallback(
-    (chatId, chatType = 'direct') => {
-      const cacheKey = chatType === 'direct' ? `direct_${chatId}` : `tryout_${chatId}`;
-      cacheRef.current.delete(cacheKey);
-    },
-    []
-  );
-
-  // Clear all cache
-  const clearAllCache = useCallback(() => {
-    cacheRef.current.clear();
-  }, []);
+  // Invalidate and refetch
+  const refetch = () => {
+    queryClient.invalidateQueries({ queryKey: activeQuery.queryKey });
+  };
 
   return {
-    messages,
-    setMessages,
-    loading,
-    fetchMessages,
-    fetchSystemMessages,
-    fetchTryoutMessages,
-    addMessageToCache,
-    clearCache,
-    clearAllCache,
+    messages: chatType === 'tryout'
+      ? activeQuery.data?.messages || []
+      : activeQuery.data || [],
+    selectedChat: chatType === 'tryout' ? activeQuery.data : null,
+    loading: activeQuery.isLoading,
+    error: activeQuery.error,
+    isRefetching: activeQuery.isRefetching,
+    addMessage,
+    updateMessage,
+    refetch,
   };
 };

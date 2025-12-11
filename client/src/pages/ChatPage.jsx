@@ -1,315 +1,90 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import { io } from "socket.io-client";
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from "../context/AuthContext";
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Send, Search, MoreVertical, Settings, Users, Hash, Activity, Crown, Shield, Gamepad2, Bell, Check, X, UserPlus,
   AlertCircle, Ban, CheckCircle, XCircle
 } from 'lucide-react';
-import { toast } from 'react-toastify';
 import ChatMessage from '../components/ChatMessage';
+import { useChatSocket } from '../hooks/useChatSocket';
+import { useChatMessages } from '../hooks/useChatMessages';
+import { useChatData } from '../hooks/useChatData';
+import { useChatActions } from '../hooks/useChatActions';
+import { chatKeys } from '../hooks/queryKeys';
+import axios from '../utils/axiosConfig';
 
-// OPTIMIZATION 1: Extract API URL constant
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
-
-const socket = io(API_URL, {
-  withCredentials: true,
-});
-
-// OPTIMIZATION 5: Persistent cache helper functions
-const CACHE_KEY_PREFIX = 'aegis_chat_cache_';
-const CACHE_EXPIRY = 5 * 60 * 1000; // 5 minutes
-
-const getCachedData = (key) => {
-  try {
-    const cached = sessionStorage.getItem(CACHE_KEY_PREFIX + key);
-    if (!cached) return null;
-
-    const { data, timestamp } = JSON.parse(cached);
-    if (Date.now() - timestamp > CACHE_EXPIRY) {
-      sessionStorage.removeItem(CACHE_KEY_PREFIX + key);
-      return null;
-    }
-    return data;
-  } catch (error) {
-    console.error('Cache read error:', error);
-    return null;
-  }
-};
-
-const setCachedData = (key, data) => {
-  try {
-    sessionStorage.setItem(CACHE_KEY_PREFIX + key, JSON.stringify({
-      data,
-      timestamp: Date.now()
-    }));
-  } catch (error) {
-    console.error('Cache write error:', error);
-  }
-};
 
 export default function ChatPage() {
   const { user } = useAuth();
   const userId = user?._id;
-  const [connections, setConnections] = useState([]);
-  const [selectedChat, setSelectedChat] = useState(null);
-  const [chatType, setChatType] = useState('direct');
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [onlineUsers, setOnlineUsers] = useState(new Set());
-  const [teamApplications, setTeamApplications] = useState([]);
-  const [tryoutChats, setTryoutChats] = useState([]);
-  const [showApplications, setShowApplications] = useState(false);
-  const [tournamentDetails, setTournamentDetails] = useState({});
-  const [recruitmentApproaches, setRecruitmentApproaches] = useState([]);
-  const [showEndTryoutModal, setShowEndTryoutModal] = useState(false);
-  const [endReason, setEndReason] = useState('');
-  const [showOfferModal, setShowOfferModal] = useState(false);
-  const [offerMessage, setOfferMessage] = useState('');
-  const messagesEndRef = useRef(null);
-  const messagesContainerRef = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
   const selectedUserId = location.state?.selectedUserId;
 
-  // OPTIMIZATION 4: Add autoScroll state and container ref
+  // State
+  const [selectedChat, setSelectedChat] = useState(null);
+  const [chatType, setChatType] = useState('direct');
+  const [input, setInput] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [onlineUsers, setOnlineUsers] = useState(new Set());
+  const [showApplications, setShowApplications] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
 
-  // OPTIMIZATION 5: Add message cache ref
-  const messageCacheRef = useRef(new Map());
-  const fetchedTournamentIdsRef = useRef(new Set());
+  // Refs
+  const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
 
-  // Fetch all users who have chat messages with the current user
-  const fetchConnections = async () => {
-    const cacheKey = 'connections';
-    const cached = getCachedData(cacheKey);
-    if (cached) {
-      console.log('✅ Loaded connections from cache');
-      return cached;
+  // React Query Hooks
+  const {
+    messages,
+    selectedChat: tryoutChatData,
+    loading: messagesLoading,
+    refetch: refetchCurrentMessages,
+  } = useChatMessages(selectedChat?._id, chatType);
+
+  const {
+    connections,
+    teamApplications,
+    tryoutChats,
+    recruitmentApproaches,
+    loading: dataLoading,
+    refetchAll,
+    refetchApplications,
+    refetchTryouts,
+    refetchApproaches,
+  } = useChatData(user);
+
+  // Tournament details query
+  const { data: tournamentDetails } = useQuery({
+    queryKey: chatKeys.tournaments(),
+    queryFn: async () => {
+      const tournamentIds = messages
+        .filter(m => m.messageType === 'tournament_reference' && m.tournamentId)
+        .map(m => m.tournamentId);
+
+      const uniqueIds = [...new Set(tournamentIds)];
+      const results = await Promise.all(
+        uniqueIds.map(id => axios.get(`/api/tournaments/${id}`).then(r => r.data))
+      );
+
+      return results.reduce((acc, data, i) => {
+        acc[uniqueIds[i]] = data;
+        return acc;
+      }, {});
+    },
+    enabled: messages.some(m => m.messageType === 'tournament_reference'),
+  });
+
+  // Update selectedChat when tryout data changes
+  useEffect(() => {
+    if (chatType === 'tryout' && tryoutChatData) {
+      setSelectedChat(tryoutChatData);
     }
+  }, [tryoutChatData, chatType]);
 
-    try {
-      const res = await fetch(`${API_URL}/api/chat/users/with-chats`, { credentials: 'include' });
-      const data = await res.json();
-      const users = data.users || [];
-      setCachedData(cacheKey, users);
-      console.log('💾 Saved connections to cache');
-      return users;
-    } catch (error) {
-      console.error('Error fetching chat users:', error);
-      return [];
-    }
-  };
-
-  // Combine confirmed connections and team application players into one list
-  const combineConnections = (confirmedConns, teamApps) => {
-    const combined = [...confirmedConns];
-
-    // Add players from team applications if not already in connections
-    teamApps.forEach(app => {
-      const exists = combined.some(conn => conn._id === app.player._id);
-      if (!exists) {
-        combined.push(app.player);
-      }
-    });
-
-    // Add system user for notifications
-    const systemUser = { _id: 'system', username: 'System', realName: 'System Notifications', profilePicture: null };
-    combined.unshift(systemUser);
-
-    return combined;
-  };
-
-  // Fetch connections and team applications and update connections state
-  const fetchAndSetConnections = async () => {
-    const confirmedConns = await fetchConnections();
-    const combined = combineConnections(confirmedConns, teamApplications);
-    setConnections(combined);
-  };
-
-  // OPTIMIZATION 5: Modified fetchMessages with persistent caching
-  const fetchMessages = async (receiverId, forceRefresh = false) => {
-    const cacheKey = `direct_${receiverId}`;
-
-    // Check sessionStorage cache first
-    if (!forceRefresh) {
-      const cached = getCachedData(cacheKey);
-      if (cached) {
-        console.log('✅ Loaded messages from cache:', cacheKey);
-        setMessages(cached);
-        messageCacheRef.current.set(cacheKey, cached);
-        return;
-      }
-    }
-
-    try {
-      const res = await fetch(`${API_URL}/api/chat/${receiverId}`, { credentials: 'include' });
-      const msgs = await res.json();
-      setMessages(msgs);
-
-      // Update both memory and persistent cache
-      messageCacheRef.current.set(cacheKey, msgs);
-      setCachedData(cacheKey, msgs);
-      console.log('💾 Saved messages to cache:', cacheKey);
-    } catch (error) {
-      console.error('Error fetching messages:', error);
-    }
-  };
-
-  // OPTIMIZATION 5: Modified fetchSystemMessages with persistent caching
-  const fetchSystemMessages = async () => {
-    const cacheKey = 'system';
-
-    // Check sessionStorage cache first
-    const cached = getCachedData(cacheKey);
-    if (cached) {
-      console.log('✅ Loaded system messages from cache');
-      setMessages(cached);
-      messageCacheRef.current.set(cacheKey, cached);
-      return;
-    }
-
-    try {
-      const res = await fetch(`${API_URL}/api/chat/system`, { credentials: 'include' });
-      const msgs = await res.json();
-      setMessages(msgs);
-
-      // Update both memory and persistent cache
-      messageCacheRef.current.set(cacheKey, msgs);
-      setCachedData(cacheKey, msgs);
-      console.log('💾 Saved system messages to cache');
-    } catch (error) {
-      console.error('Error fetching system messages:', error);
-    }
-  };
-
-  // OPTIMIZATION 5: Modified fetchTryoutMessages - no persistent cache for real-time data
-  const fetchTryoutMessages = async (chatId, forceRefresh = true) => {
-    const cacheKey = `tryout_${chatId}`;
-
-    // Tryouts change frequently - always fetch fresh
-    try {
-      const res = await fetch(`${API_URL}/api/tryout-chats/${chatId}`, { credentials: 'include' });
-      const data = await res.json();
-
-      const chatMessages = data.chat?.messages || [];
-      setMessages(chatMessages);
-      setSelectedChat(data.chat);
-
-      // Update memory cache only (no persistent cache for tryouts)
-      messageCacheRef.current.set(cacheKey, data.chat);
-    } catch (error) {
-      console.error('Error fetching tryout messages:', error);
-      setMessages([]);
-    }
-  };
-
-  // Fetch team applications (for captains)
-  const fetchTeamApplications = async () => {
-    if (!user?.team) return;
-
-    const cacheKey = `team_applications_${user.team._id}`;
-    const cached = getCachedData(cacheKey);
-    if (cached) {
-      console.log('✅ Loaded team applications from cache');
-      setTeamApplications(cached);
-      return;
-    }
-
-    try {
-      const res = await fetch(`${API_URL}/api/team-applications/team/${user.team._id}`, {
-        credentials: 'include'
-      });
-      const data = await res.json();
-      const apps = data.applications || [];
-      setTeamApplications(apps);
-      setCachedData(cacheKey, apps);
-      console.log('💾 Saved team applications to cache');
-    } catch (error) {
-      console.error('Error fetching applications:', error);
-    }
-  };
-
-  // Fetch tryout chats
-  const fetchTryoutChats = async () => {
-    const cacheKey = 'tryout_chats';
-    const cached = getCachedData(cacheKey);
-    if (cached) {
-      console.log('✅ Loaded tryout chats from cache');
-      setTryoutChats(cached);
-      return;
-    }
-
-    try {
-      const res = await fetch(`${API_URL}/api/tryout-chats/my-chats`, {
-        credentials: 'include'
-      });
-      const data = await res.json();
-      const chats = data.chats || [];
-      setTryoutChats(chats);
-      setCachedData(cacheKey, chats);
-      console.log('💾 Saved tryout chats to cache');
-    } catch (error) {
-      console.error('Error fetching tryout chats:', error);
-    }
-  };
-
-  // Fetch recruitment approaches
-  const fetchRecruitmentApproaches = async () => {
-    const cacheKey = 'recruitment_approaches';
-    const cached = getCachedData(cacheKey);
-    if (cached) {
-      console.log('✅ Loaded recruitment approaches from cache');
-      setRecruitmentApproaches(cached);
-      return;
-    }
-
-    try {
-      const res = await fetch(`${API_URL}/api/recruitment/my-approaches`, {
-        credentials: 'include'
-      });
-      const data = await res.json();
-      const approaches = data.approaches || [];
-      setRecruitmentApproaches(approaches);
-      setCachedData(cacheKey, approaches);
-      console.log('💾 Saved recruitment approaches to cache');
-    } catch (error) {
-      console.error('Error fetching recruitment approaches:', error);
-    }
-  };
-
-  // Fetch tournament details
-  const fetchTournamentDetails = async (tournamentId) => {
-    // Check if already fetched or in progress
-    if (fetchedTournamentIdsRef.current.has(tournamentId) || tournamentDetails[tournamentId]) return;
-
-    fetchedTournamentIdsRef.current.add(tournamentId);
-
-    try {
-      const res = await fetch(`${API_URL}/api/tournaments/${tournamentId}`, { credentials: 'include' });
-      const data = await res.json();
-      setTournamentDetails(prev => ({ ...prev, [tournamentId]: data }));
-    } catch (error) {
-      console.error('Error fetching tournament details:', error);
-    }
-  };
-
-  // OPTIMIZATION 4: Smart scroll handler - detects if user is at bottom
-  const handleScroll = useCallback((e) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.target;
-    const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 50;
-    setAutoScroll(isAtBottom);
-  }, []);
-
-  // OPTIMIZATION 4: Modified scrollToBottom - only scrolls if autoScroll enabled
-  const scrollToBottom = useCallback(() => {
-    if (autoScroll) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [autoScroll]);
-
-  const showNotification = (title, body, icon, onClick) => {
+  const showNotification = useCallback((title, body, icon, onClick) => {
     if ('Notification' in window && Notification.permission === 'granted') {
       const notification = new Notification(title, { body, icon, tag: 'tournament-invite' });
       if (onClick) {
@@ -317,245 +92,68 @@ export default function ChatPage() {
       }
       setTimeout(() => notification.close(), 5000);
     }
-  };
+  }, []);
+
+  useChatSocket({
+    userId,
+    chatType,
+    selectedChatId: selectedChat?._id,
+    showNotification
+  });
+
+  const actions = useChatActions({
+    userId,
+    selectedChat,
+    chatType,
+  });
+
+  // Scroll handling
+  const handleScroll = useCallback((e) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.target;
+    const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 50;
+    setAutoScroll(isAtBottom);
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    if (autoScroll) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [autoScroll]);
 
   // Initial data fetch
   useEffect(() => {
     if (!userId) return;
-    socket.emit("join", userId);
+    refetchAll();
 
-    const fetchData = async () => {
-      // ✅ Now ALL of these check cache first!
-      await fetchTeamApplications();
-      await fetchTryoutChats();
-      await fetchRecruitmentApproaches();
-    };
-    fetchData();
-  }, [userId]);
-
-  // Fetch messages when selectedChat changes
-  useEffect(() => {
-    if (selectedChat && chatType === 'direct') {
-      fetchMessages(selectedChat._id);
-    } else if (selectedChat && chatType === 'tryout') {
-      socket.emit('joinTryoutChat', selectedChat._id);
-      return () => {
-        socket.emit('leaveTryoutChat', selectedChat._id);
-      };
-    }
-  }, [selectedChat, chatType]);
-
-  // Fetch and set connections whenever teamApplications or userId changes
-  useEffect(() => {
-    if (!userId) return;
-    fetchAndSetConnections();
-  }, [teamApplications, userId]);
-
-  // Request notification permission on component mount
-  useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
-  }, []);
+  }, [userId, refetchAll]);
 
-  // OPTIMIZATION 3: Consolidate ALL socket listeners into one useEffect
+  // Auto-select first chat
   useEffect(() => {
-    const handleReceiveMessage = (msg) => {
-      if (chatType === 'direct' && selectedChat &&
-        (msg.senderId?.toString() === selectedChat._id?.toString() ||
-          msg.receiverId?.toString() === selectedChat._id?.toString() ||
-          (selectedChat._id === 'system' && msg.messageType === 'system'))
-      ) {
-        setMessages((prev) => {
-          const updated = [...prev, msg];
-          // Update cache
-          const cacheKey = selectedChat._id === 'system' ? 'system' : `direct_${selectedChat._id}`;
-          messageCacheRef.current.set(cacheKey, updated);
-          setCachedData(cacheKey, updated); // ✅ Persist to sessionStorage
-          return updated;
-        });
-      }
-
-      if (msg.messageType === 'tournament_invite' && msg.receiverId === userId) {
-        showNotification(
-          'Tournament Invitation',
-          'Your team has been invited to participate in a tournament',
-          '/favicon.ico',
-          () => { window.location.href = `/chat?user=${msg.senderId}`; }
-        );
-      }
-    };
-
-    const handleTryoutMessage = (data) => {
-      if (chatType === 'tryout' && selectedChat && data.chatId === selectedChat._id) {
-        setMessages((prev) => {
-          const messageExists = prev.some(m =>
-            m._id === data.message._id ||
-            (m._id?.toString().startsWith('temp_') &&
-              m.message === data.message.message &&
-              m.sender === data.message.sender)
-          );
-
-          if (messageExists) {
-            return prev.map(m =>
-              (m._id?.toString().startsWith('temp_') &&
-                m.message === data.message.message &&
-                m.sender === data.message.sender)
-                ? data.message : m
-            );
-          }
-          return [...prev, data.message];
-        });
-      }
-    };
-
-    const handleTryoutEnded = (data) => {
-      if (chatType === 'tryout' && selectedChat && data.chatId === selectedChat._id) {
-        setSelectedChat(prev => ({
-          ...prev,
-          tryoutStatus: data.tryoutStatus,
-          endedBy: data.endedBy,
-          endReason: data.reason
-        }));
-        if (data.message) setMessages(prev => [...prev, data.message]);
-        toast.info('Tryout has been ended');
-      }
-    };
-
-    const handleTeamOfferSent = (data) => {
-      if (chatType === 'tryout' && selectedChat && data.chatId === selectedChat._id) {
-        setSelectedChat(prev => ({ ...prev, tryoutStatus: 'offer_sent', teamOffer: data.offer }));
-        if (data.message) setMessages(prev => [...prev, data.message]);
-        toast.success('Team offer received!');
-      }
-    };
-
-    const handleTeamOfferAccepted = (data) => {
-      if (chatType === 'tryout' && selectedChat && data.chatId === selectedChat._id) {
-        setSelectedChat(prev => ({ ...prev, tryoutStatus: 'offer_accepted' }));
-        if (data.message) setMessages(prev => [...prev, data.message]);
-        toast.success('Player joined the team!');
-      }
-    };
-
-    const handleTeamOfferRejected = (data) => {
-      if (chatType === 'tryout' && selectedChat && data.chatId === selectedChat._id) {
-        setSelectedChat(prev => ({ ...prev, tryoutStatus: 'offer_rejected' }));
-        if (data.message) setMessages(prev => [...prev, data.message]);
-        toast.info('Player declined the team offer');
-      }
-    };
-
-    const handleConnect = () => console.log('Socket connected');
-    const handleDisconnect = () => console.log('Socket disconnected');
-
-    socket.on('receiveMessage', handleReceiveMessage);
-    socket.on('tryoutMessage', handleTryoutMessage);
-    socket.on('tryoutEnded', handleTryoutEnded);
-    socket.on('teamOfferSent', handleTeamOfferSent);
-    socket.on('teamOfferAccepted', handleTeamOfferAccepted);
-    socket.on('teamOfferRejected', handleTeamOfferRejected);
-    socket.on('connect', handleConnect);
-    socket.on('disconnect', handleDisconnect);
-
-    setOnlineUsers(new Set(['user1', 'user2', 'user3']));
-
-    return () => {
-      socket.off('receiveMessage', handleReceiveMessage);
-      socket.off('tryoutMessage', handleTryoutMessage);
-      socket.off('tryoutEnded', handleTryoutEnded);
-      socket.off('teamOfferSent', handleTeamOfferSent);
-      socket.off('teamOfferAccepted', handleTeamOfferAccepted);
-      socket.off('teamOfferRejected', handleTeamOfferRejected);
-      socket.off('connect', handleConnect);
-      socket.off('disconnect', handleDisconnect);
-    };
-  }, [chatType, selectedChat?._id, userId]);
-
-  // OPTIMIZATION 4: Update scroll effect to use callback
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
-
-  useEffect(() => {
-    messages.forEach(msg => {
-      if (msg.messageType === 'tournament_reference' && msg.tournamentId) {
-        fetchTournamentDetails(msg.tournamentId);
-      }
-    });
-  }, [messages]);
-
-  useEffect(() => {
-    if (connections.length > 0) {
+    if (connections.length > 0 && !selectedChat) {
       if (selectedUserId) {
         const user = connections.find(c => c._id === selectedUserId);
         if (user) {
           setSelectedChat(user);
           setChatType('direct');
-          fetchMessages(user._id);
           return;
         }
       }
-      const firstUser = connections[0];
-      setSelectedChat(firstUser);
+      setSelectedChat(connections[0]);
       setChatType('direct');
-      fetchMessages(firstUser._id);
     }
-  }, [connections, selectedUserId]);
+  }, [connections, selectedUserId, selectedChat]);
 
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, scrollToBottom]);
+
+  // Message sending
   const sendMessage = () => {
-    if (!input.trim() || !selectedChat || !userId) return;
-
-    // NEW: Prevent sending if tryout is ended or offer in progress
-    if (chatType === 'tryout') {
-      const restrictedStatuses = ['ended_by_team', 'ended_by_player', 'offer_sent', 'offer_accepted', 'offer_rejected'];
-      if (restrictedStatuses.includes(selectedChat.tryoutStatus)) {
-        toast.error('This tryout has ended. No new messages can be sent.');
-        return;
-      }
-    }
-
-    if (chatType === 'direct') {
-      const msg = {
-        senderId: userId,
-        receiverId: selectedChat._id,
-        message: input,
-        timestamp: new Date(),
-      };
-      socket.emit("sendMessage", msg);
-
-      // Update state and BOTH caches
-      setMessages((prev) => {
-        const updated = [...prev, msg];
-        const cacheKey = `direct_${selectedChat._id}`;
-        messageCacheRef.current.set(cacheKey, updated);
-        setCachedData(cacheKey, updated); // ✅ Persist to sessionStorage
-        return updated;
-      });
-    } else if (chatType === 'tryout') {
-      // Generate unique temporary ID
-      const tempId = `temp_${Date.now()}_${Math.random()}`;
-
-      // Optimistically add message to UI with temporary ID
-      const optimisticMessage = {
-        _id: tempId,
-        sender: userId,
-        message: input,
-        messageType: 'text',
-        timestamp: new Date()
-      };
-
-      setMessages(prev => [...prev, optimisticMessage]);
-
-      // EMIT GROUP MESSAGE via socket
-      socket.emit('tryoutMessage', {
-        chatId: selectedChat._id,
-        senderId: userId,
-        message: input
-      });
-    }
-
-    setInput("");
+    actions.sendMessage(input, () => setInput(""));
   };
 
   const handleKeyPress = (e) => {
@@ -565,248 +163,11 @@ export default function ChatPage() {
     }
   };
 
-  const handleStartTryout = async (applicationId) => {
-    try {
-      const res = await fetch(`${API_URL}/api/team-applications/${applicationId}/start-tryout`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        toast.success('Tryout started!');
-
-        // ✅ Clear cache before fetching fresh data
-        sessionStorage.removeItem(CACHE_KEY_PREFIX + `team_applications_${user.team._id}`);
-        sessionStorage.removeItem(CACHE_KEY_PREFIX + 'tryout_chats');
-
-        fetchTeamApplications();
-        fetchTryoutChats();
-
-        setSelectedChat(data.tryoutChat);
-        setChatType('tryout');
-        setMessages(data.tryoutChat.messages || []);
-        setShowApplications(false);
-      } else {
-        const error = await res.json();
-        toast.error(error.error || 'Failed to start tryout');
-      }
-    } catch (error) {
-      console.error('Error starting tryout:', error);
-      toast.error('Failed to start tryout');
-    }
+  const handleInputChange = (e) => {
+    setInput(e.target.value);
   };
 
-  const handleRejectApplication = async (applicationId) => {
-    try {
-      const res = await fetch(`${API_URL}/api/team-applications/${applicationId}/reject`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ reason: 'Not suitable at this time' }),
-      });
-
-      if (res.ok) {
-        toast.success('Application rejected');
-
-        // ✅ Clear cache
-        sessionStorage.removeItem(CACHE_KEY_PREFIX + `team_applications_${user.team._id}`);
-
-        fetchTeamApplications();
-      } else {
-        const error = await res.json();
-        toast.error(error.error || 'Failed to reject application');
-      }
-    } catch (error) {
-      console.error('Error rejecting application:', error);
-      toast.error('Failed to reject application');
-    }
-  };
-
-  const handleAcceptPlayer = async (applicationId) => {
-    try {
-      const res = await fetch(`${API_URL}/api/team-applications/${applicationId}/accept`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ notes: 'Great performance during tryout' }),
-      });
-
-      if (res.ok) {
-        toast.success('Player accepted to team!');
-        fetchTeamApplications();
-        fetchTryoutChats();
-        // Close the tryout chat after acceptance
-        if (selectedChat && chatType === 'tryout') {
-          setSelectedChat(null);
-          setChatType('direct');
-          setMessages([]);
-        }
-      } else {
-        const error = await res.json();
-        toast.error(error.error || 'Failed to accept player');
-      }
-    } catch (error) {
-      console.error('Error accepting player:', error);
-      toast.error('Failed to accept player');
-    }
-  };
-
-  // Handler to accept tournament team invitation from chat message
-  const handleAcceptTournamentInvite = async (msg) => {
-    try {
-      const res = await fetch(`${API_URL}/api/team-tournaments/accept-invitation/${msg.tournamentId}/${msg.invitationId}`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (res.ok) {
-        toast.success('Tournament invite accepted');
-        setMessages((prevMessages) =>
-          prevMessages.map((m) =>
-            m.invitationId === msg.invitationId ? { ...m, invitationStatus: 'accepted' } : m
-          )
-        );
-      } else {
-        const error = await res.json();
-        toast.error(error.message || 'Failed to accept tournament invite');
-      }
-    } catch (error) {
-      console.error('Error accepting tournament invite:', error);
-      toast.error('Failed to accept tournament invite');
-    }
-  };
-
-  // Handler to decline tournament team invitation from chat message
-  const handleDeclineTournamentInvite = async (msg) => {
-    try {
-      const res = await fetch(`${API_URL}/api/team-tournaments/decline-invitation/${msg.tournamentId}/${msg.invitationId}`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (res.ok) {
-        toast.success('Tournament invite declined');
-        setMessages((prevMessages) =>
-          prevMessages.map((m) =>
-            m.invitationId === msg.invitationId ? { ...m, invitationStatus: 'declined' } : m
-          )
-        );
-      } else {
-        const error = await res.json();
-        toast.error(error.message || 'Failed to decline tournament invite');
-      }
-    } catch (error) {
-      console.error('Error declining tournament invite:', error);
-      toast.error('Failed to decline tournament invite');
-    }
-  };
-
-  // Handler to accept team invitation from chat message
-  const handleAcceptInvitation = async (invitationId) => {
-    try {
-      const response = await fetch(`${API_URL}/api/teams/invitations/${invitationId}/accept`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (response.ok) {
-        toast.success('Invitation accepted successfully!');
-        setMessages((prevMessages) =>
-          prevMessages.map((m) =>
-            m.invitationId === invitationId || m.invitationId?._id === invitationId ? { ...m, invitationStatus: 'accepted' } : m
-          )
-        );
-      } else {
-        const error = await response.json();
-        toast.error(error.message || 'Failed to accept invitation');
-      }
-    } catch (error) {
-      console.error('Error accepting invitation:', error);
-      toast.error('Network error accepting invitation');
-    }
-  };
-
-  // Handler to decline team invitation from chat message
-  const handleDeclineInvitation = async (invitationId) => {
-    try {
-      const response = await fetch(`${API_URL}/api/teams/invitations/${invitationId}/decline`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (response.ok) {
-        toast.success('Invitation declined');
-        setMessages((prevMessages) =>
-          prevMessages.map((m) =>
-            m.invitationId === invitationId ? { ...m, invitationStatus: 'declined' } : m
-          )
-        );
-      } else {
-        const error = await response.json();
-        toast.error(error.message || 'Failed to decline invitation');
-      }
-    } catch (error) {
-      console.error('Error declining invitation:', error);
-      toast.error('Network error declining invitation');
-    }
-  };
-
-  // Handle accept approach
-  const handleAcceptApproach = async (approachId) => {
-    try {
-      const res = await fetch(`${API_URL}/api/recruitment/approach/${approachId}/accept`, {
-        method: 'POST',
-        credentials: 'include'
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        toast.success('Approach accepted! Tryout chat created.');
-
-        // ✅ Clear cache
-        sessionStorage.removeItem(CACHE_KEY_PREFIX + 'recruitment_approaches');
-        sessionStorage.removeItem(CACHE_KEY_PREFIX + 'tryout_chats');
-
-        await fetchRecruitmentApproaches();
-        await fetchTryoutChats();
-
-        setSelectedChat(data.tryoutChat);
-        setChatType('tryout');
-        setMessages(data.tryoutChat.messages || []);
-      } else {
-        const error = await res.json();
-        toast.error(error.error || 'Failed to accept approach');
-      }
-    } catch (error) {
-      console.error('Error accepting approach:', error);
-      toast.error('Failed to accept approach');
-    }
-  };
-
-  // Handle reject approach
-  const handleRejectApproach = async (approachId) => {
-    try {
-      const res = await fetch(`${API_URL}/api/recruitment/approach/${approachId}/reject`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ reason: 'Not interested at this time' })
-      });
-
-      if (res.ok) {
-        toast.success('Approach rejected');
-
-        // ✅ Clear cache
-        sessionStorage.removeItem(CACHE_KEY_PREFIX + 'recruitment_approaches');
-
-        await fetchRecruitmentApproaches();
-      } else {
-        toast.error('Failed to reject approach');
-      }
-    } catch (error) {
-      console.error('Error rejecting approach:', error);
-      toast.error('Failed to reject approach');
-    }
-  };
-
-  // OPTIMIZATION 2: Memoize filtered connections
+  // Filtered connections
   const filteredConnections = useMemo(() =>
     connections.filter(conn =>
       conn.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -826,10 +187,7 @@ export default function ChatPage() {
     return date.toLocaleDateString();
   };
 
-  const getUserStatus = (userId) => {
-    if (onlineUsers.has(userId)) return 'online';
-    return 'offline';
-  };
+  const getUserStatus = (userId) => onlineUsers.has(userId) ? 'online' : 'offline';
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -847,135 +205,43 @@ export default function ChatPage() {
     return null;
   };
 
-  // Simple debounce function
-  const debounce = (func, delay) => {
-    let timeoutId;
-    return (...args) => {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => func(...args), delay);
-    };
-  };
-
-  // Debounced typing indicator (prevents spam)
-  const emitTyping = useCallback(
-    debounce(() => {
-      if (selectedChat?._id) {
-        socket.emit('typing', { receiverId: selectedChat._id });
+  // Action handlers with refetch
+  const handleStartTryoutWithRefresh = (applicationId) => {
+    actions.handleStartTryout(applicationId, {
+      onSuccess: (data) => {
+        refetchApplications();
+        refetchTryouts();
+        setSelectedChat(data.tryoutChat);
+        setChatType('tryout');
+        setShowApplications(false);
       }
-    }, 300),
-    [selectedChat]
-  );
-
-  const handleInputChange = (e) => {
-    setInput(e.target.value);
-    emitTyping();
+    });
   };
 
-  // NEW: End tryout handler
-  const handleEndTryout = async () => {
-    if (!selectedChat || !endReason.trim()) {
-      toast.error('Please provide a reason for ending the tryout');
-      return;
-    }
+  const handleRejectApplicationWithRefresh = (applicationId) => {
+    actions.handleRejectApplication(applicationId, {
+      onSuccess: () => refetchApplications()
+    });
+  };
 
-    try {
-      const res = await fetch(`${API_URL}/api/tryout-chats/${selectedChat._id}/end-tryout`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ reason: endReason })
-      });
-
-      if (res.ok) {
-        toast.success('Tryout ended successfully');
-        setShowEndTryoutModal(false);
-        setEndReason('');
-        await fetchTryoutMessages(selectedChat._id);
-      } else {
-        const error = await res.json();
-        toast.error(error.error || 'Failed to end tryout');
+  const handleAcceptApproachWithRefresh = (approachId) => {
+    actions.handleAcceptApproach(approachId, {
+      onSuccess: (data) => {
+        refetchApproaches();
+        refetchTryouts();
+        setSelectedChat(data.tryoutChat);
+        setChatType('tryout');
       }
-    } catch (error) {
-      console.error('Error ending tryout:', error);
-      toast.error('Failed to end tryout');
-    }
+    });
   };
 
-  // NEW: Send team offer handler
-  const handleSendOffer = async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/tryout-chats/${selectedChat._id}/send-offer`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ message: offerMessage })
-      });
-
-      if (res.ok) {
-        toast.success('Team offer sent!');
-        setShowOfferModal(false);
-        setOfferMessage('');
-        await fetchTryoutMessages(selectedChat._id);
-      } else {
-        const error = await res.json();
-        toast.error(error.error || 'Failed to send offer');
-      }
-    } catch (error) {
-      console.error('Error sending offer:', error);
-      toast.error('Failed to send offer');
-    }
+  const handleRejectApproachWithRefresh = (approachId) => {
+    actions.handleRejectApproach(approachId, {
+      onSuccess: () => refetchApproaches()
+    });
   };
 
-  // NEW: Accept offer handler
-  const handleAcceptOffer = async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/tryout-chats/${selectedChat._id}/accept-offer`, {
-        method: 'POST',
-        credentials: 'include'
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        toast.success('You joined the team!');
-        await fetchTryoutMessages(selectedChat._id);
-        setTimeout(() => {
-          navigate(`/team/${data.team._id}`);
-        }, 2000);
-      } else {
-        const error = await res.json();
-        toast.error(error.error || 'Failed to accept offer');
-      }
-    } catch (error) {
-      console.error('Error accepting offer:', error);
-      toast.error('Failed to accept offer');
-    }
-  };
-
-  // NEW: Reject offer handler
-  const handleRejectOffer = async () => {
-    const reason = prompt('Reason for declining (optional):');
-
-    try {
-      const res = await fetch(`${API_URL}/api/tryout-chats/${selectedChat._id}/reject-offer`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ reason })
-      });
-
-      if (res.ok) {
-        toast.info('Team offer declined');
-        await fetchTryoutMessages(selectedChat._id);
-      } else {
-        const error = await res.json();
-        toast.error(error.error || 'Failed to reject offer');
-      }
-    } catch (error) {
-      console.error('Error rejecting offer:', error);
-      toast.error('Failed to reject offer');
-    }
-  };
-
+  // Applications Panel Component
   const ApplicationsPanel = () => (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end justify-center z-50 p-4 md:items-center">
       <div className="bg-zinc-900 border border-zinc-700 rounded-2xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
@@ -1041,13 +307,13 @@ export default function ChatPage() {
                       {app.status === 'pending' && (
                         <>
                           <button
-                            onClick={() => handleStartTryout(app._id)}
+                            onClick={() => handleStartTryoutWithRefresh(app._id)}
                             className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-lg font-medium transition-all text-sm"
                           >
                             Start Tryout
                           </button>
                           <button
-                            onClick={() => handleRejectApplication(app._id)}
+                            onClick={() => handleRejectApplicationWithRefresh(app._id)}
                             className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg transition-colors text-sm"
                           >
                             Reject
@@ -1128,7 +394,7 @@ export default function ChatPage() {
                   onClick={() => {
                     setSelectedChat(chat);
                     setChatType('tryout');
-                    fetchTryoutMessages(chat._id);
+                    // No need to manually fetch - React Query will handle it
                   }}
                   className={`p-3 rounded-xl cursor-pointer transition-all mb-2 ${selectedChat?._id === chat._id && chatType === 'tryout'
                     ? "bg-gradient-to-r from-orange-500/20 to-red-600/20 border border-orange-500/30"
@@ -1166,57 +432,45 @@ export default function ChatPage() {
             <div className="px-3 py-2">
               <h3 className="text-sm font-semibold text-zinc-400">Direct Messages</h3>
             </div>
-            {filteredConnections.length > 0 ? (
-              filteredConnections.map((conn) => (
-                <div
-                  key={conn._id}
-                  onClick={() => {
-                    setSelectedChat(conn);
-                    setChatType('direct');
-                    if (conn._id === 'system') {
-                      fetchSystemMessages();
-                    } else {
-                      fetchMessages(conn._id);
-                    }
-                  }}
-                  className={`p-3 rounded-xl cursor-pointer transition-all duration-200 mb-2 group hover:bg-zinc-800/50 ${selectedChat?._id === conn._id && chatType === 'direct'
-                    ? "bg-gradient-to-r from-orange-500/20 to-red-600/20 border border-orange-500/30"
-                    : "hover:bg-zinc-800/30"
-                    }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="relative">
-                      <img
-                        src={conn.profilePicture || `https://api.dicebear.com/7.x/avatars/svg?seed=${conn.username}`}
-                        alt={conn.username}
-                        className="w-12 h-12 rounded-xl object-cover border-2 border-zinc-700 group-hover:border-orange-400/50 transition-colors"
-                      />
-                      {conn._id !== 'system' && (
-                        <div className={`absolute -bottom-1 -right-1 w-4 h-4 ${getStatusColor(getUserStatus(conn._id))} rounded-full border-2 border-zinc-900`} />
-                      )}
+            {filteredConnections.map((conn) => (
+              <div
+                key={conn._id}
+                onClick={() => {
+                  setSelectedChat(conn);
+                  setChatType('direct');
+                }}
+                className={`p-3 rounded-xl cursor-pointer transition-all duration-200 mb-2 group hover:bg-zinc-800/50 ${selectedChat?._id === conn._id && chatType === 'direct'
+                  ? "bg-gradient-to-r from-orange-500/20 to-red-600/20 border border-orange-500/30"
+                  : "hover:bg-zinc-800/30"
+                  }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <img
+                      src={conn.profilePicture || `https://api.dicebear.com/7.x/avatars/svg?seed=${conn.username}`}
+                      alt={conn.username}
+                      className="w-12 h-12 rounded-xl object-cover border-2 border-zinc-700 group-hover:border-orange-400/50 transition-colors"
+                    />
+                    {conn._id !== 'system' && (
+                      <div className={`absolute -bottom-1 -right-1 w-4 h-4 ${getStatusColor(getUserStatus(conn._id))} rounded-full border-2 border-zinc-900`} />
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-white truncate">
+                        {conn.realName || conn.username}
+                      </span>
+                      {conn._id !== 'system' && getRankIcon(conn.aegisRating)}
                     </div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-white truncate">
-                          {conn.realName || conn.username}
-                        </span>
-                        {conn._id !== 'system' && getRankIcon(conn.aegisRating)}
-                      </div>
-
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="text-zinc-400">@{conn.username}</span>
-                      </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-zinc-400">@{conn.username}</span>
                     </div>
                   </div>
                 </div>
-              ))
-            ) : (
-              <div className="text-center py-8">
-                <Users className="w-12 h-12 text-zinc-500 mx-auto mb-3" />
-                <p className="text-zinc-400">No connections found</p>
               </div>
-            )}
+            ))}
           </div>
         </div>
 
@@ -1295,60 +549,35 @@ export default function ChatPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {/* Team Captain Actions - Active Tryout */}
-                  {(() => {
-                    console.log('Debug captain check:', {
-                      chatType,
-                      tryoutStatus: selectedChat.tryoutStatus,
-                      userTeamCaptain: user?.team?.captain,
-                      userId,
-                      captainId: user?.team?.captain?._id,
-                      captainString: user?.team?.captain?.toString(),
-                      isCaptain: user?.team?.captain?._id === userId
-                    });
-                    return chatType === 'tryout' && selectedChat.tryoutStatus === 'active' && user?.team?.captain?._id === userId;
-                  })() && (
-                      <>
-                        <button
-                          onClick={() => setShowOfferModal(true)}
-                          className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-all text-sm flex items-center gap-2"
-                        >
-                          <CheckCircle className="w-4 h-4" />
-                          Send Team Offer
-                        </button>
-                        <button
-                          onClick={() => setShowEndTryoutModal(true)}
-                          className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition-all text-sm flex items-center gap-2"
-                        >
-                          <Ban className="w-4 h-4" />
-                          End Tryout
-                        </button>
-                      </>
-                    )}
-
-                  {/* Applicant Actions - Active Tryout */}
-                  {chatType === 'tryout' && selectedChat.tryoutStatus === 'active' && selectedChat.applicant?._id === userId && (
-                    <button
-                      onClick={() => setShowEndTryoutModal(true)}
-                      className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition-all text-sm flex items-center gap-2"
-                    >
-                      <Ban className="w-4 h-4" />
-                      End Tryout
-                    </button>
+                  {chatType === 'tryout' && selectedChat.tryoutStatus === 'active' && user?.team?.captain?._id === userId && (
+                    <>
+                      <button
+                        onClick={() => actions.setShowOfferModal(true)}
+                        className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-all text-sm flex items-center gap-2"
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        Send Team Offer
+                      </button>
+                      <button
+                        onClick={() => actions.setShowEndTryoutModal(true)}
+                        className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition-all text-sm flex items-center gap-2"
+                      >
+                        <Ban className="w-4 h-4" />
+                        End Tryout
+                      </button>
+                    </>
                   )}
-
-                  {/* Applicant Actions - Pending Offer */}
                   {chatType === 'tryout' && selectedChat.tryoutStatus === 'offer_sent' && selectedChat.applicant?._id === userId && (
                     <>
                       <button
-                        onClick={handleAcceptOffer}
+                        onClick={() => actions.handleAcceptOffer(navigate)}
                         className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-all text-sm flex items-center gap-2"
                       >
                         <CheckCircle className="w-4 h-4" />
                         Accept Offer
                       </button>
                       <button
-                        onClick={handleRejectOffer}
+                        onClick={actions.handleRejectOffer}
                         className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition-all text-sm flex items-center gap-2"
                       >
                         <XCircle className="w-4 h-4" />
@@ -1364,14 +593,13 @@ export default function ChatPage() {
               </div>
             </div>
 
-            {/* Chat Messages - SIMPLE SCROLLING */}
+            {/* Chat Messages */}
             <div
               ref={messagesContainerRef}
               onScroll={handleScroll}
               className="flex-1 overflow-y-auto p-4 space-y-4 flex flex-col w-full"
             >
               {messages.map((msg, index) => {
-                // Determine if message is from current user (same logic as ChatMessage)
                 const isMine = chatType === 'direct'
                   ? msg.senderId === userId
                   : msg.sender?._id === userId || msg.sender === userId;
@@ -1404,14 +632,14 @@ export default function ChatPage() {
                         {(!msg.metadata?.approachStatus || msg.metadata.approachStatus === 'pending') && (
                           <div className="flex gap-3">
                             <button
-                              onClick={() => handleAcceptApproach(msg.metadata?.approachId)}
+                              onClick={() => handleAcceptApproachWithRefresh(msg.metadata?.approachId)}
                               className="flex-1 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-semibold transition-all flex items-center justify-center gap-2"
                             >
                               <Check className="w-4 h-4" />
                               Accept & Start Chat
                             </button>
                             <button
-                              onClick={() => handleRejectApproach(msg.metadata?.approachId)}
+                              onClick={() => handleRejectApproachWithRefresh(msg.metadata?.approachId)}
                               className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold transition-all flex items-center justify-center gap-2"
                             >
                               <X className="w-4 h-4" />
@@ -1464,14 +692,14 @@ export default function ChatPage() {
                         {msg.invitationStatus !== 'accepted' && msg.invitationStatus !== 'declined' && (
                           <div className="flex gap-3">
                             <button
-                              onClick={() => handleAcceptInvitation(msg.invitationId._id)}
+                              onClick={() => actions.handleAcceptInvitation(msg.invitationId._id)}
                               className="flex-1 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-semibold transition-all flex items-center justify-center gap-2"
                             >
                               <Check className="w-4 h-4" />
                               Accept Invitation
                             </button>
                             <button
-                              onClick={() => handleDeclineInvitation(msg.invitationId._id)}
+                              onClick={() => actions.handleDeclineInvitation(msg.invitationId._id)}
                               className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold transition-all flex items-center justify-center gap-2"
                             >
                               <X className="w-4 h-4" />
@@ -1496,7 +724,6 @@ export default function ChatPage() {
                   );
                 }
 
-                // Normal messages - WhatsApp style
                 return (
                   <ChatMessage
                     key={msg._id || index}
@@ -1509,7 +736,6 @@ export default function ChatPage() {
                   />
                 );
               })}
-
               <div ref={messagesEndRef} />
             </div>
 
@@ -1550,7 +776,7 @@ export default function ChatPage() {
       </div>
 
       {/* End Tryout Modal */}
-      {showEndTryoutModal && (
+      {actions.showEndTryoutModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-zinc-900 rounded-xl max-w-md w-full p-6 border border-zinc-700">
             <h3 className="text-lg font-semibold text-white mb-4">End Tryout</h3>
@@ -1558,8 +784,8 @@ export default function ChatPage() {
               Are you sure you want to end this tryout? No further messages can be sent after ending.
             </p>
             <textarea
-              value={endReason}
-              onChange={(e) => setEndReason(e.target.value)}
+              value={actions.endReason}
+              onChange={(e) => actions.setEndReason(e.target.value)}
               placeholder="Reason for ending (required)"
               className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white placeholder-zinc-500 focus:outline-none focus:border-orange-500 mb-4"
               rows="3"
@@ -1567,16 +793,16 @@ export default function ChatPage() {
             <div className="flex gap-3">
               <button
                 onClick={() => {
-                  setShowEndTryoutModal(false);
-                  setEndReason('');
+                  actions.setShowEndTryoutModal(false);
+                  actions.setEndReason('');
                 }}
                 className="flex-1 px-4 py-2 bg-zinc-800 text-white rounded-lg hover:bg-zinc-700 transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={handleEndTryout}
-                disabled={!endReason.trim()}
+                onClick={actions.handleEndTryout}
+                disabled={!actions.endReason.trim()}
                 className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 End Tryout
@@ -1587,7 +813,7 @@ export default function ChatPage() {
       )}
 
       {/* Send Offer Modal */}
-      {showOfferModal && (
+      {actions.showOfferModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-zinc-900 rounded-xl max-w-md w-full p-6 border border-zinc-700">
             <h3 className="text-lg font-semibold text-white mb-4">Send Team Join Offer</h3>
@@ -1595,8 +821,8 @@ export default function ChatPage() {
               Invite {selectedChat?.applicant?.username} to join your team.
             </p>
             <textarea
-              value={offerMessage}
-              onChange={(e) => setOfferMessage(e.target.value)}
+              value={actions.offerMessage}
+              onChange={(e) => actions.setOfferMessage(e.target.value)}
               placeholder="Custom message (optional)"
               className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white placeholder-zinc-500 focus:outline-none focus:border-orange-500 mb-4"
               rows="3"
@@ -1604,15 +830,15 @@ export default function ChatPage() {
             <div className="flex gap-3">
               <button
                 onClick={() => {
-                  setShowOfferModal(false);
-                  setOfferMessage('');
+                  actions.setShowOfferModal(false);
+                  actions.setOfferMessage('');
                 }}
                 className="flex-1 px-4 py-2 bg-zinc-800 text-white rounded-lg hover:bg-zinc-700 transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={handleSendOffer}
+                onClick={actions.handleSendOffer}
                 className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
               >
                 Send Offer

@@ -1,71 +1,70 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import axios from '../utils/axiosConfig';
+import { chatKeys } from './queryKeys';
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+// API functions
+const fetchConnections = async () => {
+    const { data } = await axios.get('/api/chat/users/with-chats');
+    return data.users || [];
+};
+
+const fetchTeamApplications = async (teamId) => {
+    if (!teamId) return [];
+    const { data } = await axios.get(`/api/team-applications/team/${teamId}`);
+    return data.applications || [];
+};
+
+const fetchTryoutChats = async () => {
+    const { data } = await axios.get('/api/tryout-chats/my-chats');
+    return data.chats || [];
+};
+
+const fetchRecruitmentApproaches = async () => {
+    const { data } = await axios.get('/api/recruitment/my-approaches');
+    return data.approaches || [];
+};
 
 export const useChatData = (user) => {
-    const [connections, setConnections] = useState([]);
-    const [teamApplications, setTeamApplications] = useState([]);
-    const [tryoutChats, setTryoutChats] = useState([]);
-    const [recruitmentApproaches, setRecruitmentApproaches] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const queryClient = useQueryClient();
 
-    // Debounce timer ref
-    const debounceTimerRef = useRef(null);
-    const confirmedConnectionsRef = useRef([]);
+    // Connections query
+    const connectionsQuery = useQuery({
+        queryKey: chatKeys.connections(),
+        queryFn: fetchConnections,
+        staleTime: 5 * 60 * 1000,
+    });
 
-    // Fetch users with chat history
-    const fetchConnections = useCallback(async () => {
-        try {
-            const res = await fetch(`${API_URL}/api/chat/users/with-chats`, { credentials: 'include' });
-            const data = await res.json();
-            return data.users || [];
-        } catch (error) {
-            console.error('Error fetching chat users:', error);
-            return [];
-        }
-    }, []);
+    // Team applications query
+    const applicationsQuery = useQuery({
+        queryKey: chatKeys.teamApplications(user?.team?._id),
+        queryFn: () => fetchTeamApplications(user?.team?._id),
+        enabled: !!user?.team?._id,
+        staleTime: 2 * 60 * 1000,
+    });
 
-    // Fetch team applications
-    const fetchTeamApplications = useCallback(async () => {
-        if (!user?.team?._id) return;
+    // Tryout chats query
+    const tryoutChatsQuery = useQuery({
+        queryKey: chatKeys.myTryouts(),
+        queryFn: fetchTryoutChats,
+        staleTime: 2 * 60 * 1000,
+    });
 
-        try {
-            const res = await fetch(`${API_URL}/api/team-applications/team/${user.team._id}`, {
-                credentials: 'include'
-            });
-            const data = await res.json();
-            setTeamApplications(data.applications || []);
-        } catch (error) {
-            console.error('Error fetching applications:', error);
-        }
-    }, [user?.team?._id]);
+    // Recruitment approaches query
+    const approachesQuery = useQuery({
+        queryKey: chatKeys.myApproaches(),
+        queryFn: fetchRecruitmentApproaches,
+        staleTime: 2 * 60 * 1000,
+    });
 
-    // Fetch tryout chats
-    const fetchTryoutChats = useCallback(async () => {
-        try {
-            const res = await fetch(`${API_URL}/api/tryout-chats/my-chats`, { credentials: 'include' });
-            const data = await res.json();
-            setTryoutChats(data.chats || []);
-        } catch (error) {
-            console.error('Error fetching tryout chats:', error);
-        }
-    }, []);
+    // Combine connections with team applications
+    const connections = useMemo(() => {
+        const confirmed = connectionsQuery.data || [];
+        const teamApps = applicationsQuery.data || [];
 
-    // Fetch recruitment approaches
-    const fetchRecruitmentApproaches = useCallback(async () => {
-        try {
-            const res = await fetch(`${API_URL}/api/recruitment/my-approaches`, { credentials: 'include' });
-            const data = await res.json();
-            setRecruitmentApproaches(data.approaches || []);
-        } catch (error) {
-            console.error('Error fetching recruitment approaches:', error);
-        }
-    }, []);
+        const combined = [...confirmed];
 
-    // Combine connections (memoized logic)
-    const combineConnections = useCallback((confirmedConns, teamApps) => {
-        const combined = [...confirmedConns];
-
+        // Add players from applications
         teamApps.forEach(app => {
             const exists = combined.some(conn => conn._id === app.player?._id);
             if (!exists && app.player) {
@@ -83,62 +82,51 @@ export const useChatData = (user) => {
         combined.unshift(systemUser);
 
         return combined;
-    }, []);
+    }, [connectionsQuery.data, applicationsQuery.data]);
 
-    // Debounced connection update
-    const updateConnections = useCallback(() => {
-        if (debounceTimerRef.current) {
-            clearTimeout(debounceTimerRef.current);
-        }
+    // Refetch functions
+    const refetchConnections = () => {
+        queryClient.invalidateQueries({ queryKey: chatKeys.connections() });
+    };
 
-        debounceTimerRef.current = setTimeout(() => {
-            const combined = combineConnections(confirmedConnectionsRef.current, teamApplications);
-            setConnections(combined);
-        }, 300);
-    }, [teamApplications, combineConnections]);
+    const refetchApplications = () => {
+        queryClient.invalidateQueries({
+            queryKey: chatKeys.teamApplications(user?.team?._id)
+        });
+    };
 
-    // Initial data fetch
-    const fetchAllData = useCallback(async () => {
-        setLoading(true);
+    const refetchTryouts = () => {
+        queryClient.invalidateQueries({ queryKey: chatKeys.myTryouts() });
+    };
 
-        // Fetch all data in parallel
-        const [conns] = await Promise.all([
-            fetchConnections(),
-            fetchTeamApplications(),
-            fetchTryoutChats(),
-            fetchRecruitmentApproaches()
-        ]);
+    const refetchApproaches = () => {
+        queryClient.invalidateQueries({ queryKey: chatKeys.myApproaches() });
+    };
 
-        confirmedConnectionsRef.current = conns;
-        setLoading(false);
-    }, [fetchConnections, fetchTeamApplications, fetchTryoutChats, fetchRecruitmentApproaches]);
-
-    // Update connections when team applications change
-    useEffect(() => {
-        if (!loading) {
-            updateConnections();
-        }
-    }, [teamApplications, loading, updateConnections]);
-
-    // Cleanup
-    useEffect(() => {
-        return () => {
-            if (debounceTimerRef.current) {
-                clearTimeout(debounceTimerRef.current);
-            }
-        };
-    }, []);
+    const refetchAll = () => {
+        refetchConnections();
+        refetchApplications();
+        refetchTryouts();
+        refetchApproaches();
+    };
 
     return {
         connections,
-        teamApplications,
-        tryoutChats,
-        recruitmentApproaches,
-        loading,
-        fetchAllData,
-        fetchTeamApplications,
-        fetchTryoutChats,
-        fetchRecruitmentApproaches,
-        setConnections
+        teamApplications: applicationsQuery.data || [],
+        tryoutChats: tryoutChatsQuery.data || [],
+        recruitmentApproaches: approachesQuery.data || [],
+        loading: connectionsQuery.isLoading ||
+            applicationsQuery.isLoading ||
+            tryoutChatsQuery.isLoading ||
+            approachesQuery.isLoading,
+        error: connectionsQuery.error ||
+            applicationsQuery.error ||
+            tryoutChatsQuery.error ||
+            approachesQuery.error,
+        refetchConnections,
+        refetchApplications,
+        refetchTryouts,
+        refetchApproaches,
+        refetchAll,
     };
 };
