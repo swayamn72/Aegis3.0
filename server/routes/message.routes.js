@@ -11,40 +11,64 @@ const router = express.Router();
 // GET /api/chat/users/with-chats
 router.get("/users/with-chats", auth, async (req, res) => {
   try {
-    const userId = req.user.id.toString();
+    const userId = req.user.id;
 
-    const [sentTo, receivedFrom] = await Promise.all([
-      ChatMessage.find({ senderId: userId }).distinct("receiverId"),
-      ChatMessage.find({ receiverId: userId }).distinct("senderId"),
+    // ✅ Use aggregation to exclude system messages properly
+    const messages = await ChatMessage.aggregate([
+      {
+        $match: {
+          $and: [
+            { senderId: { $ne: "system" } }, // ✅ Exclude system messages
+            {
+              $or: [
+                { senderId: userId },
+                { receiverId: userId },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        $project: {
+          otherUserId: {
+            $cond: {
+              if: { $eq: ["$senderId", userId] },
+              then: "$receiverId",
+              else: "$senderId",
+            },
+          },
+        },
+      },
+      {
+        $group: {
+          _id: "$otherUserId",
+        },
+      },
     ]);
 
-    const chatUserIds = [
-      ...new Set([...sentTo, ...receivedFrom].map(id => id.toString()))
-    ].filter(id => id !== userId);
+    // ✅ Filter out 'system', null, and validate ObjectId
+    const userIds = messages
+      .map((m) => m._id)
+      .filter((id) => {
+        return (
+          id &&
+          id !== "system" &&
+          id.toString() !== userId.toString() &&
+          mongoose.Types.ObjectId.isValid(id)
+        );
+      });
 
-    if (chatUserIds.length === 0) {
-      return res.json({ users: [] });
-    }
-
-    const players = await Player.find({ _id: { $in: chatUserIds } })
-      .select("username profilePicture realName primaryGame aegisRating")
+    // ✅ Now query Player model with valid ObjectIds only
+    const users = await Player.find({
+      _id: { $in: userIds },
+    })
+      .select("username inGameName profilePicture aegisRating")
       .lean();
 
-    const chatUsers = players
-      .map(p => ({
-        _id: p._id,
-        username: p.username,
-        realName: p.realName,
-        profilePicture: p.profilePicture,
-        primaryGame: p.primaryGame,
-        aegisRating: p.aegisRating,
-      }))
-      .sort((a, b) => a.username.localeCompare(b.username));
-
-    res.json({ users: chatUsers });
-  } catch (err) {
-    console.error("Error in users/with-chats:", err);
-    res.status(500).json({ message: "Server error fetching chat users" });
+    res.json({ users });
+  } catch (error) {
+    console.error("Error in users/with-chats:", error);
+    res.status(500).json({ error: "Failed to fetch users with chats" });
   }
 });
 

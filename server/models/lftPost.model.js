@@ -41,20 +41,8 @@ const lftPostSchema = new mongoose.Schema({
         type: Number,
         default: 0,
     },
-    createdAt: {
-        type: Date,
-        default: Date.now,
-    },
-    updatedAt: {
-        type: Date,
-        default: Date.now,
-    },
-});
-
-// Update the updatedAt field before saving
-lftPostSchema.pre('save', function (next) {
-    this.updatedAt = Date.now();
-    next();
+}, {
+    timestamps: true  // ✅ This automatically adds createdAt and updatedAt
 });
 
 // Index for efficient queries

@@ -1,132 +1,73 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import axios from '../utils/axiosConfig';
 import { chatKeys } from './queryKeys';
 
-// API functions
-const fetchConnections = async () => {
-    const { data } = await axios.get('/api/chat/users/with-chats');
-    return data.users || [];
-};
-
-const fetchTeamApplications = async (teamId) => {
-    if (!teamId) return [];
-    const { data } = await axios.get(`/api/team-applications/team/${teamId}`);
-    return data.applications || [];
-};
-
-const fetchTryoutChats = async () => {
-    const { data } = await axios.get('/api/tryout-chats/my-chats');
-    return data.chats || [];
-};
-
-const fetchRecruitmentApproaches = async () => {
-    const { data } = await axios.get('/api/recruitment/my-approaches');
-    return data.approaches || [];
-};
-
 export const useChatData = (user) => {
-    const queryClient = useQueryClient();
+    const enabled = !!user?._id;
 
-    // Connections query
-    const connectionsQuery = useQuery({
+    const { data: connections = [], refetch: refetchConnections } = useQuery({
         queryKey: chatKeys.connections(),
-        queryFn: fetchConnections,
-        staleTime: 5 * 60 * 1000,
+        queryFn: async () => {
+            const { data } = await axios.get('/api/chat/users/with-chats');
+            return data.users || [];
+        },
+        enabled,
+        staleTime: 5 * 60 * 1000, // ✅ Increase to 5 minutes
+        refetchOnWindowFocus: false, // ✅ Don't refetch on focus
     });
 
-    // Team applications query
-    const applicationsQuery = useQuery({
-        queryKey: chatKeys.teamApplications(user?.team?._id),
-        queryFn: () => fetchTeamApplications(user?.team?._id),
-        enabled: !!user?.team?._id,
-        staleTime: 2 * 60 * 1000,
-    });
-
-    // Tryout chats query
-    const tryoutChatsQuery = useQuery({
+    const { data: tryoutChats = [], refetch: refetchTryouts } = useQuery({
         queryKey: chatKeys.myTryouts(),
-        queryFn: fetchTryoutChats,
-        staleTime: 2 * 60 * 1000,
+        queryFn: async () => {
+            const { data } = await axios.get('/api/tryout-chats/my-chats');
+            return data.chats || [];
+        },
+        enabled,
+        staleTime: 5 * 60 * 1000, // ✅ Increase to 5 minutes
+        refetchOnWindowFocus: false,
     });
 
-    // Recruitment approaches query
-    const approachesQuery = useQuery({
+    const { data: teamApplications = [], refetch: refetchApplications } = useQuery({
+        queryKey: chatKeys.teamApplications(user?.team?._id),
+        queryFn: async () => {
+            if (!user?.team?._id) return [];
+            const { data } = await axios.get(`/api/team-applications/team/${user.team._id}`);
+            return data.applications || [];
+        },
+        enabled: enabled && !!user?.team?._id,
+        staleTime: 5 * 60 * 1000, // ✅ Increase to 5 minutes
+        refetchOnWindowFocus: false,
+    });
+
+    const { data: recruitmentApproaches = [], refetch: refetchApproaches } = useQuery({
         queryKey: chatKeys.myApproaches(),
-        queryFn: fetchRecruitmentApproaches,
-        staleTime: 2 * 60 * 1000,
+        queryFn: async () => {
+            const { data } = await axios.get('/api/recruitment/my-approaches');
+            return data.approaches || [];
+        },
+        enabled,
+        staleTime: 5 * 60 * 1000, // ✅ Increase to 5 minutes
+        refetchOnWindowFocus: false,
     });
 
-    // Combine connections with team applications
-    const connections = useMemo(() => {
-        const confirmed = connectionsQuery.data || [];
-        const teamApps = applicationsQuery.data || [];
-
-        const combined = [...confirmed];
-
-        // Add players from applications
-        teamApps.forEach(app => {
-            const exists = combined.some(conn => conn._id === app.player?._id);
-            if (!exists && app.player) {
-                combined.push(app.player);
-            }
-        });
-
-        // Add system user
-        const systemUser = {
-            _id: 'system',
-            username: 'System',
-            realName: 'System Notifications',
-            profilePicture: null
-        };
-        combined.unshift(systemUser);
-
-        return combined;
-    }, [connectionsQuery.data, applicationsQuery.data]);
-
-    // Refetch functions
-    const refetchConnections = () => {
-        queryClient.invalidateQueries({ queryKey: chatKeys.connections() });
-    };
-
-    const refetchApplications = () => {
-        queryClient.invalidateQueries({
-            queryKey: chatKeys.teamApplications(user?.team?._id)
-        });
-    };
-
-    const refetchTryouts = () => {
-        queryClient.invalidateQueries({ queryKey: chatKeys.myTryouts() });
-    };
-
-    const refetchApproaches = () => {
-        queryClient.invalidateQueries({ queryKey: chatKeys.myApproaches() });
-    };
-
-    const refetchAll = () => {
+    const refetchAll = useCallback(() => {
         refetchConnections();
-        refetchApplications();
         refetchTryouts();
+        refetchApplications();
         refetchApproaches();
-    };
+    }, [refetchConnections, refetchTryouts, refetchApplications, refetchApproaches]);
 
     return {
         connections,
-        teamApplications: applicationsQuery.data || [],
-        tryoutChats: tryoutChatsQuery.data || [],
-        recruitmentApproaches: approachesQuery.data || [],
-        loading: connectionsQuery.isLoading ||
-            applicationsQuery.isLoading ||
-            tryoutChatsQuery.isLoading ||
-            approachesQuery.isLoading,
-        error: connectionsQuery.error ||
-            applicationsQuery.error ||
-            tryoutChatsQuery.error ||
-            approachesQuery.error,
-        refetchConnections,
-        refetchApplications,
-        refetchTryouts,
-        refetchApproaches,
+        tryoutChats,
+        teamApplications,
+        recruitmentApproaches,
+        loading: false,
         refetchAll,
+        refetchConnections,
+        refetchTryouts,
+        refetchApplications,
+        refetchApproaches,
     };
 };

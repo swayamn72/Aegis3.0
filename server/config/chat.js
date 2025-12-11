@@ -1,73 +1,74 @@
 import { Server } from 'socket.io';
-import ChatMessage from '../models/chat.model.js';
+import Player from '../models/player.model.js';
+import TryoutChat from '../models/tryoutChat.model.js';
 
-export default function initChat(server) {
+const initChat = (server) => {
   const io = new Server(server, {
     cors: {
-      origin: 'http://localhost:5173', // update if needed
+      origin: 'http://localhost:5173',
       credentials: true,
     },
   });
 
-  // Make io globally available for REST routes
   global.io = io;
 
   io.on('connection', (socket) => {
     console.log('✅ New Client Joined', socket.id);
 
-    socket.on('join', (playerId) => {
-      socket.join(playerId);
-      console.log(`Player ${playerId} joined room`);
-    });
-
-    // Direct 1-to-1 message
-    socket.on('sendMessage', async ({ senderId, receiverId, message }) => {
-      console.log(`${senderId} -> ${receiverId}: ${message}`);
-
-      const msgData = {
-        senderId,
-        receiverId,
-        message,
-        timestamp: new Date(),
-      };
-
+    // ✅ Join user's personal room
+    socket.on('joinRoom', async (userId) => {
       try {
-        const savedMessage = await ChatMessage.create(msgData);
-
-        const msgToEmit = {
-          _id: savedMessage._id,
-          ...msgData,
-        };
-
-        io.to(receiverId).emit('receiveMessage', msgToEmit);
+        const player = await Player.findById(userId);
+        if (player) {
+          socket.join(userId);
+          console.log(`Player ${userId} joined room`);
+        }
       } catch (error) {
-        console.error('❌ Error saving message:', error);
+        console.error('Error joining room:', error);
       }
     });
 
-    // JOIN TRYOUT/GROUP CHAT
-    socket.on('joinTryoutChat', (chatId) => {
-      socket.join(`tryout_${chatId}`);
-      console.log(`Joined tryout room: tryout_${chatId}`);
-    });
-
-    // LEAVE TRYOUT/GROUP CHAT
-    socket.on('leaveTryoutChat', (chatId) => {
-      socket.leave(`tryout_${chatId}`);
-      console.log(`Left tryout room: tryout_${chatId}`);
-    });
-
-    // TRYOUT MESSAGE
-    socket.on('tryoutMessage', async ({ chatId, senderId, message }) => {
+    // ✅ NEW: Join tryout chat room
+    socket.on('joinTryoutChat', async (chatId) => {
       try {
-        const TryoutChat = (await import('../models/tryoutChat.model.js')).default;
+        const roomName = `tryout_${chatId}`;
+        socket.join(roomName);
+        console.log(`Socket ${socket.id} joined tryout room: ${roomName}`);
 
+        // Confirm join to client
+        socket.emit('tryoutChatJoined', { chatId, roomName });
+      } catch (error) {
+        console.error('Error joining tryout chat:', error);
+        socket.emit('error', { message: 'Failed to join tryout chat' });
+      }
+    });
+
+    // ✅ NEW: Leave tryout chat room
+    socket.on('leaveTryoutChat', (chatId) => {
+      const roomName = `tryout_${chatId}`;
+      socket.leave(roomName);
+      console.log(`Socket ${socket.id} left tryout room: ${roomName}`);
+    });
+
+    // ✅ NEW: Send message in tryout chat
+    socket.on('sendTryoutMessage', async ({ chatId, message, senderId }) => {
+      try {
         const chat = await TryoutChat.findById(chatId);
-        if (!chat) return;
+
+        if (!chat) {
+          socket.emit('error', { message: 'Chat not found' });
+          return;
+        }
+
+        // Verify sender is participant
+        if (!chat.participants.some(p => p.toString() === senderId)) {
+          socket.emit('error', { message: 'Not authorized' });
+          return;
+        }
 
         const newMessage = {
           sender: senderId,
-          message,
+          message: message.trim(),
           messageType: 'text',
           timestamp: new Date()
         };
@@ -75,14 +76,19 @@ export default function initChat(server) {
         chat.messages.push(newMessage);
         await chat.save();
 
-        const savedMessage = chat.messages[chat.messages.length - 1];
+        // Populate sender info for response
+        await chat.populate('messages.sender', 'username profilePicture inGameName');
+        const populatedMessage = chat.messages[chat.messages.length - 1];
 
-        io.to(`tryout_${chatId}`).emit('tryoutMessage', {
+        // ✅ Broadcast to all in room
+        io.to(`tryout_${chatId}`).emit('newTryoutMessage', {
           chatId,
-          message: savedMessage,
+          message: populatedMessage
         });
+
       } catch (error) {
-        console.error('❌ Tryout message error:', error);
+        console.error('Error sending tryout message:', error);
+        socket.emit('error', { message: 'Failed to send message' });
       }
     });
 
@@ -90,4 +96,8 @@ export default function initChat(server) {
       console.log('❌ Client disconnected:', socket.id);
     });
   });
-}
+
+  return io;
+};
+
+export default initChat;

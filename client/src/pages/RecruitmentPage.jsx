@@ -10,8 +10,6 @@ import {
 } from '../hooks/useRecruitment';
 import { useDebounce } from '../hooks/useDebounce';
 
-const API_URL = import.meta.env.VITE_API_URL;
-
 const FilterDropdown = React.memo(({ options, selected, onSelect, placeholder, icon: Icon }) => {
     const [isOpen, setIsOpen] = useState(false);
     return (
