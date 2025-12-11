@@ -11,6 +11,7 @@ import HomePage from "./pages/HomePage";
 import MyTeamsPage from "./pages/MyTeamsPage";
 import DetailedTeamInfoPage from "./pages/DetailedTeamInfoPage";
 import ChatPage from "./pages/ChatPage";
+import RecruitmentActualPage from "./pages/RecruitmentActualPage";
 
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -31,6 +32,7 @@ function App() {
             <Route path="/my-teams" element={<ProtectedRoute><MyTeamsPage /></ProtectedRoute>} />
             <Route path="/team/:id" element={<ProtectedRoute><DetailedTeamInfoPage /></ProtectedRoute>} />
             <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+            <Route path="/recruitment" element={<ProtectedRoute><RecruitmentActualPage /></ProtectedRoute>} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>

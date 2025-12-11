@@ -1,9 +1,18 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Search, ChevronDown, MapPin, Gamepad2, Trophy, Award, Eye, Check, Target, Briefcase, UserPlus, User, Send, MessageCircle, Users, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
+import {
+    useLFTPosts,
+    useRecruitingTeams,
+    useCreateLFTPost,
+    useApproachPlayer
+} from '../hooks/useRecruitment';
+import { useDebounce } from '../hooks/useDebounce';
 
-const FilterDropdown = ({ options, selected, onSelect, placeholder, icon: Icon }) => {
+const API_URL = import.meta.env.VITE_API_URL;
+
+const FilterDropdown = React.memo(({ options, selected, onSelect, placeholder, icon: Icon }) => {
     const [isOpen, setIsOpen] = useState(false);
     return (
         <div className="relative">
@@ -23,9 +32,11 @@ const FilterDropdown = ({ options, selected, onSelect, placeholder, icon: Icon }
             )}
         </div>
     );
-};
+});
 
-const LFTPostForm = ({ onSubmit, onClose }) => {
+FilterDropdown.displayName = 'FilterDropdown';
+
+const LFTPostForm = React.memo(({ onSubmit, onClose }) => {
     const { user } = useAuth();
     const [formData, setFormData] = useState({
         description: '',
@@ -133,9 +144,11 @@ const LFTPostForm = ({ onSubmit, onClose }) => {
             </div>
         </div>
     );
-};
+});
 
-const LFTPostCard = ({ post, onApproach }) => {
+LFTPostForm.displayName = 'LFTPostForm';
+
+const LFTPostCard = React.memo(({ post, onApproach }) => {
     const getRankColor = () => {
         switch (post.game) {
             case 'VALO': return 'text-red-400';
@@ -227,9 +240,11 @@ const LFTPostCard = ({ post, onApproach }) => {
             <div className="bg-gradient-to-r from-cyan-500 to-blue-500 h-1 w-0 group-hover:w-full transition-all duration-500"></div>
         </div>
     );
-};
+});
 
-const OrganizationCard = ({ org, onApproach }) => {
+LFTPostCard.displayName = 'LFTPostCard';
+
+const OrganizationCard = React.memo(({ org, onApproach }) => {
     const getBudgetColor = () => {
         if (org.totalEarnings > 50000) return 'text-green-400';
         if (org.totalEarnings > 10000) return 'text-blue-400';
@@ -295,7 +310,9 @@ const OrganizationCard = ({ org, onApproach }) => {
             <div className="bg-gradient-to-r from-orange-500 to-red-500 h-1 w-0 group-hover:w-full transition-all duration-500"></div>
         </div>
     );
-};
+});
+
+OrganizationCard.displayName = 'OrganizationCard';
 
 const RecruitmentPage = () => {
     const { user } = useAuth();
@@ -305,97 +322,33 @@ const RecruitmentPage = () => {
     const [orgFilters, setOrgFilters] = useState({ game: '', region: '', role: '' });
     const [playerFilters, setPlayerFilters] = useState({ game: '', region: '', role: '' });
 
-    const [teams, setTeams] = useState([]);
-    const [lftPosts, setLftPosts] = useState([]);
-    const [loading, setLoading] = useState(false);
     const [showLFTForm, setShowLFTForm] = useState(false);
     const [showApproachDialog, setShowApproachDialog] = useState(false);
     const [selectedPost, setSelectedPost] = useState(null);
 
-    useEffect(() => {
-        if (activeTab === 'find-players') {
-            fetchLFTPosts();
-        } else {
-            fetchRecruitingTeams();
-        }
-    }, [activeTab, orgFilters, playerFilters]);
+    // Debounce search terms to reduce filtering frequency
+    const debouncedOrgSearch = useDebounce(orgSearchTerm, 300);
+    const debouncedPlayerSearch = useDebounce(playerSearchTerm, 300);
 
-    const fetchRecruitingTeams = async () => {
-        setLoading(true);
-        try {
-            const params = new URLSearchParams();
-            if (orgFilters.game) params.append('game', orgFilters.game);
-            if (orgFilters.region) params.append('region', orgFilters.region);
-            if (orgFilters.role) params.append('role', orgFilters.role);
+    // React Query hooks - replace manual state management
+    const { data: lftPosts = [], isLoading: loadingLFTPosts } = useLFTPosts(playerFilters);
+    const { data: teams = [], isLoading: loadingTeams } = useRecruitingTeams(orgFilters);
+    const createLFTPostMutation = useCreateLFTPost();
+    const approachPlayerMutation = useApproachPlayer();
 
-            const response = await fetch(`http://localhost:5000/api/team-applications/recruiting-teams?${params}`, {
-                credentials: 'include',
-            });
-            const data = await response.json();
-            const teamsData = data.teams || [];
-            setTeams(teamsData);
+    // Determine loading state based on active tab
+    const loading = activeTab === 'find-players' ? loadingLFTPosts : loadingTeams;
 
-        } catch (error) {
-            console.error('Error fetching teams:', error);
-            toast.error('Failed to load teams');
-            setTeams([]);
-        } finally {
-
-            setLoading(false);
-        }
-    };
-
-
-    const fetchLFTPosts = async () => {
-        setLoading(true);
-        try {
-            const params = new URLSearchParams();
-            if (playerFilters.game) params.append('game', playerFilters.game);
-            if (playerFilters.region) params.append('region', playerFilters.region);
-            if (playerFilters.role) params.append('role', playerFilters.role);
-
-            const response = await fetch(`http://localhost:5000/api/recruitment/lft-posts?${params}`, {
-                credentials: 'include',
-            });
-            const data = await response.json();
-            const postsData = data.posts || [];
-            setLftPosts(postsData);
-
-        } catch (error) {
-            console.error('Error fetching LFT posts:', error);
-            toast.error('Failed to load LFT posts');
-            setLftPosts([]);
-        } finally {
-
-            setLoading(false);
-        }
-    };
-
-
-    const handleCreateLFTPost = async (postData) => {
-        try {
-            const response = await fetch('http://localhost:5000/api/recruitment/lft-posts', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify(postData),
-            });
-
-            if (response.ok) {
-                toast.success('LFT post created successfully!');
+    // Memoize callback functions to prevent child re-renders
+    const handleCreateLFTPost = useCallback((postData) => {
+        createLFTPostMutation.mutate(postData, {
+            onSuccess: () => {
                 setShowLFTForm(false);
-                fetchLFTPosts();
-            } else {
-                const error = await response.json();
-                toast.error(error.error || 'Failed to create LFT post');
             }
-        } catch (error) {
-            console.error('Error creating LFT post:', error);
-            toast.error('Failed to create LFT post');
-        }
-    };
+        });
+    }, [createLFTPostMutation]);
 
-    const handleApproachPlayer = (post) => {
+    const handleApproachPlayer = useCallback((post) => {
         if (!user) {
             toast.error('Please login to approach players');
             return;
@@ -408,63 +361,54 @@ const RecruitmentPage = () => {
 
         setSelectedPost(post);
         setShowApproachDialog(true);
-    };
+    }, [user]);
 
-    const confirmApproachPlayer = async () => {
+    const confirmApproachPlayer = useCallback(() => {
         if (!selectedPost) return;
 
-        try {
-            const response = await fetch(`http://localhost:5000/api/recruitment/approach-player/${selectedPost.player._id}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({
-                    message: `Hi! We're interested in discussing recruitment opportunities with you.`
-                })
-            });
-
-            if (response.ok) {
-                toast.success('Approach request sent! Player will be notified.');
-                setShowApproachDialog(false);
-                setSelectedPost(null);
-            } else {
-                const error = await response.json();
-                toast.error(error.error || 'Failed to send approach');
+        approachPlayerMutation.mutate(
+            {
+                playerId: selectedPost.player._id,
+                message: `Hi! We're interested in discussing recruitment opportunities with you.`
+            },
+            {
+                onSuccess: () => {
+                    setShowApproachDialog(false);
+                    setSelectedPost(null);
+                }
             }
-        } catch (error) {
-            console.error('Error sending approach:', error);
-            toast.error('Failed to send approach');
-        }
-    };
+        );
+    }, [selectedPost, approachPlayerMutation]);
 
-    const handleApproachTeam = async (team) => {
+    const handleApproachTeam = useCallback((team) => {
         // Navigate to chat with team captain or start tryout
         // This would need backend support to initiate tryout chat
         toast.info('Tryout initiation feature coming soon');
-    };
+    }, []);
 
-    const handleOrgFilterChange = (filterName, value) => {
+    const handleOrgFilterChange = useCallback((filterName, value) => {
         setOrgFilters(prev => ({ ...prev, [filterName]: prev[filterName] === value ? '' : value }));
-    };
+    }, []);
 
-    const handlePlayerFilterChange = (filterName, value) => {
+    const handlePlayerFilterChange = useCallback((filterName, value) => {
         setPlayerFilters(prev => ({ ...prev, [filterName]: prev[filterName] === value ? '' : value }));
-    };
+    }, []);
 
+    // Memoize filtered results - now using debounced search terms
     const filteredTeams = useMemo(() => {
         return teams.filter(team =>
-            team.teamName.toLowerCase().includes(orgSearchTerm.toLowerCase()) ||
-            (team.teamTag && team.teamTag.toLowerCase().includes(orgSearchTerm.toLowerCase()))
+            team.teamName.toLowerCase().includes(debouncedOrgSearch.toLowerCase()) ||
+            (team.teamTag && team.teamTag.toLowerCase().includes(debouncedOrgSearch.toLowerCase()))
         );
-    }, [teams, orgSearchTerm]);
+    }, [teams, debouncedOrgSearch]);
 
     const filteredLFTPosts = useMemo(() => {
         return lftPosts.filter(post =>
-            post.player.username.toLowerCase().includes(playerSearchTerm.toLowerCase()) ||
-            (post.player.inGameName && post.player.inGameName.toLowerCase().includes(playerSearchTerm.toLowerCase())) ||
-            (post.player.realName && post.player.realName.toLowerCase().includes(playerSearchTerm.toLowerCase()))
+            post.player.username.toLowerCase().includes(debouncedPlayerSearch.toLowerCase()) ||
+            (post.player.inGameName && post.player.inGameName.toLowerCase().includes(debouncedPlayerSearch.toLowerCase())) ||
+            (post.player.realName && post.player.realName.toLowerCase().includes(debouncedPlayerSearch.toLowerCase()))
         );
-    }, [lftPosts, playerSearchTerm]);
+    }, [lftPosts, debouncedPlayerSearch]);
 
     return (
         <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans mt-20">

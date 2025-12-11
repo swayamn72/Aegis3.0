@@ -1,18 +1,18 @@
 import React from 'react';
-import Home from '../components/LoggedInHomePage';
+import RecruitmentPage from './RecruitmentPage';
 import Navbar from '../components/Navbar';
 
-function HomePage() {
+function RecruitmentActualPage() {
   return (
     <>
      
       <main>
         <Navbar />
-        <Home />
+        <RecruitmentPage />
       </main>
 
     </>
   );
 }
 
-export default HomePage;
+export default RecruitmentActualPage;

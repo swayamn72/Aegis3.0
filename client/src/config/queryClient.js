@@ -7,6 +7,7 @@ export const queryClient = new QueryClient({
             cacheTime: 10 * 60 * 1000, // 10 minutes
             refetchOnWindowFocus: true,
             refetchOnReconnect: true,
+            refetchOnMount: false, // ✅ Prevent refetch on component re-mount
             retry: 1,
             retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
         },
