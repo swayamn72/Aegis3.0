@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { AdminProvider } from "./context/AdminContext";
 import { queryClient } from "./query/queryClient";
+import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <BrowserRouter>

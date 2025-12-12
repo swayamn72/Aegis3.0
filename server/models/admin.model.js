@@ -37,33 +37,32 @@ const adminSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Hash password before saving
-adminSchema.pre('save', function(next) {
+adminSchema.pre('save', async function () {
   // Only hash the password if it's being modified (new or changed)
-  if (!this.isModified('password')) return next();
+  if (!this.isModified('password')) return;
 
-  // Skip hashing if password is already hashed (starts with $2b$ or $2a$)
-  if (this.password && (this.password.startsWith('$2b$') || this.password.startsWith('$2a$'))) {
-    return next();
+  // Debug: log the password value and type
+  if (typeof this.password !== 'string' || !this.password) {
+    console.error('Password is missing or not a string:', this.password);
+    throw new Error('Password is missing or not a string.');
   }
 
-  const user = this;
-  bcrypt.genSalt(10, function(err, salt) {
-    if (err) return next(err);
-    bcrypt.hash(user.password, salt, function(err, hash) {
-      if (err) return next(err);
-      user.password = hash;
-      next();
-    });
-  });
+  // Skip hashing if password is already hashed (starts with $2b$ or $2a$)
+  if (this.password.startsWith('$2b$') || this.password.startsWith('$2a$')) {
+    return;
+  }
+
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
 });
 
 // Compare password method
-adminSchema.methods.comparePassword = async function(candidatePassword) {
+adminSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
 // Login attempts methods
-adminSchema.methods.incLoginAttempts = function() {
+adminSchema.methods.incLoginAttempts = function () {
   const newAttempts = this.loginAttempts + 1;
   const updateData = { loginAttempts: newAttempts };
 
@@ -74,7 +73,7 @@ adminSchema.methods.incLoginAttempts = function() {
   return Admin.findByIdAndUpdate(this._id, updateData, { new: true });
 };
 
-adminSchema.methods.resetLoginAttempts = function() {
+adminSchema.methods.resetLoginAttempts = function () {
   return Admin.findByIdAndUpdate(this._id, {
     loginAttempts: 0,
     lockUntil: undefined,
@@ -82,7 +81,7 @@ adminSchema.methods.resetLoginAttempts = function() {
   });
 };
 
-adminSchema.methods.isLocked = function() {
+adminSchema.methods.isLocked = function () {
   return !!(this.lockUntil && this.lockUntil > Date.now());
 };
 
