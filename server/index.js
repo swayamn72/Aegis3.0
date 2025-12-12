@@ -20,6 +20,8 @@ import tryoutChatRoutes from './routes/tryoutChat.routes.js';
 import recruitmentRoutes from './routes/recruitment.routes.js';
 import ChatRoutes from './routes/message.routes.js';
 import supportRoutes from './routes/support.routes.js';
+import connectionRoutes from './routes/connection.routes.js';
+import postRoutes from './routes/post.routes.js';
 
 const app = express();
 const server = createServer(app);
@@ -51,6 +53,8 @@ app.use('/api/tryout-chats', tryoutChatRoutes);
 app.use('/api/recruitment', recruitmentRoutes);
 app.use('/api/chat', ChatRoutes);
 app.use('/api/support', supportRoutes);
+app.use('/api/connections', connectionRoutes);
+app.use('/api/posts', postRoutes);
 
 // Test route
 app.get("/", (req, res) => {

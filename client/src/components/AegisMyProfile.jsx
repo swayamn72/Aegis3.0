@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useConnections, useTeam } from '../hooks/useProfile';
 import CreatePost from './CreatePost';
 import PostList from './PostList';
 import {
@@ -15,72 +16,37 @@ const AegisMyProfile = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
-  const [connections, setConnections] = useState([]);
-  const [pendingRequests, setPendingRequests] = useState([]);
-  const [recentMatches, setRecentMatches] = useState([]);
-  const [recentTournaments, setRecentTournaments] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [showCreatePostModal, setShowCreatePostModal] = useState(false);
-  const [team, setTeam] = useState(null);
   const [showShareModal, setShowShareModal] = useState(false);
-const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const isLoading = !user || !user.username;
+
+  // Extract team ID
+  const teamId = user?.team ? (typeof user.team === 'object' ? user.team._id : user.team) : null;
+
+  // Use React Query hooks
+  const {
+    data: connectionsData,
+    isLoading: connectionsLoading,
+    error: connectionsError
+  } = useConnections();
+
+  const {
+    data: team,
+    isLoading: teamLoading,
+    error: teamError
+  } = useTeam(teamId);
+
+  // Extract data with fallbacks
+  const connections = connectionsData?.connections || [];
+  const pendingRequests = connectionsData?.pendingRequests || [];
+  const loading = connectionsLoading || teamLoading;
 
   // Reset modal state when component mounts
   useEffect(() => {
     setShowCreatePostModal(false);
   }, []);
-
-  // Fetch additional data
-  useEffect(() => {
-    const fetchProfileData = async () => {
-      if (!user) return;
-
-      try {
-        setLoading(true);
-
-        // Fetch connections
-        const connectionsRes = await fetch('/api/connections', {
-          credentials: 'include'
-        });
-        if (connectionsRes.ok) {
-          const data = await connectionsRes.json();
-          setConnections(data.connections || []);
-          setPendingRequests(data.pendingRequests || []);
-        }
-
-        // Fetch team details if user is in a team
-        if (user.team) {
-          try {
-            const teamId = typeof user.team === 'object' ? user.team._id : user.team;
-            const teamRes = await fetch(`/api/teams/${teamId}`, {
-              credentials: 'include'
-            });
-            if (teamRes.ok) {
-              const teamData = await teamRes.json();
-              setTeam(teamData.team);
-            } else {
-              console.error('Failed to fetch team data:', teamRes.status, teamRes.statusText);
-              setTeam(null);
-            }
-          } catch (error) {
-            console.error('Error fetching team:', error);
-            setTeam(null);
-          }
-        } else {
-          setTeam(null);
-        }
-
-        setLoading(false);
-      } catch (error) {
-        console.error('Error fetching profile data:', error);
-        setLoading(false);
-      }
-    };
-
-    fetchProfileData();
-  }, [user]);
 
   if (isLoading) {
     return (
@@ -167,9 +133,8 @@ const [copied, setCopied] = useState(false);
     <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${
-            match.result === 'win' ? 'bg-green-400' : 'bg-red-400'
-          }`}></div>
+          <div className={`w-2 h-2 rounded-full ${match.result === 'win' ? 'bg-green-400' : 'bg-red-400'
+            }`}></div>
           <span className="text-white font-medium">{match.tournament}</span>
         </div>
         <span className="text-zinc-500 text-xs">{match.date}</span>
@@ -191,7 +156,6 @@ const [copied, setCopied] = useState(false);
     </div>
   );
 
-  // Mock data for recent matches - removed as per request
   const mockMatches = [];
 
   return (
@@ -200,57 +164,57 @@ const [copied, setCopied] = useState(false);
       {showCreatePostModal && (
         <CreatePost onClose={() => setShowCreatePostModal(false)} />
       )}
-{/* Share Profile Modal */}
-{showShareModal && (
-  <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 max-w-sm w-full relative">
-      <button
-        onClick={() => setShowShareModal(false)}
-        className="absolute top-3 right-3 text-zinc-400 hover:text-white"
-      >
-        <X className="w-5 h-5" />
-      </button>
+      {/* Share Profile Modal */}
+      {showShareModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 max-w-sm w-full relative">
+            <button
+              onClick={() => setShowShareModal(false)}
+              className="absolute top-3 right-3 text-zinc-400 hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
 
-      <h2 className="text-xl font-bold mb-4 text-white">Share Your Profile</h2>
+            <h2 className="text-xl font-bold mb-4 text-white">Share Your Profile</h2>
 
-      <div className="bg-zinc-800 rounded-lg p-3 flex items-center justify-between mb-4">
-        <input
-          type="text"
-          value={`${window.location.origin}/player/${user.username}`}
-          readOnly
-          className="bg-transparent text-zinc-300 text-sm w-full outline-none"
-        />
-        <button
-          onClick={() => {
-            navigator.clipboard.writeText(`${window.location.origin}/player/${user.username}`);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-          }}
-          className="ml-3 px-3 py-1 bg-cyan-600 hover:bg-cyan-700 rounded text-sm"
-        >
-          {copied ? "Copied!" : "Copy"}
-        </button>
-      </div>
+            <div className="bg-zinc-800 rounded-lg p-3 flex items-center justify-between mb-4">
+              <input
+                type="text"
+                value={`${window.location.origin}/player/${user.username}`}
+                readOnly
+                className="bg-transparent text-zinc-300 text-sm w-full outline-none"
+              />
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(`${window.location.origin}/player/${user.username}`);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                className="ml-3 px-3 py-1 bg-cyan-600 hover:bg-cyan-700 rounded text-sm"
+              >
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </div>
 
-      <div className="flex justify-end gap-2">
-        <button
-          onClick={() => {
-            window.open(`/player/${user.username}`, "_blank");
-          }}
-          className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm transition-colors"
-        >
-          Open Profile
-        </button>
-        <button
-          onClick={() => setShowShareModal(false)}
-          className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm transition-colors"
-        >
-          Close
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  window.open(`/player/${user.username}`, "_blank");
+                }}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm transition-colors"
+              >
+                Open Profile
+              </button>
+              <button
+                onClick={() => setShowShareModal(false)}
+                className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-7xl mx-auto px-4">
 
@@ -258,7 +222,7 @@ const [copied, setCopied] = useState(false);
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-6">
           {/* Cover Photo */}
           <div className="h-32 bg-gradient-to-r from-cyan-600/20 via-purple-600/20 to-pink-600/20"></div>
-          
+
           {/* Profile Info */}
           <div className="px-6 pb-6">
             <div className="flex flex-col md:flex-row md:items-end md:justify-between -mt-16 mb-4">
@@ -282,7 +246,7 @@ const [copied, setCopied] = useState(false);
                     </div>
                   )}
                 </div>
-                
+
                 {/* Names */}
                 <div className="mb-2">
                   <h1 className="text-3xl font-bold text-white mb-1">{userData.username}</h1>
@@ -292,7 +256,7 @@ const [copied, setCopied] = useState(false);
                   )}
                 </div>
               </div>
-              
+
               {/* Action Buttons */}
               <div className="flex gap-2 mt-4 md:mt-0">
                 <button
@@ -309,19 +273,19 @@ const [copied, setCopied] = useState(false);
                   <Plus className="w-4 h-4" />
                   <span className="hidden sm:inline">Create Post</span>
                 </button>
-              <button
-                onClick={() => setShowShareModal(true)}
-                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors"
-              >
-                <Share2 className="w-4 h-4" />
-              </button>
+                <button
+                  onClick={() => setShowShareModal(true)}
+                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors"
+                >
+                  <Share2 className="w-4 h-4" />
+                </button>
 
                 <button className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors">
                   <Settings className="w-4 h-4" />
                 </button>
               </div>
             </div>
-            
+
             {/* Quick Info */}
             <div className="flex flex-wrap gap-4 text-sm text-zinc-400 mb-4">
               <span className="flex items-center gap-1.5">
@@ -353,11 +317,10 @@ const [copied, setCopied] = useState(false);
                 </span>
               )}
               {userData.teamStatus !== 'Not specified' && (
-                <span className={`px-3 py-1 border rounded-full text-xs ${
-                  userData.teamStatus === 'looking for a team' ? 'bg-green-500/20 border-green-500/30 text-green-400' :
+                <span className={`px-3 py-1 border rounded-full text-xs ${userData.teamStatus === 'looking for a team' ? 'bg-green-500/20 border-green-500/30 text-green-400' :
                   userData.teamStatus === 'in a team' ? 'bg-blue-500/20 border-blue-500/30 text-blue-400' :
-                  'bg-yellow-500/20 border-yellow-500/30 text-yellow-400'
-                }`}>
+                    'bg-yellow-500/20 border-yellow-500/30 text-yellow-400'
+                  }`}>
                   {userData.teamStatus}
                 </span>
               )}
@@ -377,27 +340,27 @@ const [copied, setCopied] = useState(false);
 
         {/* Stats Overview */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <StatBox 
-            icon={Trophy} 
-            label="Aegis Rating" 
+          <StatBox
+            icon={Trophy}
+            label="Aegis Rating"
             value={userData.aegisRating}
             color="cyan"
           />
-          <StatBox 
-            icon={Target} 
-            label="Win Rate" 
+          <StatBox
+            icon={Target}
+            label="Win Rate"
             value={`${userData.statistics.winRate}%`}
             color="green"
           />
-          <StatBox 
-            icon={Sword} 
-            label="Total Kills" 
+          <StatBox
+            icon={Sword}
+            label="Total Kills"
             value={userData.statistics.totalKills}
             color="red"
           />
-          <StatBox 
-            icon={Medal} 
-            label="Tournaments" 
+          <StatBox
+            icon={Medal}
+            label="Tournaments"
             value={userData.statistics.tournamentsPlayed}
             color="amber"
           />
@@ -410,11 +373,10 @@ const [copied, setCopied] = useState(false);
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-6 py-2.5 rounded-lg font-medium transition-colors whitespace-nowrap ${
-                  activeTab === tab
-                    ? 'bg-cyan-600 text-white'
-                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-                }`}
+                className={`px-6 py-2.5 rounded-lg font-medium transition-colors whitespace-nowrap ${activeTab === tab
+                  ? 'bg-cyan-600 text-white'
+                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                  }`}
               >
                 {tab.charAt(0).toUpperCase() + tab.slice(1)}
               </button>
@@ -424,10 +386,10 @@ const [copied, setCopied] = useState(false);
 
         {/* Tab Content */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
+
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
-            
+
             {activeTab === 'overview' && (
               <>
                 {/* Performance Stats */}
@@ -531,19 +493,19 @@ const [copied, setCopied] = useState(false);
               <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
                 <h2 className="text-xl font-bold mb-4">Social Links</h2>
                 <div className="space-y-3">
-                  <SocialLinkCard 
+                  <SocialLinkCard
                     icon={Hash}
                     platform="Discord"
                     value={userData.discordTag}
                     color="indigo"
                   />
-                  <SocialLinkCard 
+                  <SocialLinkCard
                     icon={Activity}
                     platform="Twitch"
                     value={userData.twitch}
                     color="purple"
                   />
-                  <SocialLinkCard 
+                  <SocialLinkCard
                     icon={ExternalLink}
                     platform="YouTube"
                     value={userData.youtube}
@@ -563,7 +525,7 @@ const [copied, setCopied] = useState(false);
 
           {/* Sidebar */}
           <div className="space-y-6">
-            
+
             {/* Team Info */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
               <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
@@ -631,11 +593,10 @@ const [copied, setCopied] = useState(false);
 };
 
 const SocialLinkCard = ({ icon: Icon, platform, value, color }) => (
-  <div className={`p-4 rounded-lg border ${
-    value 
-      ? `bg-${color}-500/10 border-${color}-500/30` 
-      : 'bg-zinc-800/50 border-zinc-700'
-  }`}>
+  <div className={`p-4 rounded-lg border ${value
+    ? `bg-${color}-500/10 border-${color}-500/30`
+    : 'bg-zinc-800/50 border-zinc-700'
+    }`}>
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-3">
         <Icon className={`w-5 h-5 ${value ? `text-${color}-400` : 'text-zinc-500'}`} />
