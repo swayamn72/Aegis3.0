@@ -19,7 +19,6 @@ import teamApplicationRoutes from './routes/teamApplication.routes.js';
 import tryoutChatRoutes from './routes/tryoutChat.routes.js';
 import recruitmentRoutes from './routes/recruitment.routes.js';
 import ChatRoutes from './routes/message.routes.js';
-import adminRoutes from './routes/admin.routes.js';
 
 const app = express();
 const server = createServer(app);
@@ -50,7 +49,6 @@ app.use('/api/team-applications', teamApplicationRoutes);
 app.use('/api/tryout-chats', tryoutChatRoutes);
 app.use('/api/recruitment', recruitmentRoutes);
 app.use('/api/chat', ChatRoutes);
-app.use('/api/admin', adminRoutes);
 
 // Test route
 app.get("/", (req, res) => {

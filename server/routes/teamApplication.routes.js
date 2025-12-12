@@ -9,6 +9,116 @@ import auth from '../middleware/auth.js';
 
 const router = express.Router();
 
+router.get('/recruiting-teams', async (req, res) => {
+  try {
+    const {
+      game,
+      region,
+      role,
+      limit: rawLimit = '20',
+      page: rawPage = '1',
+      sortBy = 'aegisRating', // optional: allow sorting
+      sortDir = 'desc'
+    } = req.query;
+
+    // sanitize & caps
+    const limit = Math.min(Math.max(parseInt(rawLimit, 10) || 20, 1), 50); // 1..50
+    const page = Math.max(parseInt(rawPage, 10) || 1, 1);
+    const skip = (page - 1) * limit;
+
+    // Build match filter (only fields required for match)
+    const match = {
+      lookingForPlayers: true,
+      status: 'active',
+      profileVisibility: 'public',
+    };
+
+    if (game) match.primaryGame = game;
+    if (region) match.region = region;
+    if (role) {
+      // openRoles is likely an array -> use $in
+      match.openRoles = { $in: [role] };
+    }
+
+    // Sort handling (whitelist)
+    const allowedSort = {
+      aegisRating: { aegisRating: sortDir === 'asc' ? 1 : -1 },
+      createdAt: { createdAt: sortDir === 'asc' ? 1 : -1 },
+      aegisRating_createdAt: { aegisRating: -1, createdAt: -1 }
+    };
+    const sort = allowedSort[sortBy] || allowedSort['aegisRating'];
+
+    // Aggregation: match -> add playersCount -> lookup captain -> project -> facet for pagination + total
+    const agg = [
+      { $match: match },
+
+      // playersCount field without fetching full players array
+      { $addFields: { playersCount: { $size: { $ifNull: ['$players', []] } } } },
+
+      // Lookup a minimal captain object
+      {
+        $lookup: {
+          from: 'players',
+          localField: 'captain',
+          foreignField: '_id',
+          as: 'captain'
+        }
+      },
+      { $unwind: { path: '$captain', preserveNullAndEmptyArrays: true } },
+
+      // Project only fields needed for list view
+      {
+        $project: {
+          teamName: 1,
+          teamTag: 1,
+          logo: 1,
+          primaryGame: 1,
+          region: 1,
+          openRoles: 1,
+          aegisRating: 1,
+          statistics: 1,
+          bio: 1,
+          establishedDate: 1,
+          totalEarnings: 1,
+          playersCount: 1,
+          'captain._id': 1,
+          'captain.username': 1,
+          'captain.profilePicture': 1,
+          'captain.aegisRating': 1
+        }
+      },
+
+      { $sort: sort },
+
+      // Facet: results + total count
+      {
+        $facet: {
+          paginatedResults: [{ $skip: skip }, { $limit: limit }],
+          totalCount: [{ $count: 'count' }]
+        }
+      }
+    ];
+
+    const [aggResult] = await Team.aggregate(agg).exec();
+    const teams = (aggResult && aggResult.paginatedResults) || [];
+    const total = (aggResult && aggResult.totalCount[0] && aggResult.totalCount[0].count) || 0;
+    const totalPages = Math.ceil(total / limit);
+
+    res.json({
+      teams,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalItems: total,
+        limit
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching recruiting teams:', error);
+    res.status(500).json({ error: 'Failed to fetch recruiting teams' });
+  }
+});
+
 // GET /api/team-applications/team/:teamId - Get applications for a team (captain only)
 router.get('/team/:teamId', auth, async (req, res) => {
   try {

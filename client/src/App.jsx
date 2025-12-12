@@ -3,6 +3,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { queryClient } from "./config/queryClient";
 import "./App.css";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 import SignupPage from "./pages/SignUpPage";
 import LoginPage from "./pages/LoginPage";
@@ -12,6 +14,9 @@ import MyTeamsPage from "./pages/MyTeamsPage";
 import DetailedTeamInfoPage from "./pages/DetailedTeamInfoPage";
 import ChatPage from "./pages/ChatPage";
 import RecruitmentActualPage from "./pages/RecruitmentActualPage";
+import SettingsPage from "./pages/SettingsPage";
+import MyProfilePage from "./pages/MyProfilePage";
+import PlayersPage from "./pages/PlayersPage";
 
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -21,6 +26,8 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <BrowserRouter>
+          {/* ToastContainer must be rendered once in your app */}
+          <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop={false} closeOnClick pauseOnFocusLoss draggable pauseOnHover />
           <Routes>
             {/* Public Routes */}
             <Route path="/login" element={<LoginPage />} />
@@ -33,6 +40,9 @@ function App() {
             <Route path="/team/:id" element={<ProtectedRoute><DetailedTeamInfoPage /></ProtectedRoute>} />
             <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
             <Route path="/recruitment" element={<ProtectedRoute><RecruitmentActualPage /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+            <Route path="/my-profile" element={<ProtectedRoute><MyProfilePage /></ProtectedRoute>} />
+            <Route path="/players" element={<ProtectedRoute><PlayersPage /></ProtectedRoute>} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>
