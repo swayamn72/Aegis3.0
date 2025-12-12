@@ -16,6 +16,7 @@ import ChatPage from "./pages/ChatPage";
 import RecruitmentActualPage from "./pages/RecruitmentActualPage";
 import SettingsPage from "./pages/SettingsPage";
 import MyProfilePage from "./pages/MyProfilePage";
+import PlayersPage from "./pages/PlayersPage";
 
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -41,6 +42,7 @@ function App() {
             <Route path="/recruitment" element={<ProtectedRoute><RecruitmentActualPage /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
             <Route path="/my-profile" element={<ProtectedRoute><MyProfilePage /></ProtectedRoute>} />
+            <Route path="/players" element={<ProtectedRoute><PlayersPage /></ProtectedRoute>} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>

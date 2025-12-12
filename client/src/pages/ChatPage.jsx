@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import { useQuery, useQueryClient } from '@tanstack/react-query'; // ✅ Add useQueryClient
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from "../context/AuthContext";
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -13,7 +13,7 @@ import { useChatData } from '../hooks/useChatData';
 import { useChatActions } from '../hooks/useChatActions';
 import { chatKeys } from '../hooks/queryKeys';
 import axios from '../utils/axiosConfig';
-import { toast } from 'react-toastify'; // ✅ Add this if not already imported
+import { toast } from 'react-toastify'; 
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 

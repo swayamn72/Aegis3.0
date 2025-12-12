@@ -7,7 +7,6 @@ import auth from '../middleware/auth.js';
 import upload from '../config/multer.js';
 import cloudinary from '../config/cloudinary.js';
 
-
 const router = express.Router();
 
 // Get current user profile
@@ -29,6 +28,31 @@ router.get("/me", auth, async (req, res) => {
     res.status(200).json(user);
   } catch (error) {
     console.error("Get current user error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// --- Get All Players Route ---
+router.get("/all", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = parseInt(req.query.skip) || 0;
+
+    // Only select fields needed for the player card
+    const players = await Player.find({})
+      .select(
+        "_id username inGameName realName profilePicture verified primaryGame country location aegisRating tournamentsPlayed matchesPlayed earnings age bio teamStatus inGameRole availability team"
+      )
+      .sort({ aegisRating: -1 })
+      .limit(limit)
+      .skip(skip);
+
+    res.status(200).json({
+      message: "Players retrieved successfully",
+      players: players
+    });
+  } catch (error) {
+    console.error("Get all players error:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -123,16 +147,16 @@ router.get('/dashboard-data', auth, async (req, res) => {
   try {
     console.log('🔍 Dashboard data endpoint hit');
     console.log('User from auth middleware:', req.user);
-    
+
     // Validate user authentication
     if (!req.user || !req.user.id) {
       console.log('❌ No user found in request');
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    
+
     const playerId = req.user.id;
     const { tournamentLimit = 3, matchLimit = 3 } = req.query;
-    
+
     console.log('✅ Player ID:', playerId);
     console.log('📊 Fetching dashboard data...');
 
@@ -142,7 +166,7 @@ router.get('/dashboard-data', auth, async (req, res) => {
       Team.find({ players: playerId })
         .select('_id teamName')
         .lean(),
-      
+
       // Query 2: Get open tournaments (independent query)
       Tournament.find({
         isOpenForAll: true,
@@ -165,7 +189,7 @@ router.get('/dashboard-data', auth, async (req, res) => {
     ]);
 
     console.log('📋 Player teams found:', playerTeams.length);
-    
+
     // Initialize response object
     const dashboardData = {
       tournaments: [],
@@ -177,9 +201,9 @@ router.get('/dashboard-data', auth, async (req, res) => {
     dashboardData.tournaments = openTournaments
       .filter(t => {
         const now = new Date();
-        return now >= new Date(t.registrationStartDate) && 
-               now <= new Date(t.registrationEndDate) &&
-               (t.participatingTeams?.length || 0) < (t.slots?.total || 0);
+        return now >= new Date(t.registrationStartDate) &&
+          now <= new Date(t.registrationEndDate) &&
+          (t.participatingTeams?.length || 0) < (t.slots?.total || 0);
       })
       .map(tournament => ({
         _id: tournament._id,
@@ -225,14 +249,14 @@ router.get('/dashboard-data', auth, async (req, res) => {
 
       // Process matches efficiently
       const teamIdStrings = new Set(teamIds.map(id => id.toString()));
-      
+
       dashboardData.matches = matches
         .map(match => {
           // Find player's team using Set for O(1) lookup
           const playerTeam = match.participatingTeams.find(team =>
             team.team && teamIdStrings.has(team.team._id.toString())
           );
-          
+
           if (!playerTeam) {
             console.log('⚠️ Player team not found in match:', match._id);
             return null;
@@ -254,13 +278,13 @@ router.get('/dashboard-data', auth, async (req, res) => {
 
           // Format time
           const date = match.actualEndTime || match.scheduledStartTime;
-          const time = date 
-            ? new Date(date).toLocaleString('en-US', { 
-                month: 'short', 
-                day: 'numeric', 
-                hour: '2-digit', 
-                minute: '2-digit' 
-              })
+          const time = date
+            ? new Date(date).toLocaleString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            })
             : 'Recent';
 
           return {
@@ -292,24 +316,21 @@ router.get('/dashboard-data', auth, async (req, res) => {
       data: dashboardData,
       timestamp: new Date().toISOString()
     });
-    
+
   } catch (error) {
     console.error('❌ Error fetching dashboard data:', error);
     console.error('Stack:', error.stack);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to fetch dashboard data',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
 
-// Optional: Keep individual endpoints for backward compatibility or specific use cases
-// These can call the same logic but with different limits
-
 router.get('/get-recent3-tourney', async (req, res) => {
   try {
     const { limit = 3 } = req.query;
-    
+
     const tournaments = await Tournament.find({
       isOpenForAll: true,
       visibility: 'public',
@@ -330,9 +351,9 @@ router.get('/get-recent3-tourney', async (req, res) => {
 
     const openTournaments = tournaments.filter(t => {
       const now = new Date();
-      return now >= new Date(t.registrationStartDate) && 
-             now <= new Date(t.registrationEndDate) &&
-             (t.participatingTeams?.length || 0) < (t.slots?.total || 0);
+      return now >= new Date(t.registrationStartDate) &&
+        now <= new Date(t.registrationEndDate) &&
+        (t.participatingTeams?.length || 0) < (t.slots?.total || 0);
     });
 
     const enrichedTournaments = openTournaments.map(tournament => ({
@@ -354,12 +375,12 @@ router.get('/recent3matches', auth, async (req, res) => {
     if (!req.user || !req.user.id) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    
+
     const playerId = req.user.id;
     const playerTeams = await Team.find({ players: playerId })
       .select('_id teamName')
       .lean();
-    
+
     const teamIds = playerTeams.map(team => team._id);
 
     if (teamIds.length === 0) {
@@ -378,13 +399,13 @@ router.get('/recent3matches', auth, async (req, res) => {
       .lean();
 
     const teamIdStrings = new Set(teamIds.map(id => id.toString()));
-    
+
     const formattedMatches = matches
       .map(match => {
         const playerTeam = match.participatingTeams.find(team =>
           team.team && teamIdStrings.has(team.team._id.toString())
         );
-        
+
         if (!playerTeam) return null;
 
         const otherTeams = match.participatingTeams.filter(
@@ -401,13 +422,13 @@ router.get('/recent3matches', auth, async (req, res) => {
         }
 
         const date = match.actualEndTime || match.scheduledStartTime;
-        const time = date 
-          ? new Date(date).toLocaleString('en-US', { 
-              month: 'short', 
-              day: 'numeric', 
-              hour: '2-digit', 
-              minute: '2-digit' 
-            })
+        const time = date
+          ? new Date(date).toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })
           : 'Recent';
 
         return {
@@ -420,14 +441,14 @@ router.get('/recent3matches', auth, async (req, res) => {
         };
       })
       .filter(Boolean);
-    
+
     res.json({ matches: formattedMatches });
-    
+
   } catch (error) {
     console.error('Error fetching recent matches:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to fetch recent matches',
-      details: error.message 
+      details: error.message
     });
   }
 });
