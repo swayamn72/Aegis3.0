@@ -2,6 +2,7 @@ import express from 'express';
 import Player from '../models/player.model.js';
 import Team from '../models/team.model.js';
 import Tournament from '../models/tournament.model.js';
+import Registration from '../models/registration.model.js';
 import Match from '../models/match.model.js';
 import auth from '../middleware/auth.js';
 import upload from '../config/multer.js';
@@ -142,7 +143,10 @@ router.post("/upload-pfp", auth, upload.single('profilePicture'), async (req, re
   }
 });
 
-// Optimized single endpoint for all dashboard data
+// ============================================================================
+// DASHBOARD DATA ENDPOINT (OPTIMIZED)
+// ============================================================================
+
 router.get('/dashboard-data', auth, async (req, res) => {
   try {
     console.log('🔍 Dashboard data endpoint hit');
@@ -160,7 +164,7 @@ router.get('/dashboard-data', auth, async (req, res) => {
     console.log('✅ Player ID:', playerId);
     console.log('📊 Fetching dashboard data...');
 
-    // PARALLEL EXECUTION: Run all queries simultaneously for maximum performance
+    // PARALLEL EXECUTION: Run all queries simultaneously
     const [playerTeams, openTournaments] = await Promise.all([
       // Query 1: Get player's teams (needed for matches)
       Team.find({ players: playerId })
@@ -178,13 +182,9 @@ router.get('/dashboard-data', auth, async (req, res) => {
         .limit(parseInt(tournamentLimit))
         .select(`
           tournamentName shortName gameTitle region subRegion tier status 
-          startDate endDate prizePool media organizer participatingTeams 
+          startDate endDate prizePool media organizer participatingTeamsCount
           statistics slots registrationStartDate registrationEndDate tags
         `)
-        .populate({
-          path: 'participatingTeams.team',
-          select: 'teamName teamTag logo'
-        })
         .lean()
     ]);
 
@@ -197,36 +197,64 @@ router.get('/dashboard-data', auth, async (req, res) => {
       playerTeamCount: playerTeams.length
     };
 
+    // Get registration counts for each tournament (in parallel)
+    const tournamentIds = openTournaments.map(t => t._id);
+    const registrationCounts = await Registration.aggregate([
+      {
+        $match: {
+          tournament: { $in: tournamentIds },
+          status: { $in: ['approved', 'checked_in'] }
+        }
+      },
+      {
+        $group: {
+          _id: '$tournament',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Create a map for quick lookup
+    const countMap = new Map(
+      registrationCounts.map(r => [r._id.toString(), r.count])
+    );
+
     // Process tournaments with open registration status
     dashboardData.tournaments = openTournaments
       .filter(t => {
         const now = new Date();
+        const participantCount = countMap.get(t._id.toString()) || t.participatingTeamsCount || 0;
         return now >= new Date(t.registrationStartDate) &&
           now <= new Date(t.registrationEndDate) &&
-          (t.participatingTeams?.length || 0) < (t.slots?.total || 0);
+          participantCount < (t.slots?.total || 0);
       })
-      .map(tournament => ({
-        _id: tournament._id,
-        tournamentName: tournament.tournamentName,
-        shortName: tournament.shortName,
-        gameTitle: tournament.gameTitle,
-        region: tournament.region,
-        subRegion: tournament.subRegion,
-        tier: tournament.tier,
-        status: tournament.status,
-        startDate: tournament.startDate,
-        endDate: tournament.endDate,
-        prizePool: tournament.prizePool,
-        media: tournament.media,
-        organizer: tournament.organizer,
-        participantCount: tournament.participatingTeams?.length || 0,
-        totalSlots: tournament.slots?.total || null,
-        registrationStatus: 'Open',
-        registrationStartDate: tournament.registrationStartDate,
-        registrationEndDate: tournament.registrationEndDate,
-        tags: tournament.tags,
-        statistics: tournament.statistics
-      }));
+      .map(tournament => {
+        const participantCount = countMap.get(tournament._id.toString()) || 
+                                tournament.participatingTeamsCount || 0;
+        
+        return {
+          _id: tournament._id,
+          tournamentName: tournament.tournamentName,
+          shortName: tournament.shortName,
+          gameTitle: tournament.gameTitle,
+          region: tournament.region,
+          subRegion: tournament.subRegion,
+          tier: tournament.tier,
+          status: tournament.status,
+          startDate: tournament.startDate,
+          endDate: tournament.endDate,
+          prizePool: tournament.prizePool,
+          media: tournament.media,
+          organizer: tournament.organizer,
+          participantCount,
+          totalSlots: tournament.slots?.total || null,
+          registrationStatus: 'Open',
+          registrationStartDate: tournament.registrationStartDate,
+          registrationEndDate: tournament.registrationEndDate,
+          tags: tournament.tags,
+          statistics: tournament.statistics
+        };
+      });
 
     // Only fetch matches if player has teams
     if (playerTeams.length > 0) {
@@ -327,10 +355,16 @@ router.get('/dashboard-data', auth, async (req, res) => {
   }
 });
 
+
+// ============================================================================
+// GET RECENT OPEN TOURNAMENTS
+// ============================================================================
+
 router.get('/get-recent3-tourney', async (req, res) => {
   try {
     const { limit = 3 } = req.query;
 
+    // Get tournaments with open registration
     const tournaments = await Tournament.find({
       isOpenForAll: true,
       visibility: 'public',
@@ -341,27 +375,54 @@ router.get('/get-recent3-tourney', async (req, res) => {
       .limit(parseInt(limit))
       .select(`
         tournamentName shortName gameTitle region subRegion tier status startDate endDate
-        prizePool media organizer participatingTeams statistics slots registrationStartDate registrationEndDate tags
+        prizePool media organizer participatingTeamsCount statistics slots 
+        registrationStartDate registrationEndDate tags
       `)
-      .populate({
-        path: 'participatingTeams.team',
-        select: 'teamName teamTag logo'
-      })
       .lean();
 
+    // Get actual registration counts for these tournaments
+    const tournamentIds = tournaments.map(t => t._id);
+    const registrationCounts = await Registration.aggregate([
+      {
+        $match: {
+          tournament: { $in: tournamentIds },
+          status: { $in: ['approved', 'checked_in'] }
+        }
+      },
+      {
+        $group: {
+          _id: '$tournament',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Create map for quick lookup
+    const countMap = new Map(
+      registrationCounts.map(r => [r._id.toString(), r.count])
+    );
+
+    // Filter tournaments that are actually open
+    const now = new Date();
     const openTournaments = tournaments.filter(t => {
-      const now = new Date();
+      const participantCount = countMap.get(t._id.toString()) || t.participatingTeamsCount || 0;
       return now >= new Date(t.registrationStartDate) &&
         now <= new Date(t.registrationEndDate) &&
-        (t.participatingTeams?.length || 0) < (t.slots?.total || 0);
+        participantCount < (t.slots?.total || 0);
     });
 
-    const enrichedTournaments = openTournaments.map(tournament => ({
-      ...tournament,
-      participantCount: tournament.participatingTeams?.length || 0,
-      totalSlots: tournament.slots?.total || null,
-      registrationStatus: 'Open'
-    }));
+    // Enrich tournaments with participant data
+    const enrichedTournaments = openTournaments.map(tournament => {
+      const participantCount = countMap.get(tournament._id.toString()) || 
+                              tournament.participatingTeamsCount || 0;
+      
+      return {
+        ...tournament,
+        participantCount,
+        totalSlots: tournament.slots?.total || null,
+        registrationStatus: 'Open'
+      };
+    });
 
     res.json({ tournaments: enrichedTournaments });
   } catch (error) {

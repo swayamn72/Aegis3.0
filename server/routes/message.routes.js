@@ -163,4 +163,48 @@ router.get("/:receiverId", auth, async (req, res) => {
   }
 });
 
+// ============================================================================
+// SEND TOURNAMENT REFERENCE MESSAGE
+// ============================================================================
+
+router.post("/tournament-reference/:tournamentId", auth, async (req, res) => {
+  try {
+    const { tournamentId } = req.params;
+    const { captainId } = req.body;
+
+    if (!captainId) {
+      return res.status(400).json({ message: 'Captain ID is required' });
+    }
+
+    // Verify tournament exists (only fetch needed fields)
+    const tournament = await Tournament.findById(tournamentId)
+      .select('tournamentName')
+      .lean();
+
+    if (!tournament) {
+      return res.status(404).json({ message: 'Tournament not found' });
+    }
+
+    // Create tournament reference message
+    const message = new ChatMessage({
+      senderId: req.user.id,
+      receiverId: captainId,
+      message: `Check out this tournament: ${tournament.tournamentName}`,
+      messageType: 'tournament_reference',
+      tournamentId: tournamentId,
+    });
+
+    await message.save();
+
+    res.json({ 
+      message: 'Tournament reference sent to captain', 
+      chatMessage: message 
+    });
+  } catch (error) {
+    console.error('Error sending tournament reference:', error);
+    res.status(500).json({ message: 'Server error sending tournament reference' });
+  }
+});
+
+
 export default router;

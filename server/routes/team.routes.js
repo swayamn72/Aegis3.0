@@ -6,6 +6,8 @@ import Tournament from '../models/tournament.model.js';
 import Player from '../models/player.model.js';
 import ChatMessage from '../models/chat.model.js';
 import Organization from '../models/organization.model.js';
+import Registration from '../models/registration.model.js';
+import PhaseStanding from '../models/phaseStanding.model.js';
 import auth from '../middleware/auth.js';
 import upload from '../config/multer.js';
 import cloudinary from '../config/cloudinary.js';
@@ -14,9 +16,15 @@ import mongoose from 'mongoose';
 
 const router = express.Router();
 
+// ============================================================================
+// GET TEAM DETAILS WITH MATCHES AND TOURNAMENTS
+// ============================================================================
+
 router.get('/:id', auth, async (req, res) => {
   try {
     const teamId = req.params.id.trim();
+    
+    // Get team details
     const team = await Team.findById(teamId)
       .populate({
         path: 'captain',
@@ -33,14 +41,14 @@ router.get('/:id', auth, async (req, res) => {
       return res.status(404).json({ message: 'Team not found' });
     }
 
+    // Check privacy
     if (team.profileVisibility === 'private') {
-      // Allow access if user is captain or player in the team
       if (!team.players.includes(req.user.id) && team.captain.toString() !== req.user.id.toString()) {
         return res.status(403).json({ message: 'This team profile is private' });
       }
     }
 
-    // Fetch recent matches
+    // Fetch recent matches (same as before - Match model unchanged)
     const recentMatches = await Match.find({
       'participatingTeams.team': team._id,
       status: 'completed'
@@ -70,22 +78,30 @@ router.get('/:id', auth, async (req, res) => {
       };
     });
 
-    // Fetch tournaments the team has participated in
-    const tournaments = await Tournament.find({
-      'participatingTeams.team': team._id
+    // NEW: Get tournaments from Registration collection instead
+    const registrations = await Registration.find({
+      team: team._id,
+      status: { $in: ['approved', 'checked_in'] }
     })
-      .sort({ startDate: -1 })
+      .populate({
+        path: 'tournament',
+        select: 'tournamentName shortName startDate endDate status prizePool media tier'
+      })
+      .sort({ registeredAt: -1 })
       .limit(10)
-      .select('tournamentName shortName startDate endDate status prizePool media tier')
       .lean();
+
+    const tournaments = registrations
+      .filter(r => r.tournament) // Filter out null tournaments
+      .map(r => r.tournament);
 
     // Separate ongoing and past tournaments
     const now = new Date();
     const ongoingTournaments = tournaments.filter(t =>
-      t.status !== 'completed' && t.status !== 'cancelled' && t.endDate >= now
+      t.status !== 'completed' && t.status !== 'cancelled' && new Date(t.endDate) >= now
     );
     const recentTournaments = tournaments.filter(t =>
-      t.status === 'completed' || t.endDate < now
+      t.status === 'completed' || new Date(t.endDate) < now
     ).slice(0, 5);
 
     res.json({
@@ -116,6 +132,28 @@ router.get('/invitations/received', auth, async (req, res) => {
   } catch (error) {
     console.error('Error fetching invitations:', error);
     res.status(500).json({ message: 'Server error fetching invitations' });
+  }
+});
+
+// GET /api/teams/user/my-teams - Fetch teams the current user is part of
+router.get('/user/my-teams', auth, async (req, res) => {
+  try {
+    const teams = await Team.find({
+      $or: [
+        { captain: req.user.id },
+        { players: req.user.id }
+      ]
+    })
+      .populate('captain', 'username profilePicture primaryGame')
+      .populate('players', 'username profilePicture primaryGame')
+      .populate('organization', 'orgName logo')
+      .sort({ establishedDate: -1 })
+      .select('-__v');
+
+    res.json({ teams });
+  } catch (error) {
+    console.error('Error fetching user teams:', error);
+    res.status(500).json({ message: 'Server error fetching teams' });
   }
 });
 

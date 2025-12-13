@@ -1,6 +1,17 @@
 import mongoose from 'mongoose';
 import slugify from 'slugify';
 
+/**
+ * REFACTORED Tournament Schema
+ * 
+ * CHANGES FROM ORIGINAL:
+ * - REMOVED: participatingTeams[] array (moved to Registration collection)
+ * - REMOVED: phases[].groups[].standings[] nested arrays (moved to Standing collection)
+ * - REMOVED: _pendingInvitations[] array (moved to Invitation collection)
+ * - ADDED: participatingTeamsCount for quick access
+ * - ADDED: Virtual relationships to Registration, Standing, Invitation
+ * - OPTIMIZED: Smaller document size, better scalability for 1000+ teams
+ */
 const tournamentSchema = new mongoose.Schema(
   {
     // --- Basic Tournament Information ---
@@ -12,12 +23,12 @@ const tournamentSchema = new mongoose.Schema(
       index: true,
       maxlength: 150,
     },
-    shortName: { // Abbreviated name for display, e.g., "BGIS 2023"
+    shortName: {
       type: String,
       trim: true,
       maxlength: 50,
     },
-    slug: { // URL-friendly identifier (e.g., 'bgis-2023-grand-finals')
+    slug: {
       type: String,
       unique: true,
       lowercase: true,
@@ -26,7 +37,7 @@ const tournamentSchema = new mongoose.Schema(
     },
     gameTitle: {
       type: String,
-      enum: ['BGMI', 'Multi-Game'], // Primarily BGMI for this schema
+      enum: ['BGMI', 'Multi-Game'],
       default: 'BGMI',
       required: true,
       index: true,
@@ -41,7 +52,18 @@ const tournamentSchema = new mongoose.Schema(
     },
     region: {
       type: String,
-      enum: ['Global', 'Asia', 'India', 'South Asia', 'Europe', 'North America', 'South America', 'Oceania', 'Middle East', 'Africa'],
+      enum: [
+        'Global',
+        'Asia',
+        'India',
+        'South Asia',
+        'Europe',
+        'North America',
+        'South America',
+        'Oceania',
+        'Middle East',
+        'Africa',
+      ],
       default: 'India',
       index: true,
     },
@@ -58,8 +80,8 @@ const tournamentSchema = new mongoose.Schema(
         trim: true,
         default: 'Aegis Esports',
       },
-      website: String, // URL to organizer's website
-      contactEmail: String, // Organizer's contact email
+      website: String,
+      contactEmail: String,
       organizationRef: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Organization',
@@ -70,7 +92,7 @@ const tournamentSchema = new mongoose.Schema(
         name: String,
         logoUrl: String,
         website: String,
-        tier: { // e.g., "Title", "Presenting", "Official", "Supporting"
+        tier: {
           type: String,
           enum: ['Title', 'Presenting', 'Official', 'Supporting'],
         },
@@ -104,123 +126,110 @@ const tournamentSchema = new mongoose.Schema(
         'in_progress',
         'completed',
         'cancelled',
-        'postponed'
+        'postponed',
       ],
       default: 'announced',
       index: true,
     },
 
     // --- Tournament Structure & Participation ---
-    format: { // e.g., "Battle Royale Points System", "Elimination Format"
+    format: {
       type: String,
-      enum: [
-        'Battle Royale Points System', // Standard for BGMI
-        'Elimination Format', // Custom stages
-        'Custom'
-      ],
+      enum: ['Battle Royale Points System', 'Elimination Format', 'Custom'],
       required: true,
     },
-    formatDetails: { // Detailed explanation of how the format works (e.g., scoring rules)
+    formatDetails: {
       type: String,
       trim: true,
     },
-    slots: { // Overall team slots
+    slots: {
       total: {
         type: Number,
         required: true,
         min: 2,
       },
-      invited: { // Number of invited teams
+      invited: {
         type: Number,
         default: 0,
       },
-      openRegistrations: { // Number of teams from open registration
+      openRegistrations: {
         type: Number,
         default: 0,
+      },
+      registered: {
+        // Total registered (pending + approved)
+        type: Number,
+        default: 0,
+        index: true,
       },
     },
-    // The actual teams competing in the tournament
-    participatingTeams: [
-      {
-        team: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: 'Team',
-          required: true,
-        },
-        qualifiedThrough: { // How the team entered (invite, qualifier, open, wildcard)
-          type: String,
-          enum: ['invite', 'open_registration', 'wildcard'],
-        },
-        currentStage: { // Which stage the team is currently in/was eliminated from
-          type: String,
-          trim: true,
-        },
 
-        totalTournamentPoints: { type: Number, default: 0 },
-        totalTournamentKills: { type: Number, default: 0 },
-      },
-    ],
+    // --- REPLACED: participatingTeams array with counter ---
+    // Use Registration collection for actual team data
+    participatingTeamsCount: {
+      type: Number,
+      default: 0,
+      index: true,
+    },
 
-    // --- Tournament Phases (e.g., Qualifiers, Group Stage, Grand Finals) ---
+    // --- Tournament Phases (SIMPLIFIED - no nested standings) ---
     phases: [
       {
         name: String,
-        type: { // Type of phase
+        type: {
           type: String,
           enum: ['qualifiers', 'final_stage'],
           required: true,
         },
         startDate: Date,
         endDate: Date,
-        status: { // Status of this specific phase
+        status: {
           type: String,
           enum: ['upcoming', 'in_progress', 'completed'],
           default: 'upcoming',
         },
-        matches: [{ // Matches belonging to this phase
-          type: mongoose.Schema.Types.ObjectId,
-          ref: 'Match',
-        }],
-        rulesetSpecifics: String, // Any rules specific to this phase
-        details: String, // e.g., "Top 8 teams advance"
-        teams: [{ // Teams directly assigned to this phase
-          type: mongoose.Schema.Types.ObjectId,
-          ref: 'Team',
-        }],
-        // --- Groups for this phase ---
-        groups: [
+        matches: [
           {
-            name: String, // e.g., "Group A", "Group B"
-            teams: [{ // Teams specifically in this group
-              type: mongoose.Schema.Types.ObjectId,
-              ref: 'Team',
-            }],
-            standings: [ // Group-specific standings
-              {
-                team: {
-                  type: mongoose.Schema.Types.ObjectId,
-                  ref: 'Team',
-                },
-                position: Number,
-                matchesPlayed: { type: Number, default: 0 },
-                chickenDinners: { type: Number, default: 0 }, // For BR games
-                points: { type: Number, default: 0 },
-                kills: { type: Number, default: 0 },
-                netChange: { type: Number, default: 0 }, // Position change if tracked live
-              },
-            ],
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Match',
           },
         ],
-        // --- Qualification Rules for this phase ---
+        rulesetSpecifics: String,
+        details: String,
+
+        // --- SIMPLIFIED: Just list teams, standings in separate collection ---
+        teams: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Team',
+          },
+        ],
+
+        // --- Groups metadata (no standings stored here) ---
+        groups: [
+          {
+            name: String,
+            teams: [
+              {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'Team',
+              },
+            ],
+            // Standings moved to Standing collection
+          },
+        ],
+
+        // --- Qualification Rules ---
         qualificationRules: [
           {
             numberOfTeams: { type: Number },
             source: { type: String, enum: ['overall', 'from_each_group'] },
-            nextPhase: { type: String }, // Changed to String to store phase name
+            nextPhase: { type: String },
           },
         ],
       },
     ],
+
     // --- Overall Tournament Results ---
     finalStandings: [
       {
@@ -233,15 +242,15 @@ const tournamentSchema = new mongoose.Schema(
           ref: 'Team',
           required: true,
         },
-        prize: { // Prize won by this team
+        prize: {
           amount: Number,
           currency: {
             type: String,
             default: 'INR',
           },
         },
-        tournamentPointsAwarded: Number, // Points for an overarching circuit
-        qualification: String, // What this placement qualifies them for (e.g., "Next Stage", "Regional Finals")
+        tournamentPointsAwarded: Number,
+        qualification: String,
       },
     ],
 
@@ -257,13 +266,13 @@ const tournamentSchema = new mongoose.Schema(
         enum: ['INR', 'USD'],
         default: 'INR',
       },
-      distribution: [ // How the prize pool is split for team positions
+      distribution: [
         {
-          position: String, // "1st", "2nd", "3rd", "3rd-4th"
+          position: String,
           amount: Number,
         },
       ],
-      individualAwards: [ // Individual player awards (MVP, Best IGL, etc.)
+      individualAwards: [
         {
           name: {
             type: String,
@@ -278,7 +287,7 @@ const tournamentSchema = new mongoose.Schema(
             type: Number,
             min: 0,
           },
-          recipient: { // Who won this award (populated after tournament ends)
+          recipient: {
             player: {
               type: mongoose.Schema.Types.ObjectId,
               ref: 'Player',
@@ -300,11 +309,11 @@ const tournamentSchema = new mongoose.Schema(
     // --- Tournament Statistics ---
     statistics: {
       totalMatches: { type: Number, default: 0 },
-      totalParticipatingTeams: { type: Number, default: 0 }, // Count of teams in `participatingTeams`
-      totalKills: { type: Number, default: 0 }, // Aggregate from all matches
+      totalParticipatingTeams: { type: Number, default: 0 },
+      totalKills: { type: Number, default: 0 },
       mostKillsInMatch: {
         count: Number,
-        player: { type: mongoose.Schema.Types.ObjectId, ref: 'Player' }, // Link to specific player
+        player: { type: mongoose.Schema.Types.ObjectId, ref: 'Player' },
         team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
         match: { type: mongoose.Schema.Types.ObjectId, ref: 'Match' },
       },
@@ -312,7 +321,7 @@ const tournamentSchema = new mongoose.Schema(
         count: Number,
         team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
       },
-      viewership: { // Aggregate viewership stats
+      viewership: {
         currentViewers: { type: Number, default: 0 },
         peakViewers: { type: Number, default: 0 },
         averageViewers: { type: Number, default: 0 },
@@ -324,7 +333,7 @@ const tournamentSchema = new mongoose.Schema(
     // --- Awards and Recognition ---
     awards: [
       {
-        type: { // e.g., "MVP", "Fan Favorite", "Most Kills"
+        type: {
           type: String,
           enum: ['MVP', 'Best Player', 'Most Kills', 'Fan Favorite', 'Aegis Star'],
         },
@@ -332,23 +341,31 @@ const tournamentSchema = new mongoose.Schema(
           player: { type: mongoose.Schema.Types.ObjectId, ref: 'Player' },
           team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
         },
-        description: String, // e.g., "Highest Kills in Finals"
+        description: String,
       },
     ],
 
     // --- Media and Coverage ---
     media: {
-      logo: String, // URL for tournament logo
-      banner: String, // URL for main banner image
-      coverImage: String, // URL for tournament cover image (alternative to banner)
-      trailer: String, // URL for announcement trailer video
-      gallery: [String], // Array of image URLs for event gallery
+      logo: String,
+      banner: String,
+      coverImage: String,
+      trailer: String,
+      gallery: [String],
     },
-    streamLinks: [ // Where to watch the tournament
+    streamLinks: [
       {
         platform: {
           type: String,
-          enum: ['YouTube', 'Twitch', 'Facebook Gaming', 'Loco', 'Rooter', 'JioGames', 'Custom'], // Added Indian platforms
+          enum: [
+            'YouTube',
+            'Twitch',
+            'Facebook Gaming',
+            'Loco',
+            'Rooter',
+            'JioGames',
+            'Custom',
+          ],
           required: true,
         },
         url: {
@@ -359,18 +376,18 @@ const tournamentSchema = new mongoose.Schema(
           type: String,
           default: 'English',
         },
-        isOfficial: { // Is this an official stream
+        isOfficial: {
           type: Boolean,
           default: false,
         },
       },
     ],
-    socialMedia: { // Tournament specific social media links
+    socialMedia: {
       twitter: String,
       instagram: String,
       discord: String,
       facebook: String,
-      youtube: String, // Added YouTube for VODs/streams
+      youtube: String,
     },
 
     // --- Documentation and Rules ---
@@ -379,23 +396,23 @@ const tournamentSchema = new mongoose.Schema(
       trim: true,
       maxlength: 2000,
     },
-    rulesetDocument: String, // URL to full ruleset PDF/document
-    websiteLink: String, // Official tournament website/landing page
+    rulesetDocument: String,
+    websiteLink: String,
 
     // --- Game Specific Settings (BGMI) ---
     gameSettings: {
-      serverRegion: String, // e.g., "India",
+      serverRegion: String,
       gameMode: {
         type: String,
         enum: ['TPP Squad', 'FPP Squad', 'Custom'],
         default: 'TPP Squad',
       },
-      maps: { // Maps in rotation for this tournament
+      maps: {
         type: [String],
         enum: ['Erangel', 'Miramar', 'Sanhok', 'Vikendi', 'Rondo'],
-        default: ['Erangel', 'Miramar'], // Common starting maps
+        default: ['Erangel', 'Miramar'],
       },
-      pointsSystem: mongoose.Schema.Types.Mixed, // Detailed object for BGMI specific point system
+      pointsSystem: mongoose.Schema.Types.Mixed,
     },
 
     // --- Administrative ---
@@ -404,44 +421,45 @@ const tournamentSchema = new mongoose.Schema(
       enum: ['public', 'private', 'unlisted'],
       default: 'public',
     },
-    featured: { // To highlight on homepages
+    featured: {
       type: Boolean,
       default: false,
       index: true,
     },
-    verified: { // Marks as an officially verified tournament
+    verified: {
       type: Boolean,
       default: false,
       index: true,
     },
 
     // --- Qualification and Series Information ---
-    parentSeries: { // If this tournament is part of a larger series (e.g., "BGIS Qualifiers" -> "BGIS Grand Finals")
+    parentSeries: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'TournamentSeries', // You might want a separate schema for this
+      ref: 'TournamentSeries',
     },
-    qualifiesFor: [ // What this tournament leads to
+    qualifiesFor: [
       {
         tournament: {
           type: mongoose.Schema.Types.ObjectId,
           ref: 'Tournament',
         },
-        slots: Number, // How many teams qualify
-        details: String, // e.g., "Top 4 teams advance to Finals"
+        slots: Number,
+        details: String,
       },
     ],
 
     // --- Metadata ---
-    tags: [String], // For categorization and search (e.g., "LAN", "Online", "Charity")
-    notes: String, // Internal notes for admins
-    externalIds: { // IDs from other platforms for cross-referencing
+    tags: [String],
+    notes: String,
+    externalIds: {
       liquipedia: String,
     },
+
     // --- Organization Tournament Approval System ---
     _approvalStatus: {
       type: String,
       enum: ['pending', 'approved', 'rejected', 'not_applicable'],
-      default: 'not_applicable', // For admin-created tournaments
+      default: 'not_applicable',
       index: true,
     },
     _submittedBy: {
@@ -461,38 +479,10 @@ const tournamentSchema = new mongoose.Schema(
     _rejectedAt: Date,
     _rejectionReason: String,
 
-    // --- Team Invitations System ---
-    _pendingInvitations: [
-      {
-        team: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: 'Team',
-          required: true,
-        },
-        phase: String, // Which phase/stage the team is invited to
-        message: String,
-        invitedBy: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: 'Organization',
-        },
-        invitedAt: {
-          type: Date,
-          default: Date.now,
-        },
-        status: {
-          type: String,
-          enum: ['pending', 'accepted', 'declined', 'cancelled'],
-          default: 'pending',
-        },
-        acceptedAt: Date,
-        declinedAt: Date,
-        cancelledAt: Date,
-      },
-    ],
+    // REMOVED: _pendingInvitations[] (moved to Invitation collection)
   },
-
   {
-    timestamps: true, // Adds createdAt and updatedAt
+    timestamps: true,
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
   }
@@ -504,9 +494,9 @@ tournamentSchema.index({ status: 1, startDate: -1 });
 tournamentSchema.index({ featured: 1, startDate: -1 });
 tournamentSchema.index({ 'prizePool.total': -1 });
 tournamentSchema.index({ tags: 1 });
-tournamentSchema.index({ 'organizer.name': 1 }); // Index on organizer name
+tournamentSchema.index({ 'organizer.name': 1 });
 
-// --- Virtuals (derived properties not stored in DB) ---
+// --- Virtuals (derived properties) ---
 
 // Virtual for tournament duration in days
 tournamentSchema.virtual('durationDays').get(function () {
@@ -517,20 +507,19 @@ tournamentSchema.virtual('durationDays').get(function () {
   return null;
 });
 
-// Virtual for registration status (more robust)
+// Virtual for registration status
 tournamentSchema.virtual('registrationDisplayStatus').get(function () {
   const now = new Date();
-  if (this.status === null || this.status === undefined) return 'Unknown';
+  if (!this.status) return 'Unknown';
   if (this.status === 'cancelled') return 'Cancelled';
   if (this.status === 'completed') return 'Completed';
-  if (this.status === 'in_progress' || (this.status && typeof this.status === 'string' && this.status.includes('_in_progress'))) return 'Live';
+  if (this.status === 'in_progress') return 'Live';
 
   if (!this.registrationStartDate || !this.registrationEndDate) return 'Closed';
   if (now < this.registrationStartDate) return 'Upcoming';
   if (now >= this.registrationStartDate && now <= this.registrationEndDate) {
     // Check if slots are full
-    const currentParticipatingTeams = this.participatingTeams ? this.participatingTeams.length : 0;
-    if (currentParticipatingTeams >= this.slots.total) {
+    if (this.participatingTeamsCount >= this.slots.total) {
       return 'Slots Full';
     }
     return 'Open';
@@ -539,83 +528,213 @@ tournamentSchema.virtual('registrationDisplayStatus').get(function () {
   return 'Unknown';
 });
 
-
 // Virtual for current competition phase
 tournamentSchema.virtual('currentCompetitionPhase').get(function () {
   if (!this.phases || this.phases.length === 0) return null;
   const now = new Date();
-  const current = this.phases.find(phase => phase.startDate <= now && phase.endDate >= now);
+  const current = this.phases.find(
+    (phase) => phase.startDate <= now && phase.endDate >= now
+  );
   if (current) return current.name;
-  const next = this.phases.find(phase => phase.startDate > now);
+  const next = this.phases.find((phase) => phase.startDate > now);
   if (next) return `Next: ${next.name}`;
-  const lastCompleted = this.phases.find(phase => phase.status === 'completed');
+  const lastCompleted = this.phases.find((phase) => phase.status === 'completed');
   if (lastCompleted) return `Last: ${lastCompleted.name}`;
   return null;
 });
 
-// --- Pre-save middleware to generate slug ---
-tournamentSchema.pre('save', function (next) {
+// --- NEW: Virtual relationships to other collections ---
+
+// Virtual to get all registrations (replaces participatingTeams array)
+tournamentSchema.virtual('registrations', {
+  ref: 'Registration',
+  localField: '_id',
+  foreignField: 'tournament',
+});
+
+// Virtual to get active teams
+tournamentSchema.virtual('activeTeams', {
+  ref: 'Registration',
+  localField: '_id',
+  foreignField: 'tournament',
+  match: { status: { $in: ['approved', 'checked_in'] } },
+});
+
+// Virtual to get pending invitations
+tournamentSchema.virtual('pendingInvitations', {
+  ref: 'Invitation',
+  localField: '_id',
+  foreignField: 'tournament',
+  match: { status: 'pending' },
+});
+
+// Virtual to get all invitations
+tournamentSchema.virtual('invitations', {
+  ref: 'Invitation',
+  localField: '_id',
+  foreignField: 'tournament',
+});
+
+// --- Pre-save middleware ---
+tournamentSchema.pre('save', function () {
+  // Generate slug from tournament name
   if (this.isModified('tournamentName') && this.tournamentName) {
     this.slug = slugify(this.tournamentName, { lower: true, strict: true });
   }
-  // Ensure the total participating teams count is updated
-  this.statistics.totalParticipatingTeams = this.participatingTeams ? this.participatingTeams.length : 0;
-  next();
+  // Note: participatingTeamsCount is now updated by Registration model
 });
 
-// --- Methods (instance methods) ---
+// --- Instance Methods ---
 
-// Method to check if tournament is currently live/in-progress
+// Check if tournament is currently live
 tournamentSchema.methods.isLive = function () {
   const now = new Date();
-  return (this.startDate <= now && this.endDate >= now &&
-    ['in_progress', 'qualifiers_in_progress', 'group_stage', 'playoffs', 'finals'].includes(this.status));
+  return (
+    this.startDate <= now &&
+    this.endDate >= now &&
+    ['in_progress', 'qualifiers_in_progress', 'group_stage', 'playoffs', 'finals'].includes(
+      this.status
+    )
+  );
 };
 
-// Method to get a specific phase by name
+// Get a specific phase by name
 tournamentSchema.methods.getPhase = function (phaseName) {
-  return this.phases.find(phase => phase.name === phaseName);
+  return this.phases.find((phase) => phase.name === phaseName);
 };
 
-// --- Statics (static methods) ---
+// Get leaderboard (delegates to Standing collection)
+tournamentSchema.methods.getLeaderboard = async function (phase, group = null, limit = 20) {
+  const Standing = mongoose.model('Standing');
+  return Standing.getLeaderboard(this._id, phase, group, limit);
+};
 
-// Static method to find tournaments by game and region
-tournamentSchema.statics.findByGameAndRegion = function (gameTitle, region, limit = 10) {
+// Get team's registration
+tournamentSchema.methods.getTeamRegistration = async function (teamId) {
+  const Registration = mongoose.model('Registration');
+  return Registration.findOne({
+    tournament: this._id,
+    team: teamId,
+  });
+};
+
+// Check if team is registered
+tournamentSchema.methods.isTeamRegistered = async function (teamId) {
+  const Registration = mongoose.model('Registration');
+  const registration = await Registration.findOne({
+    tournament: this._id,
+    team: teamId,
+    status: { $in: ['pending', 'approved', 'checked_in'] },
+  });
+  return !!registration;
+};
+
+// Get registration statistics
+tournamentSchema.methods.getRegistrationStats = async function () {
+  const Registration = mongoose.model('Registration');
+  const stats = await Registration.countByStatus(this._id);
+
+  const result = {
+    total: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    checkedIn: 0,
+  };
+
+  stats.forEach((stat) => {
+    result.total += stat.count;
+    if (stat._id) {
+      result[stat._id] = stat.count;
+    }
+  });
+
+  return result;
+};
+
+// Invite team
+tournamentSchema.methods.inviteTeam = async function (teamId, invitedBy, options = {}) {
+  const Invitation = mongoose.model('Invitation');
+
+  // Check if already invited
+  const hasInvitation = await Invitation.hasActiveInvitation(this._id, teamId);
+  if (hasInvitation) {
+    throw new Error('Team already has a pending invitation');
+  }
+
+  return Invitation.create({
+    tournament: this._id,
+    team: teamId,
+    invitedBy,
+    phase: options.phase,
+    group: options.group,
+    message: options.message,
+    expiresAt: options.expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  });
+};
+
+// Get phase standing summary
+tournamentSchema.methods.getPhaseStanding = async function (phase) {
+  const PhaseStanding = mongoose.model('PhaseStanding');
+  return PhaseStanding.getCurrent(this._id, phase);
+};
+
+// --- Static Methods ---
+
+// Find tournaments by game and region
+tournamentSchema.statics.findByGameAndRegion = function (
+  gameTitle,
+  region,
+  limit = 10
+) {
   return this.find({
     gameTitle,
     region,
-    visibility: 'public'
+    visibility: 'public',
   })
     .sort({ startDate: -1 })
-    .limit(limit)
-    .populate('participatingTeams.team', 'teamName logo') // Only participating teams now
-    .populate('winner', 'teamName logo'); // Populate winner if needed
+    .limit(limit);
 };
 
-// Static method to find upcoming tournaments
+// Find upcoming tournaments
 tournamentSchema.statics.findUpcoming = function (limit = 10) {
   const now = new Date();
   return this.find({
     startDate: { $gte: now },
-    visibility: 'public'
+    visibility: 'public',
   })
     .sort({ startDate: 1 })
     .limit(limit);
 };
 
-// Static method to find live tournaments
+// Find live tournaments
 tournamentSchema.statics.findLive = function (limit = 10) {
   const now = new Date();
   return this.find({
     startDate: { $lte: now },
     endDate: { $gte: now },
-    status: { $in: ['qualifiers_in_progress', 'in_progress', 'group_stage', 'playoffs', 'finals'] },
-    visibility: 'public'
+    status: {
+      $in: ['qualifiers_in_progress', 'in_progress', 'group_stage', 'playoffs', 'finals'],
+    },
+    visibility: 'public',
   })
     .sort({ startDate: 1 })
     .limit(limit);
 };
 
+// Get tournament with full details (including registrations and standings)
+tournamentSchema.statics.getFullDetails = async function (tournamentId) {
+  const tournament = await this.findById(tournamentId)
+    .populate('activeTeams')
+    .populate('pendingInvitations');
+
+  if (!tournament) return null;
+
+  // Get registration stats
+  tournament.registrationStats = await tournament.getRegistrationStats();
+
+  return tournament;
+};
 
 const Tournament = mongoose.model('Tournament', tournamentSchema);
 
