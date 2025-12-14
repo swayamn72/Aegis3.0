@@ -15,21 +15,38 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
+  const [userRole, setUserRole] = useState(null); // 'player' or 'organization'
   const [loading, setLoading] = useState(true);
 
   // ---------------------------
-  // Check if player is logged in
+  // Check if user is logged in
   // ---------------------------
   useEffect(() => {
     const checkSession = async () => {
       try {
-        const response = await fetch(`${API_URL}/api/players/me`, {
+        // Try player session first
+        const playerResponse = await fetch(`${API_URL}/api/players/me`, {
           credentials: "include",
         });
 
-        if (response.ok) {
-          const playerData = await response.json();
+        if (playerResponse.ok) {
+          const playerData = await playerResponse.json();
           setUser(playerData);
+          setUserRole('player');
+          setIsAuthenticated(true);
+          setLoading(false);
+          return;
+        }
+
+        // Try organization session
+        const orgResponse = await fetch(`${API_URL}/api/organizations/me`, {
+          credentials: "include",
+        });
+
+        if (orgResponse.ok) {
+          const orgData = await orgResponse.json();
+          setUser(orgData);
+          setUserRole('organization');
           setIsAuthenticated(true);
         }
       } catch (err) {
@@ -43,26 +60,45 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   // ---------------------------
-// Player Login
+  // Universal Login (Player or Organization)
   // ---------------------------
-  const login = async (email, password) => {
+  const login = async (email, password, role = 'player') => {
     try {
       setLoading(true);
 
-      const response = await fetch(`${API_URL}/api/auth/login`, {
+      const endpoint = role === 'organization'
+        ? `${API_URL}/api/auth/organization/login`
+        : `${API_URL}/api/auth/login`;
+
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ email, password }),
       });
 
-
       const data = await response.json();
 
       if (response.ok) {
         setIsAuthenticated(true);
-        setUser(data.player);
-        return { success: true };
+        setUserRole(role);
+
+        if (role === 'organization') {
+          setUser(data.organization);
+          return {
+            success: true,
+            role: 'organization',
+            organization: data.organization,
+          };
+        } else {
+          setUser(data.player);
+          return {
+            success: true,
+            role: 'player',
+            player: data.player,
+            isProfileComplete: isProfileComplete(data.player),
+          };
+        }
       }
 
       return { success: false, message: data.message };
@@ -75,7 +111,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ---------------------------
-// Player Logout
+  // Logout (Universal)
   // ---------------------------
   const logout = async () => {
     try {
@@ -83,11 +119,11 @@ export const AuthProvider = ({ children }) => {
         method: "POST",
         credentials: "include",
       });
-
     } catch (error) {
       console.error("Logout failed:", error);
     } finally {
       setUser(null);
+      setUserRole(null);
       setIsAuthenticated(false);
     }
   };
@@ -97,7 +133,11 @@ export const AuthProvider = ({ children }) => {
   // ---------------------------
   const refreshUser = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/players/me`, {
+      const endpoint = userRole === 'organization'
+        ? `${API_URL}/api/organizations/me`
+        : `${API_URL}/api/players/me`;
+
+      const response = await fetch(endpoint, {
         credentials: "include",
       });
 
@@ -110,15 +150,33 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // ---------------------------
+  // Helper: Check if profile is complete
+  // ---------------------------
+  const isProfileComplete = (player) => {
+    if (!player) return false;
+    return !!(
+      player.realName &&
+      player.age &&
+      player.location &&
+      player.country &&
+      player.primaryGame &&
+      player.teamStatus &&
+      player.availability
+    );
+  };
+
   return (
     <AuthContext.Provider
       value={{
         isAuthenticated,
         user,
+        userRole,
         loading,
         login,
         logout,
         refreshUser,
+        isProfileComplete,
       }}
     >
       {children}

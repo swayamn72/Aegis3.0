@@ -20,8 +20,8 @@ export default function auth(req, res, next) {
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Set req.user to decoded payload (player info)
-    req.user = { id: decoded.id };
+    // Set req.user to decoded payload with all available info
+    req.user = decoded;
 
     next();
   } catch (err) {

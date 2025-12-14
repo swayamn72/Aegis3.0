@@ -2,8 +2,8 @@ import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-const ProtectedRoute = ({ children, allowedUserTypes }) => {
-  const { isAuthenticated, loading, userType } = useAuth();
+const ProtectedRoute = ({ children, allowedUserTypes, requireRole = null }) => {
+  const { isAuthenticated, loading, userType, userRole } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -22,6 +22,22 @@ const ProtectedRoute = ({ children, allowedUserTypes }) => {
   if (allowedUserTypes && !allowedUserTypes.includes(userType)) {
     // Redirect unauthorized users to login or home page
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Role-based access control
+  if (requireRole && userRole !== requireRole) {
+    // If organization tries to access player routes, redirect to pending approval
+    if (userRole === 'organization' && requireRole === 'player') {
+      return <Navigate to="/org/pending-approval" replace />;
+    }
+
+    // If player tries to access organization routes, redirect to home
+    if (userRole === 'player' && requireRole === 'organization') {
+      return <Navigate to="/" replace />;
+    }
+
+    // Default: redirect to login for unknown roles
+    return <Navigate to="/login" replace />;
   }
 
   return children;

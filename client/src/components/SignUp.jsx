@@ -160,18 +160,17 @@ const AegisSignup = () => {
         setTimeout(() => navigate('/login'), 1000);
 
       } else if (formData.role === 'organization') {
-        // Organization registration (new flow)
-        const response = await axios.post("/api/organizations/register", {
+        // Organization registration - FIXED ENDPOINT
+        const response = await axios.post(`${API_URL}/api/auth/organization/signup`, {
           orgName: formData.orgName,
+          ownerName: formData.ownerName,
           email: formData.email,
           password: formData.password,
           country: formData.country,
           headquarters: formData.headquarters,
           description: formData.description,
           contactPhone: formData.contactPhone,
-          establishedDate: formData.establishedDate,
           website: formData.website,
-          ownerName: formData.ownerName,
           ownerSocial: {
             instagram: formData.ownerInstagram
           }
@@ -180,13 +179,15 @@ const AegisSignup = () => {
         });
 
         console.log("Organization registration response:", response.data);
-        toast.success("Organization registration submitted! Pending admin approval.");
-        setTimeout(() => navigate('/login'), 2000);
+        toast.success("🎉 Registration submitted! Your organization is pending admin approval. You'll receive an email once approved.");
+        setTimeout(() => navigate('/login'), 3000);
       }
 
     } catch (error) {
       console.error("Signup error:", error.response?.data || error.message);
-      toast.error(`Registration failed: ${error.response?.data?.message || "Server error"}`);
+      const errorMessage = error.response?.data?.message || "Registration failed. Please try again.";
+      toast.error(errorMessage);
+      setErrors({ general: errorMessage });
     } finally {
       setIsLoading(false);
     }
