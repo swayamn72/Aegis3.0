@@ -14,38 +14,117 @@ import ErangelMap from '../assets/mapImages/erangel.jpg';
 import MiramarMap from '../assets/mapImages/miramar.webp';
 import SanhokMap from '../assets/mapImages/sanhok.webp';
 import VikendiMap from '../assets/mapImages/vikendi.jpg';
+import { useQuery } from '@tanstack/react-query';
 import axiosInstance from '../utils/axiosConfig';
+
+const fetchTournament = async (id) => {
+  const { data } = await axiosInstance.get(`/api/tournaments/${id}`);
+  return data;
+};
+
+const fetchUserTeam = async () => {
+  const { data } = await axiosInstance.get('/api/teams/user/my-teams');
+  return data;
+};
+
+const fetchMatches = async (id) => {
+  const { data } = await axiosInstance.get(`/api/matches/tournament/${id}`);
+  return data.matches || [];
+};
 
 const DetailedTournamentInfo = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+
+  // UI state
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedGroup, setSelectedGroup] = useState('A');
   const [selectedPhase, setSelectedPhase] = useState('');
   const [showPrizeModal, setShowPrizeModal] = useState(false);
   const [showRegistrationModal, setShowRegistrationModal] = useState(false);
-  const [tournamentData, setTournamentData] = useState(null);
-  const [scheduleData, setScheduleData] = useState([]);
-  const [groupsData, setGroupsData] = useState({});
-  const [tournamentStats, setTournamentStats] = useState(null);
-  const [streamLinks, setStreamLinks] = useState([]);
-  const [matchesData, setMatchesData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [registrationForm, setRegistrationForm] = useState({
-    agreedToTerms: false,
-  });
+  const [registrationForm, setRegistrationForm] = useState({ agreedToTerms: false });
   const [registrationLoading, setRegistrationLoading] = useState(false);
   const [registrationError, setRegistrationError] = useState('');
   const [registrationSuccess, setRegistrationSuccess] = useState(false);
-  const [userTeam, setUserTeam] = useState(null);
-  const [isCaptain, setIsCaptain] = useState(false);
-  const [teamPlayers, setTeamPlayers] = useState([]);
   const [showNonCaptainModal, setShowNonCaptainModal] = useState(false);
   const [sendingReference, setSendingReference] = useState(false);
   const [referenceSentSuccess, setReferenceSentSuccess] = useState(false);
+
+  // Queries
+  const {
+    data: tournamentResp,
+    isLoading: tournamentLoading,
+    error: tournamentError,
+  } = useQuery({
+    queryKey: ['tournament', id],
+    queryFn: () => fetchTournament(id),
+    enabled: !!id,
+  });
+
+  const {
+    data: userTeamResp,
+    isLoading: userTeamLoading,
+    error: userTeamError,
+  } = useQuery({
+    queryKey: ['userTeam'],
+    queryFn: fetchUserTeam,
+    enabled: !!user,
+  });
+
+  const {
+    data: matchesData = [],
+    isLoading: matchesLoading,
+    error: matchesError,
+  } = useQuery({
+    queryKey: ['matches', id],
+    queryFn: () => fetchMatches(id),
+    enabled: !!id,
+  });
+
+  // Derived data
+  const tournamentData = tournamentResp?.tournamentData || null;
+  const scheduleData = tournamentResp?.scheduleData || [];
+  const groupsData = tournamentResp?.groupsData || {};
+  const tournamentStats = tournamentResp?.tournamentStats || null;
+  const streamLinks = tournamentResp?.streamLinks || [];
+
+  const userTeam = userTeamResp?.teams?.[0] || null;
+  const isCaptain = userTeam && user && userTeam.captain?._id?.toString() === user._id?.toString();
+  const teamPlayers = userTeam?.players || [];
+  const registrationClosed = tournamentData?.registrationEndDate && new Date(tournamentData.registrationEndDate) < new Date();
+
+  // Registration state
   const [isTeamRegistered, setIsTeamRegistered] = useState(false);
+
+  // Check registration status when tournament and user team data are loaded
+  useEffect(() => {
+    if (userTeam && tournamentData?.participatingTeams) {
+      const isRegistered = tournamentData.participatingTeams.some(participatingTeam =>
+        participatingTeam.team._id.toString() === userTeam._id.toString()
+      );
+      setIsTeamRegistered(isRegistered);
+    }
+  }, [userTeam, tournamentData]);
+
+  // Update selectedGroup when selectedPhase changes
+  useEffect(() => {
+    if (groupsData[selectedPhase]) {
+      const availableGroups = Object.keys(groupsData[selectedPhase]);
+      if (availableGroups.length > 0 && !availableGroups.includes(selectedGroup)) {
+        setSelectedGroup(availableGroups[0]);
+      }
+    }
+  }, [selectedPhase, groupsData, selectedGroup]);
+
+  // Set default phase when tournamentData changes
+  useEffect(() => {
+    if (tournamentData?.phases?.length > 0) {
+      const currentPhase = tournamentData.phases.find(p => p.status === 'in_progress') ||
+        tournamentData.phases[0];
+      setSelectedPhase(currentPhase.name);
+    }
+  }, [tournamentData]);
 
   // Function to send tournament reference message to captain
   const sendTournamentReferenceToCaptain = async () => {
@@ -77,8 +156,6 @@ const DetailedTournamentInfo = () => {
   };
 
   // Handle team registration
-  const registrationClosed = tournamentData?.registrationEndDate && new Date(tournamentData.registrationEndDate) < new Date();
-
   const handleRegistration = async (e) => {
     e.preventDefault();
     setRegistrationLoading(true);
@@ -137,88 +214,6 @@ const DetailedTournamentInfo = () => {
     'Rondo': ErangelMap
   };
 
-  useEffect(() => {
-    const fetchTournamentData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
-        const { data } = await axiosInstance.get(`/api/tournaments/${id}`);
-        setTournamentData(data.tournamentData);
-        setScheduleData(data.scheduleData || []);
-        setGroupsData(data.groupsData || {});
-        setTournamentStats(data.tournamentStats);
-        setStreamLinks(data.streamLinks || []);
-
-        // Set default phase
-        if (data.tournamentData?.phases?.length > 0) {
-          const currentPhase = data.tournamentData.phases.find(p => p.status === 'in_progress') ||
-            data.tournamentData.phases[0];
-          setSelectedPhase(currentPhase.name);
-        }
-
-        // Fetch matches data
-        const matchesRes = await axiosInstance.get(`/api/matches/tournament/${id}`);
-        setMatchesData(matchesRes.data.matches || []);
-
-      } catch (err) {
-        console.error('Error fetching tournament data:', err);
-        setError(err.message || (err.error ?? 'Failed to fetch tournament data'));
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (id) {
-      fetchTournamentData();
-    }
-  }, [id]);
-
-  // Fetch user team data
-  useEffect(() => {
-    const fetchUserTeamData = async () => {
-      if (!user) return;
-
-      try {
-        const { data } = await axiosInstance.get('/api/teams/user/my-teams');
-        const userTeams = data.teams || [];
-        const team = userTeams.length > 0 ? userTeams[0] : null;
-
-        setUserTeam(team);
-        setIsCaptain(team && team.captain._id.toString() === user._id.toString());
-
-        // Set team players from the populated team data
-        if (team && team.players) {
-          setTeamPlayers(team.players);
-        }
-      } catch (err) {
-        console.error('Error fetching user team data:', err);
-      }
-    };
-
-    fetchUserTeamData();
-  }, [user]);
-
-  // Update selectedGroup when selectedPhase changes
-  useEffect(() => {
-    if (groupsData[selectedPhase]) {
-      const availableGroups = Object.keys(groupsData[selectedPhase]);
-      if (availableGroups.length > 0 && !availableGroups.includes(selectedGroup)) {
-        setSelectedGroup(availableGroups[0]);
-      }
-    }
-  }, [selectedPhase, groupsData, selectedGroup]);
-
-  // Check registration status when tournament and user team data are loaded
-  useEffect(() => {
-    if (userTeam && tournamentData?.participatingTeams) {
-      const isRegistered = tournamentData.participatingTeams.some(participatingTeam =>
-        participatingTeam.team._id.toString() === userTeam._id.toString()
-      );
-      setIsTeamRegistered(isRegistered);
-    }
-  }, [userTeam, tournamentData]);
-
   // Organize matches by phase
   const matchesByPhase = useMemo(() => {
     const organized = {};
@@ -242,8 +237,8 @@ const DetailedTournamentInfo = () => {
     <button
       onClick={() => onClick(id)}
       className={`px-6 py-3 font-medium rounded-lg transition-all duration-200 ${isActive
-          ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg shadow-orange-500/30'
-          : 'bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700/50 hover:text-white'
+        ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg shadow-orange-500/30'
+        : 'bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700/50 hover:text-white'
         }`}
     >
       {label}
@@ -385,8 +380,8 @@ const DetailedTournamentInfo = () => {
             <div key={team._id || index} className="flex items-center justify-between text-sm">
               <div className="flex items-center gap-2">
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${index === 0 ? 'bg-amber-500 text-white' :
-                    index === 1 ? 'bg-zinc-400 text-white' :
-                      'bg-amber-600 text-white'
+                  index === 1 ? 'bg-zinc-400 text-white' :
+                    'bg-amber-600 text-white'
                   }`}>
                   {index + 1}
                 </div>
@@ -447,7 +442,7 @@ const DetailedTournamentInfo = () => {
     }
   };
 
-  if (loading) {
+  if (tournamentLoading || userTeamLoading || matchesLoading) {
     return (
       <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans mt-[100px] flex items-center justify-center">
         <div className="text-center">
@@ -458,12 +453,12 @@ const DetailedTournamentInfo = () => {
     );
   }
 
-  if (error) {
+  if (tournamentError || userTeamError || matchesError) {
     return (
       <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans mt-[100px] flex items-center justify-center">
         <div className="text-center">
           <div className="text-red-400 text-lg mb-4">Error loading tournament data</div>
-          <p className="text-zinc-400 mb-4">{error}</p>
+          <p className="text-zinc-400 mb-4">{tournamentError?.message || userTeamError?.message || matchesError?.message}</p>
           <button
             onClick={() => window.location.reload()}
             className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-lg transition-colors"
@@ -1441,9 +1436,9 @@ const DetailedTournamentInfo = () => {
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-zinc-400 text-sm">{prize.position}</span>
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${index === 0 ? 'bg-amber-500 text-white' :
-                            index === 1 ? 'bg-zinc-400 text-white' :
-                              index === 2 ? 'bg-amber-600 text-white' :
-                                'bg-zinc-600 text-white'
+                          index === 1 ? 'bg-zinc-400 text-white' :
+                            index === 2 ? 'bg-amber-600 text-white' :
+                              'bg-zinc-600 text-white'
                           }`}>
                           {index + 1}
                         </div>
