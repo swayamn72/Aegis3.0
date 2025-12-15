@@ -24,30 +24,31 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const checkSession = async () => {
       try {
-        // Try player session first
-        const playerResponse = await fetch(`${API_URL}/api/players/me`, {
-          credentials: "include",
-        });
-
-        if (playerResponse.ok) {
-          const playerData = await playerResponse.json();
-          setUser(playerData);
-          setUserRole('player');
-          setIsAuthenticated(true);
+        const storedRole = localStorage.getItem('userRole');
+        if (!storedRole) {
           setLoading(false);
           return;
         }
-
-        // Try organization session
-        const orgResponse = await fetch(`${API_URL}/api/organizations/me`, {
-          credentials: "include",
-        });
-
-        if (orgResponse.ok) {
-          const orgData = await orgResponse.json();
-          setUser(orgData);
-          setUserRole('organization');
+        let endpoint = null;
+        if (storedRole === 'player') {
+          endpoint = `${API_URL}/api/players/me`;
+        } else if (storedRole === 'organization') {
+          endpoint = `${API_URL}/api/organizations/me`;
+        }
+        if (!endpoint) {
+          setLoading(false);
+          return;
+        }
+        const response = await fetch(endpoint, { credentials: "include" });
+        if (response.ok) {
+          const data = await response.json();
+          setUser(data);
+          setUserRole(storedRole);
           setIsAuthenticated(true);
+        } else {
+          setUser(null);
+          setUserRole(null);
+          setIsAuthenticated(false);
         }
       } catch (err) {
         console.error("Auth check failed:", err);
@@ -55,7 +56,6 @@ export const AuthProvider = ({ children }) => {
         setLoading(false);
       }
     };
-
     checkSession();
   }, []);
 
@@ -82,6 +82,7 @@ export const AuthProvider = ({ children }) => {
       if (response.ok) {
         setIsAuthenticated(true);
         setUserRole(role);
+        localStorage.setItem('userRole', role);
 
         if (role === 'organization') {
           setUser(data.organization);
@@ -125,6 +126,7 @@ export const AuthProvider = ({ children }) => {
       setUser(null);
       setUserRole(null);
       setIsAuthenticated(false);
+      localStorage.removeItem('userRole');
     }
   };
 

@@ -21,6 +21,8 @@ import recruitmentRoutes from './routes/recruitment.routes.js';
 import ChatRoutes from './routes/message.routes.js';
 import tournamentRoutes from './routes/tournament.routes.js';
 import matchRoutes from './routes/match.routes.js';
+import organizationRoutes from './routes/organization.routes.js';
+import orgTournamentRoutes from './routes/orgTournament.routes.js';
 
 const app = express();
 const server = createServer(app);
@@ -53,6 +55,8 @@ app.use('/api/recruitment', recruitmentRoutes);
 app.use('/api/chat', ChatRoutes);
 app.use('/api/tournaments', tournamentRoutes);
 app.use('/api/matches', matchRoutes);
+app.use('/api/organizations', organizationRoutes);
+app.use('/api/org-tournaments', orgTournamentRoutes);
 
 // Test route
 app.get("/", (req, res) => {

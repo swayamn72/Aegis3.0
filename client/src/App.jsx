@@ -21,6 +21,7 @@ import TournamentsPage from "./pages/TournamentsPage";
 import DetailedTournamentInfoPage from './pages/DetailedTournamentInfoPage';
 
 import AegisOrgPendingApproval from "./orgs/OrgPendingApproval";
+import OrgDashboard from "./orgs/OrgDashboard"; 
 
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -42,6 +43,14 @@ function App() {
               element={
                 <ProtectedRoute requireRole="organization">
                   <AegisOrgPendingApproval />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/org/dashboard"
+              element={
+                <ProtectedRoute requireRole="organization">
+                  <OrgDashboard />
                 </ProtectedRoute>
               }
             />

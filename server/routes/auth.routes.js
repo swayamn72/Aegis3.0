@@ -3,6 +3,7 @@ import Player from '../models/player.model.js';
 import Organization from '../models/organization.model.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { verifyOrgToken } from '../middleware/orgAuth.js';
 
 const router = express.Router();
 
