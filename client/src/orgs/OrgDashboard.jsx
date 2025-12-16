@@ -1,49 +1,83 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Plus, Trophy, Users, Calendar, Settings, Upload, Bell, CheckCircle, XCircle, Clock } from 'lucide-react';
-
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { toast } from 'react-toastify';
 import ToastConfig from '../components/ToastConfig';
 import axiosInstance from '../utils/axiosConfig';
 
+// Query functions
+const fetchOrganizationData = async () => {
+    const { data } = await axiosInstance.get('/api/organizations/profile');
+    return data.organization;
+};
+
+const fetchTournaments = async () => {
+    const { data } = await axiosInstance.get('/api/org-tournaments/my-tournaments');
+    return data.tournaments || [];
+};
+
 const OrgDashboard = () => {
-    const [organization, setOrganization] = useState(null);
-    const [tournaments, setTournaments] = useState([]);
     const [activeTab, setActiveTab] = useState('overview');
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
     const [uploading, setUploading] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const fileInputRef = useRef(null);
     const navigate = useNavigate();
     const { logout } = useAuth();
+    const queryClient = useQueryClient();
 
-    useEffect(() => {
-        fetchOrganizationData();
-        fetchTournaments();
-    }, []);
+    // TanStack Query: Fetch organization data
+    const {
+        data: organization,
+        isLoading: loading,
+        isError,
+        error: errorDetails,
+    } = useQuery({
+        queryKey: ['organizationProfile'],
+        queryFn: fetchOrganizationData,
+        staleTime: 5 * 60 * 1000,
+        gcTime: 10 * 60 * 1000,
+        retry: 1,
+        refetchOnWindowFocus: false,
+        refetchOnMount: false,
+    });
 
-    const fetchOrganizationData = async () => {
-        try {
-            const { data } = await axiosInstance.get('/api/organizations/profile');
-            setOrganization(data.organization);
-        } catch (err) {
-            setError(err.message || err.error || 'Failed to fetch organization profile');
-        } finally {
-            setLoading(false);
-        }
-    };
+    // TanStack Query: Fetch tournaments
+    const {
+        data: tournaments = [],
+        isLoading: tournamentsLoading,
+    } = useQuery({
+        queryKey: ['organizationTournaments'],
+        queryFn: fetchTournaments,
+        staleTime: 30 * 1000,
+        gcTime: 10 * 60 * 1000,
+        retry: 1,
+        refetchOnWindowFocus: false,
+        refetchOnMount: false,
+    });
 
-    const fetchTournaments = async () => {
-        try {
-            const { data } = await axiosInstance.get('/api/org-tournaments/my-tournaments');
-            setTournaments(data.tournaments || []);
-        } catch (err) {
-            console.error('Error fetching tournaments:', err);
-        }
-    };
+    // Mutation: Upload logo
+    const uploadLogoMutation = useMutation({
+        mutationFn: async (formData) => {
+            const { data } = await axiosInstance.post('/api/organizations/upload-logo', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            return data;
+        },
+        onSuccess: (data) => {
+            toast.success('Logo uploaded successfully!');
+            queryClient.setQueryData(['organizationProfile'], (old) => ({
+                ...old,
+                logo: data.logoUrl,
+            }));
+        },
+        onError: (err) => {
+            console.error('Logo upload error:', err);
+            toast.error('Error uploading logo: ' + (err.message || err.error));
+        },
+    });
 
     const handleLogout = async () => {
         try {
@@ -69,16 +103,7 @@ const OrgDashboard = () => {
         formData.append('logo', file);
 
         try {
-            const { data } = await axiosInstance.post('/api/organizations/upload-logo', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
-            setOrganization((prev) => ({
-                ...prev,
-                logo: data.logoUrl,
-            }));
-        } catch (err) {
-            console.error('Logo upload error:', err);
-            alert('Error uploading logo: ' + (err.message || err.error));
+            await uploadLogoMutation.mutateAsync(formData);
         } finally {
             setUploading(false);
         }
@@ -117,12 +142,12 @@ const OrgDashboard = () => {
         );
     };
 
-    if (loading) {
+    if (loading || tournamentsLoading) {
         return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">Loading...</div>;
     }
 
-    if (error) {
-        return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-red-500">Error: {error}</div>;
+    if (isError) {
+        return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-red-500">Error: {errorDetails?.message || 'Failed to fetch organization profile'}</div>;
     }
 
     if (!organization) {
@@ -351,7 +376,7 @@ const OrgDashboard = () => {
                                                     </span>
                                                     {isApproved && (
                                                         <button
-                                                            onClick={() => navigate('/org/tournaments')}
+                                                            onClick={() => navigate(`/org/tournament/${tournament._id}`)}
                                                             className="text-orange-500 hover:text-orange-400"
                                                         >
                                                             Manage →
@@ -414,18 +439,15 @@ const OrgDashboard = () => {
                     onClose={() => setShowCreateModal(false)}
                     onSuccess={() => {
                         setShowCreateModal(false);
-                        fetchTournaments();
+                        queryClient.invalidateQueries({ queryKey: ['organizationTournaments'] });
                     }}
                 />
             )}
-
-
         </div>
     );
 };
 
 const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
-    // Inline India flag emoji for region label
     const IndiaFlag = () => <span role="img" aria-label="India" className="ml-2">🇮🇳</span>;
     const [step, setStep] = useState(1);
     const [formData, setFormData] = useState({
@@ -453,8 +475,27 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
             }
         }
     });
-    const [uploading, setUploading] = useState(false);
     const [files, setFiles] = useState({ logo: null, banner: null, coverImage: null });
+    const queryClient = useQueryClient();
+
+    // Mutation: Create tournament
+    const createTournamentMutation = useMutation({
+        mutationFn: async (formDataToSend) => {
+            const response = await axiosInstance.post('/api/org-tournaments/create-tournament', formDataToSend, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            return response.data;
+        },
+        onSuccess: () => {
+            toast.success('Tournament submitted for admin approval!');
+            queryClient.invalidateQueries({ queryKey: ['organizationTournaments'] });
+            onSuccess();
+        },
+        onError: (error) => {
+            console.error('Error creating tournament:', error);
+            toast.error('Error creating tournament: ' + (error.message || error.error));
+        },
+    });
 
     const handleInputChange = (field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }));
@@ -501,11 +542,9 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
     };
 
     const handleSubmit = async () => {
-        setUploading(true);
         try {
             if (!formData.tournamentName || formData.tournamentName.trim() === '') {
                 toast.error('Tournament Name is required.');
-                setUploading(false);
                 return;
             }
             const formDataToSend = new FormData();
@@ -515,17 +554,9 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
             if (files.banner) formDataToSend.append('banner', files.banner);
             if (files.coverImage) formDataToSend.append('coverImage', files.coverImage);
 
-            await axiosInstance.post('/api/org-tournaments/create-tournament', formDataToSend, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
-
-            toast.success('Tournament submitted for admin approval!');
-            onSuccess();
+            await createTournamentMutation.mutateAsync(formDataToSend);
         } catch (error) {
-            console.error('Error creating tournament:', error);
-            toast.error('Error creating tournament: ' + (error.message || error.error));
-        } finally {
-            setUploading(false);
+            // Error already handled in mutation
         }
     };
 
@@ -878,10 +909,17 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                         ) : (
                             <button
                                 onClick={handleSubmit}
-                                disabled={uploading}
-                                className="px-4 py-2 bg-green-500 rounded hover:bg-green-600 disabled:opacity-50"
+                                disabled={createTournamentMutation.isPending}
+                                className="px-4 py-2 bg-green-500 rounded hover:bg-green-600 disabled:opacity-50 flex items-center gap-2"
                             >
-                                {uploading ? 'Submitting...' : 'Submit for Approval'}
+                                {createTournamentMutation.isPending ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        Submitting...
+                                    </>
+                                ) : (
+                                    'Submit for Approval'
+                                )}
                             </button>
                         )}
                     </div>

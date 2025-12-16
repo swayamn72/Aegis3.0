@@ -191,15 +191,11 @@ matchSchema.virtual('isLive').get(function () {
 });
 
 // --- Pre-save middleware ---
-matchSchema.pre('save', function (next) {
-
+matchSchema.pre('save', function () {
   // Calculate total match stats from participating teams
   if (this.participatingTeams && this.participatingTeams.length > 0) {
     this.matchStats.totalKills = this.participatingTeams.reduce((total, team) => total + team.kills.total, 0);
-
   }
-
-  next();
 });
 
 // --- Instance Methods ---

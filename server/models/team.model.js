@@ -12,11 +12,10 @@ const teamSchema = new mongoose.Schema(
     },
     teamTag: { 
       type: String,
-      unique: true,
       trim: true,
       uppercase: true,
       minlength: 2,
-      maxlength: 5,
+      maxlength: 6,
     },
     logo: { 
       type: String,

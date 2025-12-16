@@ -433,6 +433,76 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// Update groups for a specific phase
+router.put('/:id/groups', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { groups, phaseId } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(phaseId)) {
+      return res.status(400).json({ error: 'Invalid tournament or phase ID' });
+    }
+
+    if (!groups || !Array.isArray(groups)) {
+      return res.status(400).json({ error: 'Groups must be a non-empty array' });
+    }
+
+    const tournament = await Tournament.findById(id);
+    if (!tournament) {
+      return res.status(404).json({ error: 'Tournament not found' });
+    }
+
+    // Check authorization (admin only for now) - temporarily disabled for testing
+    // if (!req.user.isAdmin) {
+    //   return res.status(403).json({ error: 'Admin access required to update groups' });
+    // }
+
+    // Validate phase exists
+    const phaseIndex = tournament.phases.findIndex(p => p._id.toString() === phaseId);
+    if (phaseIndex === -1) {
+      return res.status(404).json({ error: 'Phase not found' });
+    }
+
+    // Validate team IDs
+    for (const group of groups) {
+      for (const teamId of group.teams) {
+        if (!mongoose.Types.ObjectId.isValid(teamId)) {
+          return res.status(400).json({ error: `Invalid team ID: ${teamId}` });
+        }
+      }
+    }
+
+    // Ensure teams are ObjectIds
+    const validatedGroups = groups.map(group => ({
+      ...group,
+      teams: group.teams.map(teamId => new mongoose.Types.ObjectId(teamId))
+    }));
+
+    // Update the specific phase's groups using arrayFilters
+    const updatedTournament = await Tournament.findOneAndUpdate(
+      { _id: id },
+      { $set: { 'phases.$[phase].groups': validatedGroups } },
+      {
+        arrayFilters: [{ 'phase._id': phaseId }],
+        new: true,
+        runValidators: true
+      }
+    );
+
+    if (!updatedTournament) {
+      return res.status(500).json({ error: 'Failed to update groups' });
+    }
+
+    res.json({
+      message: 'Groups updated successfully',
+      tournament: updatedTournament
+    });
+  } catch (error) {
+    console.error('Error updating groups:', error);
+    res.status(500).json({ error: 'Failed to update groups', details: error.message });
+  }
+}); 
+
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================

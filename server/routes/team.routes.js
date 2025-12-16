@@ -702,6 +702,57 @@ router.post('/:id/invite', auth, async (req, res) => {
   }
 });
 
+// POST /api/teams/available - Get teams available for tournament phase
+router.post('/available', auth, async (req, res) => {
+  try {
+    const { tournamentId, phase } = req.body;
+
+    if (!tournamentId || !phase) {
+      return res.status(400).json({
+        message: 'Tournament ID and phase are required'
+      });
+    }
+
+    // Get tournament to check teams that might have pending invites
+    const tournament = await Tournament.findById(tournamentId)
+      .populate('participatingTeams.team', '_id')
+      .select('participatingTeams');
+
+    if (!tournament) {
+      return res.status(404).json({
+        message: 'Tournament not found'
+      });
+    }
+
+    // Get teams already in the selected phase
+    const teamsInPhase = tournament.participatingTeams
+      .filter(pt => pt.currentStage === phase)
+      .map(pt => pt.team._id.toString());
+
+    // Get teams that have pending invites for this phase
+    const teamsWithPendingInvites = tournament.participatingTeams
+      .filter(pt => pt.invites?.some(inv => inv.phase === phase && inv.status === 'pending'))
+      .map(pt => pt.team._id.toString());
+
+    // Find all active teams except those in phase or with pending invites
+    const availableTeams = await Team.find({
+      _id: { $nin: [...new Set([...teamsInPhase, ...teamsWithPendingInvites])] },
+      status: 'active',
+      profileVisibility: 'public'
+    })
+      .select('teamName teamTag logo primaryGame region aegisRating players')
+      .populate('players', 'username')
+      .sort({ aegisRating: -1, teamName: 1 })
+      .limit(50);
+
+    res.json({ teams: availableTeams });
+  } catch (err) {
+    console.error('Error getting available teams:', err);
+    res.status(500).json({
+      message: 'Error getting available teams'
+    });
+  }
+});
 
 
 export default router;

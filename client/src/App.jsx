@@ -19,6 +19,7 @@ import MyProfilePage from "./pages/MyProfilePage";
 import PlayersPage from "./pages/PlayersPage";
 import TournamentsPage from "./pages/TournamentsPage";
 import DetailedTournamentInfoPage from './pages/DetailedTournamentInfoPage';
+import TournamentManagementPageOrg from "./orgs/TournamentManagementPageOrg";
 
 import AegisOrgPendingApproval from "./orgs/OrgPendingApproval";
 import OrgDashboard from "./orgs/OrgDashboard"; 
@@ -144,6 +145,7 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route path="/org/tournament/:id" element={<ProtectedRoute requireRole="organization"><TournamentManagementPageOrg /></ProtectedRoute>} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>
