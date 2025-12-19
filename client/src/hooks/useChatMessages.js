@@ -3,19 +3,25 @@ import axios from '../utils/axiosConfig';
 import { chatKeys } from './queryKeys';
 
 export const useChatMessages = (chatId, chatType) => {
-  // Direct messages
+  // Direct messages (merged with system messages)
   const { data: directMessages = [], refetch: refetchDirect, isLoading: loadingDirect } = useQuery({
-    queryKey: chatKeys.messages(chatId),
+    queryKey: chatId === 'system' ? chatKeys.systemMessages() : chatKeys.messages(chatId),
     queryFn: async () => {
       if (!chatId) return [];
-      const { data } = await axios.get(`/api/chat/messages/${chatId}`);
-      return data.messages || [];
+      if (chatId === 'system') {
+        // Fetch system messages from special endpoint
+        const { data } = await axios.get('/api/chat/system');
+        return data || [];
+      } else {
+        // Fetch direct messages
+        const { data } = await axios.get(`/api/chat/${chatId}`);
+        return data.messages || [];
+      }
     },
     enabled: chatType === 'direct' && !!chatId,
     staleTime: 30 * 1000, // ✅ 30 seconds
     refetchOnWindowFocus: false, // ✅ Don't refetch on focus
     refetchInterval: false, // ✅ Don't poll
-    // ✅ ADD: Notify components when cache changes
     notifyOnChangeProps: 'all',
   });
 

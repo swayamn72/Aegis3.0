@@ -7,12 +7,13 @@ import Team from '../models/team.model.js';
 import Registration from '../models/registration.model.js';
 import Tournament from '../models/tournament.model.js';
 
-const TOURNAMENT_ID = '693fb61d10212b233854ce4d';
+const TOURNAMENT_ID = '6945122a2105802bc39412a3';
 
 async function main() {
     await connectDB();
 
-    // 1. Create 124 sample players
+
+    // 1. Create 124 sample players (no team assigned yet)
     const players = [];
     for (let i = 1; i <= 124; i++) {
         const player = new Player({
@@ -20,7 +21,7 @@ async function main() {
             inGameName: `IGN${i}`,
             realName: `Player ${i}`,
             email: `player${i}@example.com`,
-            password: 'hashedpassword', // Use a real hash in production
+            password: '$2b$10$rRNQyYASvIopoLMYyncUPuF1V.BVEwQXjtDtXV/dVMQFqEM7jSbVS', // Use a real hash in production
             verified: true,
             country: 'India',
             primaryGame: 'BGMI',
@@ -50,9 +51,15 @@ async function main() {
             region: 'India',
         });
         teams.push(team);
+        // Set the team field for each player in this team
+        for (const player of teamPlayers) {
+            player.team = team._id;
+        }
     }
     await Team.insertMany(teams);
-    console.log('Created 31 teams');
+    // Save updated players with their team field set
+    await Promise.all(players.map(p => p.save()));
+    console.log('Created 31 teams and updated player.team fields');
 
     // 3. Register all teams in the tournament
     const registrations = [];

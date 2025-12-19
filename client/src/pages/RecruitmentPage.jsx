@@ -402,9 +402,11 @@ const RecruitmentPage = () => {
 
     const filteredLFTPosts = useMemo(() => {
         return lftPosts.filter(post =>
-            post.player.username.toLowerCase().includes(debouncedPlayerSearch.toLowerCase()) ||
-            (post.player.inGameName && post.player.inGameName.toLowerCase().includes(debouncedPlayerSearch.toLowerCase())) ||
-            (post.player.realName && post.player.realName.toLowerCase().includes(debouncedPlayerSearch.toLowerCase()))
+            post.player && (
+                post.player.username?.toLowerCase().includes(debouncedPlayerSearch.toLowerCase()) ||
+                post.player.inGameName?.toLowerCase().includes(debouncedPlayerSearch.toLowerCase()) ||
+                post.player.realName?.toLowerCase().includes(debouncedPlayerSearch.toLowerCase())
+            )
         );
     }, [lftPosts, debouncedPlayerSearch]);
 

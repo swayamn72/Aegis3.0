@@ -13,12 +13,12 @@ router.get("/users/with-chats", auth, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // ✅ Use aggregation to exclude system messages properly
+    // Aggregate direct (non-system) chat users
     const messages = await ChatMessage.aggregate([
       {
         $match: {
           $and: [
-            { senderId: { $ne: "system" } }, // ✅ Exclude system messages
+            { senderId: { $ne: "system" } },
             {
               $or: [
                 { senderId: userId },
@@ -46,7 +46,7 @@ router.get("/users/with-chats", auth, async (req, res) => {
       },
     ]);
 
-    // ✅ Filter out 'system', null, and validate ObjectId
+    // Filter out 'system', null, and validate ObjectId
     const userIds = messages
       .map((m) => m._id)
       .filter((id) => {
@@ -58,12 +58,26 @@ router.get("/users/with-chats", auth, async (req, res) => {
         );
       });
 
-    // ✅ Now query Player model with valid ObjectIds only
+    // Check if user has system messages
+    const hasSystemMessages = await ChatMessage.exists({ senderId: 'system', receiverId: userId });
+
+    // Query Player model with valid ObjectIds only
     const users = await Player.find({
       _id: { $in: userIds },
     })
       .select("username inGameName profilePicture aegisRating")
       .lean();
+
+    // If system messages exist, add a pseudo-user for 'system'
+    if (hasSystemMessages) {
+      users.unshift({
+        _id: 'system',
+        username: 'System',
+        inGameName: 'System',
+        profilePicture: '',
+        aegisRating: null
+      });
+    }
 
     res.json({ users });
   } catch (error) {
@@ -196,9 +210,9 @@ router.post("/tournament-reference/:tournamentId", auth, async (req, res) => {
 
     await message.save();
 
-    res.json({ 
-      message: 'Tournament reference sent to captain', 
-      chatMessage: message 
+    res.json({
+      message: 'Tournament reference sent to captain',
+      chatMessage: message
     });
   } catch (error) {
     console.error('Error sending tournament reference:', error);
@@ -206,5 +220,50 @@ router.post("/tournament-reference/:tournamentId", auth, async (req, res) => {
   }
 });
 
+// Send notification message
+router.post("/send-notification", auth, async (req, res) => {
+  try {
+    const { message, messageType, tournamentId, matchId, receiverId, senderId } = req.body;
+
+    if (!receiverId) {
+      return res.status(400).json({ message: 'Receiver ID is required' });
+    }
+
+    // Allow system messages if senderId is 'system', otherwise use req.user.id
+    const actualSenderId = senderId === 'system' ? 'system' : req.user.id;
+
+    // Create notification message
+    const notificationMessage = new ChatMessage({
+      senderId: actualSenderId,
+      receiverId: receiverId,
+      message: message,
+      messageType: messageType || 'text',
+      tournamentId: tournamentId,
+      matchId: matchId,
+      timestamp: new Date()
+    });
+
+    await notificationMessage.save();
+
+    // Emit to receiver
+    if (global.io) {
+      global.io.to(receiverId).emit('receiveMessage', {
+        _id: notificationMessage._id,
+        senderId: actualSenderId,
+        receiverId: receiverId,
+        message: message,
+        messageType: messageType || 'text',
+        tournamentId: tournamentId,
+        matchId: matchId,
+        timestamp: new Date()
+      });
+    }
+
+    res.json({ message: 'Notification sent successfully', chatMessage: notificationMessage });
+  } catch (error) {
+    console.error('Error sending notification:', error);
+    res.status(500).json({ message: 'Server error sending notification' });
+  }
+});
 
 export default router;

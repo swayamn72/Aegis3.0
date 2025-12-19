@@ -23,7 +23,7 @@ const router = express.Router();
 router.get('/:id', auth, async (req, res) => {
   try {
     const teamId = req.params.id.trim();
-    
+
     // Get team details
     const team = await Team.findById(teamId)
       .populate({
@@ -713,30 +713,23 @@ router.post('/available', auth, async (req, res) => {
       });
     }
 
-    // Get tournament to check teams that might have pending invites
-    const tournament = await Tournament.findById(tournamentId)
-      .populate('participatingTeams.team', '_id')
-      .select('participatingTeams');
+    // Get teams registered for this tournament and their phase
+    const registrations = await Registration.find({
+      tournament: tournamentId,
+      status: { $in: ['approved', 'checked_in'] }
+    }).populate('team', 'teamName teamTag logo primaryGame region aegisRating players status profileVisibility');
 
-    if (!tournament) {
-      return res.status(404).json({
-        message: 'Tournament not found'
-      });
-    }
+    // Teams already in the selected phase
+    const teamsInPhase = registrations
+      .filter(r => r.phase === phase && r.team)
+      .map(r => r.team._id.toString());
 
-    // Get teams already in the selected phase
-    const teamsInPhase = tournament.participatingTeams
-      .filter(pt => pt.currentStage === phase)
-      .map(pt => pt.team._id.toString());
+    // Teams with pending invites for this phase (if you have an Invitation model, otherwise skip this)
+    // For now, we skip pending invites logic unless you have a separate Invitation collection
 
-    // Get teams that have pending invites for this phase
-    const teamsWithPendingInvites = tournament.participatingTeams
-      .filter(pt => pt.invites?.some(inv => inv.phase === phase && inv.status === 'pending'))
-      .map(pt => pt.team._id.toString());
-
-    // Find all active teams except those in phase or with pending invites
+    // Find all active, public teams not in phase
     const availableTeams = await Team.find({
-      _id: { $nin: [...new Set([...teamsInPhase, ...teamsWithPendingInvites])] },
+      _id: { $nin: teamsInPhase },
       status: 'active',
       profileVisibility: 'public'
     })

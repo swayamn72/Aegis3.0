@@ -522,10 +522,10 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-zinc-300 mb-2">
-                  Registration Start Date
+                  Registration Start Date & Time
                 </label>
                 <input
-                  type="date"
+                  type="datetime-local"
                   name="registrationStartDate"
                   value={formData.registrationStartDate}
                   onChange={handleChange}
@@ -535,10 +535,10 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
 
               <div>
                 <label className="block text-sm font-medium text-zinc-300 mb-2">
-                  Registration End Date
+                  Registration End Date & Time
                 </label>
                 <input
-                  type="date"
+                  type="datetime-local"
                   name="registrationEndDate"
                   value={formData.registrationEndDate}
                   onChange={handleChange}
@@ -803,8 +803,8 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
                               </p>
                             </div>
                             <span className={`px-2 py-1 rounded-full text-xs ${phase.status === 'upcoming' ? 'bg-blue-500/20 text-blue-400' :
-                                phase.status === 'in_progress' ? 'bg-green-500/20 text-green-400' :
-                                  'bg-gray-500/20 text-gray-400'
+                              phase.status === 'in_progress' ? 'bg-green-500/20 text-green-400' :
+                                'bg-gray-500/20 text-gray-400'
                               }`}>
                               {phase.status}
                             </span>

@@ -695,9 +695,9 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                             {formData.isOpenForAll && (
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium mb-2">Registration Start Date</label>
+                                        <label className="block text-sm font-medium mb-2">Registration Start Date & Time</label>
                                         <input
-                                            type="date"
+                                            type="datetime-local"
                                             value={formData.registrationStartDate}
                                             onChange={(e) => handleInputChange('registrationStartDate', e.target.value)}
                                             className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
@@ -705,9 +705,9 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                                     </div>
 
                                     <div>
-                                        <label className="block text-sm font-medium mb-2">Registration End Date</label>
+                                        <label className="block text-sm font-medium mb-2">Registration End Date & Time</label>
                                         <input
-                                            type="date"
+                                            type="datetime-local"
                                             value={formData.registrationEndDate}
                                             onChange={(e) => handleInputChange('registrationEndDate', e.target.value)}
                                             className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
