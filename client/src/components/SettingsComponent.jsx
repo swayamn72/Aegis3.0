@@ -2,13 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
-  Settings, User, Bell, Mail, Shield, Download, HelpCircle,
-  Bug, MessageSquare, Trash2, ExternalLink, Eye, EyeOff,
-  Save, X, Check, AlertTriangle, Globe, Smartphone, Monitor,
-  Lock, Key, Unlink, Github, Twitch,
-  Volume2, VolumeX, Zap, Crown, Trophy, Star, Upload
+  User, Shield, HelpCircle,
+  Bug, MessageSquare, Trash2, ExternalLink,
+  Save, X, Check, AlertTriangle, Globe,
+  Lock, Key, Upload
 } from 'lucide-react';
-import { FaDiscord, FaSteam } from 'react-icons/fa';
 import { useAuth } from '../context/AuthContext';
 import axiosInstance from '../utils/axiosConfig';
 
@@ -77,45 +75,9 @@ const SettingsComponent = () => {
     cardTheme: 'orange'
   });
 
-  // Notification settings state
-  const [notificationSettings, setNotificationSettings] = useState({
-    email: {
-      newsletter: true,
-      updates: true,
-      promotional: false,
-      security: true,
-      matchResults: true,
-      tournamentInvites: true
-    },
-    push: {
-      browser: true,
-      mobile: true,
-      matchUpdates: true,
-      friendRequests: true,
-      messages: true,
-      achievements: true
-    },
-    inApp: {
-      sounds: true,
-      vibration: true,
-      popups: true,
-      badges: true
-    },
-    sms: {
-      enabled: false,
-      security: true,
-      tournaments: false
-    }
-  });
 
-  // Linked accounts state
-  const [linkedAccounts, setLinkedAccounts] = useState({
-    steam: { connected: true, username: 'zyaxxxx_gaming' },
-    discord: { connected: true, username: 'Zyaxxxx#1337' },
-    twitch: { connected: true, username: 'zyaxxxx_gaming' },
-    youtube: { connected: false, username: '' },
-    github: { connected: false, username: '' }
-  });
+
+
 
   const AegisMascot = () => (
     <div className="relative">
@@ -239,42 +201,7 @@ const SettingsComponent = () => {
   };
 
 
-  const AccountCard = ({ platform, icon: Icon, account, onToggle, color = 'orange' }) => (
-    <div className={`bg-zinc-800/50 border border-zinc-700 rounded-xl p-4`}>
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 bg-gradient-to-r ${color === 'blue' ? 'from-blue-500 to-blue-600' :
-            color === 'purple' ? 'from-purple-500 to-purple-600' :
-              color === 'red' ? 'from-red-500 to-red-600' :
-                color === 'zinc' ? 'from-zinc-500 to-zinc-600' :
-                  'from-orange-500 to-orange-600'
-            } rounded-lg flex items-center justify-center`}>
-            <Icon className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <div className="text-white font-medium capitalize">{platform}</div>
-            {account.connected && (
-              <div className="text-zinc-400 text-sm">{account.username}</div>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {account.connected && (
-            <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded-full">Connected</span>
-          )}
-          <button
-            onClick={() => onToggle(platform)}
-            className={`px-3 py-1 text-sm rounded-lg transition-colors ${account.connected
-              ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30'
-              : 'bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 border border-orange-500/30'
-              }`}
-          >
-            {account.connected ? 'Disconnect' : 'Connect'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+
 
   return (
     <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans mt-[100px]">
@@ -305,38 +232,10 @@ const SettingsComponent = () => {
             <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 sticky top-[calc(5rem+1rem)] z-20">
               <nav className="space-y-2">
                 <SettingsSection
-                  id="profile"
-                  title="Edit Profile"
-                  icon={User}
-                  isActive={activeSection === 'profile'}
-                  onClick={setActiveSection}
-                />
-                <SettingsSection
-                  id="accounts"
-                  title="Linked Accounts"
-                  icon={ExternalLink}
-                  isActive={activeSection === 'accounts'}
-                  onClick={setActiveSection}
-                />
-                <SettingsSection
-                  id="notifications"
-                  title="Notifications"
-                  icon={Bell}
-                  isActive={activeSection === 'notifications'}
-                  onClick={setActiveSection}
-                />
-                <SettingsSection
                   id="privacy"
                   title="Privacy & Security"
                   icon={Shield}
                   isActive={activeSection === 'privacy'}
-                  onClick={setActiveSection}
-                />
-                <SettingsSection
-                  id="data"
-                  title="Data & Export"
-                  icon={Download}
-                  isActive={activeSection === 'data'}
                   onClick={setActiveSection}
                 />
                 <SettingsSection
@@ -680,255 +579,9 @@ const SettingsComponent = () => {
               </div>
             )}
 
-            {/* Linked Accounts Section */}
-            {activeSection === 'accounts' && (
-              <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
-                <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                  <ExternalLink className="w-6 h-6 text-orange-400" />
-                  Linked Accounts
-                </h2>
+            {/* Removed Linked Accounts Section */}
 
-                <p className="text-zinc-400 mb-6">
-                  Connect your gaming and social accounts to enhance your Aegis experience
-                </p>
-
-                <div className="space-y-4">
-                  <AccountCard
-                    platform="steam"
-                    icon={FaSteam}
-                    account={linkedAccounts.steam}
-                    onToggle={(platform) => {
-                      setLinkedAccounts({
-                        ...linkedAccounts,
-                        [platform]: {
-                          ...linkedAccounts[platform],
-                          connected: !linkedAccounts[platform].connected
-                        }
-                      });
-                      showSaveMessage(`Steam account ${linkedAccounts[platform].connected ? 'disconnected' : 'connected'}`);
-                    }}
-                    color="blue"
-                  />
-
-                  <AccountCard
-                    platform="discord"
-                    icon={FaDiscord}
-                    account={linkedAccounts.discord}
-                    onToggle={(platform) => {
-                      setLinkedAccounts({
-                        ...linkedAccounts,
-                        [platform]: {
-                          ...linkedAccounts[platform],
-                          connected: !linkedAccounts[platform].connected
-                        }
-                      });
-                      showSaveMessage(`Discord account ${linkedAccounts[platform].connected ? 'disconnected' : 'connected'}`);
-                    }}
-                    color="purple"
-                  />
-
-                  <AccountCard
-                    platform="twitch"
-                    icon={Twitch}
-                    account={linkedAccounts.twitch}
-                    onToggle={(platform) => {
-                      setLinkedAccounts({
-                        ...linkedAccounts,
-                        [platform]: {
-                          ...linkedAccounts[platform],
-                          connected: !linkedAccounts[platform].connected
-                        }
-                      });
-                      showSaveMessage(`Twitch account ${linkedAccounts[platform].connected ? 'disconnected' : 'connected'}`);
-                    }}
-                    color="purple"
-                  />
-
-                  <AccountCard
-                    platform="youtube"
-                    icon={Globe}
-                    account={linkedAccounts.youtube}
-                    onToggle={(platform) => {
-                      setLinkedAccounts({
-                        ...linkedAccounts,
-                        [platform]: {
-                          ...linkedAccounts[platform],
-                          connected: !linkedAccounts[platform].connected
-                        }
-                      });
-                      showSaveMessage(`YouTube account ${linkedAccounts[platform].connected ? 'disconnected' : 'connected'}`);
-                    }}
-                    color="red"
-                  />
-
-                  <AccountCard
-                    platform="github"
-                    icon={Github}
-                    account={linkedAccounts.github}
-                    onToggle={(platform) => {
-                      setLinkedAccounts({
-                        ...linkedAccounts,
-                        [platform]: {
-                          ...linkedAccounts[platform],
-                          connected: !linkedAccounts[platform].connected
-                        }
-                      });
-                      showSaveMessage(`GitHub account ${linkedAccounts[platform].connected ? 'disconnected' : 'connected'}`);
-                    }}
-                    color="zinc"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Notifications Section */}
-            {activeSection === 'notifications' && (
-              <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
-                <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                  <Bell className="w-6 h-6 text-orange-400" />
-                  Notification Preferences
-                </h2>
-
-                <div className="space-y-8">
-
-                  {/* Email Notifications */}
-                  <div>
-                    <h3 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-                      <Mail className="w-5 h-5 text-blue-400" />
-                      Email Notifications
-                    </h3>
-                    <div className="space-y-3">
-                      {Object.entries({
-                        newsletter: 'Newsletter & Updates',
-                        updates: 'Platform Updates',
-                        promotional: 'Promotional Offers',
-                        security: 'Security Alerts',
-                        matchResults: 'Match Results',
-                        tournamentInvites: 'Tournament Invitations'
-                      }).map(([key, label]) => (
-                        <div key={key} className="flex items-center justify-between p-3 bg-zinc-800/50 rounded-lg">
-                          <div className="text-zinc-300">{label}</div>
-                          <ToggleSwitch
-                            enabled={notificationSettings.email[key]}
-                            onChange={(enabled) =>
-                              setNotificationSettings({
-                                ...notificationSettings,
-                                email: { ...notificationSettings.email, [key]: enabled }
-                              })
-                            }
-                            size="small"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Push Notifications */}
-                  <div>
-                    <h3 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-                      <Smartphone className="w-5 h-5 text-green-400" />
-                      Push Notifications
-                    </h3>
-                    <div className="space-y-3">
-                      {Object.entries({
-                        browser: 'Browser Notifications',
-                        mobile: 'Mobile App Notifications',
-                        matchUpdates: 'Match Updates',
-                        friendRequests: 'Friend Requests',
-                        messages: 'Direct Messages',
-                        achievements: 'Achievement Unlocks'
-                      }).map(([key, label]) => (
-                        <div key={key} className="flex items-center justify-between p-3 bg-zinc-800/50 rounded-lg">
-                          <div className="text-zinc-300">{label}</div>
-                          <ToggleSwitch
-                            enabled={notificationSettings.push[key]}
-                            onChange={(enabled) =>
-                              setNotificationSettings({
-                                ...notificationSettings,
-                                push: { ...notificationSettings.push, [key]: enabled }
-                              })
-                            }
-                            size="small"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* In-App Notifications */}
-                  <div>
-                    <h3 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-                      <Monitor className="w-5 h-5 text-purple-400" />
-                      In-App Notifications
-                    </h3>
-                    <div className="space-y-3">
-                      {Object.entries({
-                        sounds: 'Notification Sounds',
-                        vibration: 'Vibration (Mobile)',
-                        popups: 'Pop-up Notifications',
-                        badges: 'Badge Notifications'
-                      }).map(([key, label]) => (
-                        <div key={key} className="flex items-center justify-between p-3 bg-zinc-800/50 rounded-lg">
-                          <div className="text-zinc-300">{label}</div>
-                          <ToggleSwitch
-                            enabled={notificationSettings.inApp[key]}
-                            onChange={(enabled) =>
-                              setNotificationSettings({
-                                ...notificationSettings,
-                                inApp: { ...notificationSettings.inApp, [key]: enabled }
-                              })
-                            }
-                            size="small"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* SMS Notifications */}
-                  <div>
-                    <h3 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-                      <MessageSquare className="w-5 h-5 text-amber-400" />
-                      SMS Notifications
-                    </h3>
-                    <div className="space-y-3">
-                      {Object.entries({
-                        enabled: 'Enable SMS Notifications',
-                        security: 'Security Alerts Only',
-                        tournaments: 'Tournament Updates'
-                      }).map(([key, label]) => (
-                        <div key={key} className="flex items-center justify-between p-3 bg-zinc-800/50 rounded-lg">
-                          <div className="text-zinc-300">{label}</div>
-                          <ToggleSwitch
-                            enabled={notificationSettings.sms[key]}
-                            onChange={(enabled) =>
-                              setNotificationSettings({
-                                ...notificationSettings,
-                                sms: { ...notificationSettings.sms, [key]: enabled }
-                              })
-                            }
-                            size="small"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex gap-4 pt-6 border-t border-zinc-700">
-                    <button
-                      onClick={() => {
-                        showSaveMessage('Notification preferences saved!');
-                        toast.success('Notification preferences saved!');
-                      }}
-                      className="bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white font-medium px-6 py-2 rounded-lg transition-all duration-200 flex items-center gap-2"
-                    >
-                      <Save className="w-4 h-4" />
-                      Save Preferences
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Removed Notifications Section */}
 
             {/* Privacy & Security Section */}
             {activeSection === 'privacy' && (
@@ -1015,93 +668,13 @@ const SettingsComponent = () => {
                           <option value="private">Private</option>
                         </select>
                       </div>
-
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="text-white font-medium">Match History</div>
-                          <div className="text-zinc-400 text-sm">Who can see your match history</div>
-                        </div>
-                        <select className="bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none">
-                          <option value="public">Public</option>
-                          <option value="friends">Friends Only</option>
-                          <option value="private">Private</option>
-                        </select>
-                      </div>
                     </div>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Data & Export Section */}
-            {activeSection === 'data' && (
-              <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
-                <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                  <Download className="w-6 h-6 text-orange-400" />
-                  Data & Export
-                </h2>
-
-                <div className="space-y-6">
-                  <div className="bg-zinc-800/50 border border-green-400/30 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold text-green-400 mb-3 flex items-center gap-2">
-                      <Download className="w-5 h-5" />
-                      Download Your Data
-                    </h3>
-                    <p className="text-zinc-400 text-sm mb-4">
-                      Download a copy of all your data including profile information, match history, and statistics
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <button className="bg-green-500/20 border border-green-500/30 text-green-400 hover:bg-green-500/30 font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
-                        <Download className="w-4 h-4" />
-                        Profile Data (JSON)
-                      </button>
-                      <button className="bg-green-500/20 border border-green-500/30 text-green-400 hover:bg-green-500/30 font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
-                        <Download className="w-4 h-4" />
-                        Match History (CSV)
-                      </button>
-                      <button className="bg-green-500/20 border border-green-500/30 text-green-400 hover:bg-green-500/30 font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
-                        <Download className="w-4 h-4" />
-                        Statistics Report
-                      </button>
-                      <button className="bg-green-500/20 border border-green-500/30 text-green-400 hover:bg-green-500/30 font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
-                        <Download className="w-4 h-4" />
-                        Complete Archive
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="bg-zinc-800/50 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold text-white mb-3">Data Usage</h3>
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-zinc-300">Profile Data</span>
-                        <span className="text-zinc-400 text-sm">2.3 MB</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-zinc-300">Match History</span>
-                        <span className="text-zinc-400 text-sm">15.7 MB</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-zinc-300">Screenshots & Media</span>
-                        <span className="text-zinc-400 text-sm">248.9 MB</span>
-                      </div>
-                      <div className="flex items-center justify-between border-t border-zinc-600 pt-4">
-                        <span className="text-white font-medium">Total Data</span>
-                        <span className="text-orange-400 font-medium">266.9 MB</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
-                    <h3 className="text-amber-400 font-semibold mb-2">Important Notice</h3>
-                    <p className="text-amber-300 text-sm mb-3">
-                      Data exports may take up to 24 hours to process. You'll receive an email when your download is ready.
-                      Downloads are available for 7 days after generation.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Removed Data & Export Section */}
 
             {/* Support & Help Section */}
             {activeSection === 'support' && (
