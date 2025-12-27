@@ -88,12 +88,6 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
       return false;
     }
 
-    const scheduledDateTime = new Date(`${formData.scheduledDate}T${formData.scheduledTime}`);
-    if (scheduledDateTime <= new Date()) {
-      toast.error('Scheduled time must be in the future');
-      return false;
-    }
-
     return true;
   };
 

@@ -135,6 +135,485 @@ router.get('/my-tournaments', verifyOrgAuth, async (req, res) => {
   }
 });
 
+// **ADVANCE PHASE ROUTE** - Calculates standings from completed matches
+router.post('/:tournamentId/advance-phase', verifyOrgAuth, async (req, res) => {
+  try {
+    const { tournamentId } = req.params;
+    const { phaseName } = req.body;
+
+    console.log('=== ADVANCE PHASE START ===');
+    console.log('Tournament ID:', tournamentId);
+    console.log('Phase Name:', phaseName);
+
+    // Fetch tournament with teams populated
+    const tournament = await Tournament.findById(tournamentId)
+      .select('phases organizer status prizePool participatingTeams')
+      .populate('phases.teams', 'teamName teamTag logo');
+
+    if (!tournament) {
+      return res.status(404).json({ error: 'Tournament not found' });
+    }
+
+    // Authorization check
+    if (tournament.organizer.organizationRef?.toString() !== req.organization._id.toString()) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    // Find the phase
+    const phaseIndex = tournament.phases.findIndex(p => p.name === phaseName);
+    if (phaseIndex === -1) {
+      return res.status(404).json({ error: 'Phase not found' });
+    }
+
+    const currentPhase = tournament.phases[phaseIndex];
+    console.log('Current phase:', currentPhase.name, 'Status:', currentPhase.status);
+
+    // Fetch all matches for this phase
+    const matches = await Match.find({
+      tournament: tournamentId,
+      tournamentPhase: phaseName
+    })
+      .populate('participatingTeams.team', 'teamName teamTag logo')
+      .lean();
+
+    console.log(`Total matches: ${matches.length}`);
+
+    // Calculate standings from matches
+    const teamStandings = {};
+
+    // Get teams in this phase
+    const phaseTeamIds = currentPhase.teams?.map(t => t._id?.toString() || t.toString()) || [];
+
+    // Initialize standings for all teams in phase
+    for (const teamId of phaseTeamIds) {
+      const team = await Team.findById(teamId).select('teamName teamTag logo').lean();
+      if (team) {
+        teamStandings[teamId] = {
+          team: team,
+          teamId: teamId,
+          points: 0,
+          positionPoints: 0,
+          killPoints: 0,
+          kills: 0,
+          chickenDinners: 0,
+          matchesPlayed: 0,
+          placements: [],
+          group: null
+        };
+      }
+    }
+
+    // Process matches and calculate points
+    matches.forEach(match => {
+      match.participatingTeams?.forEach(teamResult => {
+        const teamId = (teamResult.team?._id || teamResult.team)?.toString();
+
+        if (teamId && teamStandings[teamId]) {
+          const position = teamResult.finalPosition;
+          const kills = teamResult.kills?.total || 0;
+
+          if (position || kills > 0) {
+            const placementPoints = getPlacementPoints(position);
+
+            teamStandings[teamId].positionPoints += placementPoints;
+            teamStandings[teamId].killPoints += kills;
+            teamStandings[teamId].points += (placementPoints + kills);
+            teamStandings[teamId].kills += kills;
+            teamStandings[teamId].matchesPlayed += 1;
+
+            if (position) teamStandings[teamId].placements.push(position);
+            if (teamResult.chickenDinner) teamStandings[teamId].chickenDinners += 1;
+          }
+        }
+      });
+    });
+
+    // Get group assignments from tournament phase groups
+    const teamGroupMap = {};
+    if (currentPhase.groups && currentPhase.groups.length > 0) {
+      currentPhase.groups.forEach(group => {
+        const groupName = group.name;
+        group.teams?.forEach(teamId => {
+          teamGroupMap[teamId.toString()] = groupName;
+        });
+      });
+    }
+
+    // Assign groups to standings
+    Object.keys(teamStandings).forEach(teamId => {
+      teamStandings[teamId].group = teamGroupMap[teamId] || null;
+    });
+
+    // Convert to array and sort by: totalPoints → positionPoints → chickenDinners → kills
+    const overallStandings = Object.values(teamStandings).sort((a, b) => {
+      if (a.points !== b.points) return b.points - a.points;
+      if (a.positionPoints !== b.positionPoints) return b.positionPoints - a.positionPoints;
+      if (a.chickenDinners !== b.chickenDinners) return b.chickenDinners - a.chickenDinners;
+      return b.kills - a.kills;
+    });
+
+    // Assign positions
+    overallStandings.forEach((standing, index) => {
+      standing.position = index + 1;
+    });
+
+    // Calculate group standings
+    const groupStandings = [];
+    const standingsByGroup = {};
+
+    overallStandings.forEach(standing => {
+      if (standing.group) {
+        if (!standingsByGroup[standing.group]) {
+          standingsByGroup[standing.group] = [];
+        }
+        standingsByGroup[standing.group].push(standing);
+      }
+    });
+
+    // Sort each group
+    Object.entries(standingsByGroup).forEach(([groupName, standings]) => {
+      standings.sort((a, b) => {
+        if (a.points !== b.points) return b.points - a.points;
+        if (a.positionPoints !== b.positionPoints) return b.positionPoints - a.positionPoints;
+        if (a.chickenDinners !== b.chickenDinners) return b.chickenDinners - a.chickenDinners;
+        return b.kills - a.kills;
+      });
+      groupStandings.push(...standings);
+    });
+
+    console.log(`Overall standings: ${overallStandings.length} teams`);
+    console.log(`Group standings: ${groupStandings.length} entries`);
+
+    if (overallStandings.length === 0) {
+      return res.status(400).json({
+        error: 'No team standings calculated. Ensure teams participated in matches.'
+      });
+    }
+
+    // Mark current phase as completed
+    currentPhase.status = 'completed';
+    console.log('✅ Marked phase as completed');
+
+    // Advance teams to next phase
+    const teamsAdvanced = [];
+    const advancementDetails = [];
+
+    if (phaseIndex + 1 < tournament.phases.length) {
+      console.log('📊 Processing qualification rules...');
+
+      if (currentPhase.qualificationRules && currentPhase.qualificationRules.length > 0) {
+        const qualifiedTeamsSet = new Set();
+
+        for (const rule of currentPhase.qualificationRules) {
+          const numberOfTeams = rule.numberOfTeams || 0;
+          const source = rule.source || 'overall';
+          const nextPhaseName = rule.nextPhase;
+
+          console.log(`Rule: ${numberOfTeams} teams from ${source} to ${nextPhaseName}`);
+
+          // Find next phase by name
+          const nextPhaseIndex = tournament.phases.findIndex(p => p.name === nextPhaseName);
+          if (nextPhaseIndex === -1) {
+            console.warn(`⚠️ Next phase "${nextPhaseName}" not found`);
+            continue;
+          }
+
+          const nextPhase = tournament.phases[nextPhaseIndex];
+          let qualifiedTeamIds = [];
+
+          if (source === 'overall') {
+            // Take top N teams from overall standings
+            qualifiedTeamIds = overallStandings
+              .slice(0, numberOfTeams)
+              .map(s => s.team._id.toString());
+
+            console.log(`  → ${qualifiedTeamIds.length} teams from overall`);
+          } else if (source === 'from_each_group') {
+            // Take top N teams from each group
+            Object.entries(standingsByGroup).forEach(([groupName, standings]) => {
+              const topFromGroup = standings
+                .slice(0, numberOfTeams)
+                .map(s => s.team._id.toString());
+
+              qualifiedTeamIds.push(...topFromGroup);
+              console.log(`  → ${topFromGroup.length} teams from ${groupName}`);
+            });
+          }
+
+          // Add to qualified set
+          qualifiedTeamIds.forEach(teamId => qualifiedTeamsSet.add(teamId));
+
+          // Initialize next phase teams array if needed
+          if (!nextPhase.teams) nextPhase.teams = [];
+
+          // Add teams to next phase (avoid duplicates)
+          const newTeams = qualifiedTeamIds.filter(
+            teamId => !nextPhase.teams.some(t => t.toString() === teamId)
+          );
+
+          nextPhase.teams.push(...newTeams);
+          nextPhase.status = 'upcoming';
+
+          advancementDetails.push({
+            rule: `${numberOfTeams} from ${source}`,
+            nextPhase: nextPhaseName,
+            teamsQualified: qualifiedTeamIds.length
+          });
+
+          console.log(`  ✅ Added ${newTeams.length} new teams to ${nextPhaseName}`);
+        }
+
+        teamsAdvanced.push(...Array.from(qualifiedTeamsSet));
+
+        // Update Registration collection with new phase info
+        if (teamsAdvanced.length > 0) {
+          // Build map from advancement details
+          const teamToNextPhaseMap = {};
+
+          for (const detail of advancementDetails) {
+            const nextPhaseIndex = tournament.phases.findIndex(p => p.name === detail.nextPhase);
+            if (nextPhaseIndex !== -1) {
+              const nextPhase = tournament.phases[nextPhaseIndex];
+              nextPhase.teams.forEach(teamId => {
+                teamToNextPhaseMap[teamId.toString()] = detail.nextPhase;
+              });
+            }
+          }
+
+          // Update each team individually
+          const updatePromises = teamsAdvanced.map(async (teamId) => {
+            const nextPhaseName = teamToNextPhaseMap[teamId];
+            return Registration.findOneAndUpdate(
+              {
+                tournament: tournamentId,
+                team: teamId,
+                status: { $in: ['approved', 'checked_in'] }
+              },
+              {
+                $set: {
+                  phase: nextPhaseName,
+                  currentStage: nextPhaseName
+                }
+              }
+            );
+          });
+
+          await Promise.all(updatePromises);
+          console.log(`✅ Updated ${teamsAdvanced.length} registrations`);
+        }
+
+      } else {
+        // No qualification rules - advance all teams
+        console.log('⚠️ No qualification rules - advancing all teams');
+        const nextPhase = tournament.phases[phaseIndex + 1];
+        const allTeamIds = overallStandings.map(s => s.teamId);
+
+        if (!nextPhase.teams) nextPhase.teams = [];
+
+        const newTeams = allTeamIds.filter(
+          teamId => !nextPhase.teams.some(t => t.toString() === teamId)
+        );
+
+        nextPhase.teams.push(...newTeams);
+        nextPhase.status = 'upcoming';
+
+        teamsAdvanced.push(...allTeamIds);
+
+        // Update registrations
+        await Registration.updateMany(
+          {
+            tournament: tournamentId,
+            team: { $in: allTeamIds },
+            status: { $in: ['approved', 'checked_in'] }
+          },
+          {
+            $set: {
+              phase: nextPhase.name,
+              currentStage: nextPhase.name
+            }
+          }
+        );
+
+        advancementDetails.push({
+          rule: 'All teams advance',
+          nextPhase: nextPhase.name,
+          teamsQualified: allTeamIds.length
+        });
+
+        console.log(`✅ Advanced all ${allTeamIds.length} teams to ${nextPhase.name}`);
+      }
+
+    } else {
+      // This is the final phase - update final standings
+      console.log('🏆 This is the final phase - updating final standings');
+
+      tournament.finalStandings = overallStandings.map((standing, index) => ({
+        position: index + 1,
+        team: standing.team._id || standing.teamId,
+        tournamentPointsAwarded: standing.points,
+        kills: standing.kills,
+        chickenDinners: standing.chickenDinners,
+        matchesPlayed: standing.matchesPlayed,
+        statistics: {
+          totalPoints: standing.points,
+          totalKills: standing.kills,
+          averagePlacement: standing.placements.length > 0
+            ? standing.placements.reduce((a, b) => a + b, 0) / standing.placements.length
+            : 0,
+          chickenDinners: standing.chickenDinners
+        }
+      }));
+
+      tournament.status = 'completed';
+
+      // Mark all qualified teams as having completed tournament
+      await Registration.updateMany(
+        {
+          tournament: tournamentId,
+          status: { $in: ['approved', 'checked_in'] }
+        },
+        {
+          $set: {
+            currentStage: 'Completed'
+          }
+        }
+      );
+
+      // Set final positions in registrations
+      for (let i = 0; i < overallStandings.length; i++) {
+        await Registration.findOneAndUpdate(
+          {
+            tournament: tournamentId,
+            team: overallStandings[i].teamId
+          },
+          {
+            $set: {
+              finalPosition: i + 1,
+              totalTournamentPoints: overallStandings[i].points,
+              totalTournamentKills: overallStandings[i].kills
+            }
+          }
+        );
+      }
+
+      console.log('✅ Updated final standings and registrations');
+    }
+
+    // Update or create PhaseStanding summary
+    try {
+      await PhaseStanding.findOneAndUpdate(
+        {
+          tournament: tournamentId,
+          phase: phaseName
+        },
+        {
+          $set: {
+            status: 'completed',
+            topTeams: overallStandings.slice(0, 10).map(s => ({
+              team: s.team._id || s.teamId,
+              position: s.position,
+              points: s.points,
+              kills: s.kills,
+              chickenDinners: s.chickenDinners,
+              matchesPlayed: s.matchesPlayed
+            })),
+            statistics: {
+              totalTeams: overallStandings.length,
+              totalMatches: matches.length,
+              totalPoints: overallStandings.reduce((sum, s) => sum + s.points, 0),
+              totalKills: overallStandings.reduce((sum, s) => sum + s.kills, 0)
+            },
+            lastCalculated: new Date()
+          }
+        },
+        { upsert: true, new: true }
+      );
+      console.log('✅ Updated PhaseStanding');
+    } catch (phaseStandingError) {
+      console.warn('⚠️ Failed to update PhaseStanding:', phaseStandingError.message);
+    }
+
+    // Save tournament
+    await tournament.save();
+    console.log('✅ Tournament saved successfully');
+
+    // Prepare response with standings
+    const response = {
+      success: true,
+      message: 'Phase advanced successfully',
+      phase: {
+        name: currentPhase.name,
+        status: 'completed',
+        completedAt: new Date()
+      },
+      standings: {
+        overall: overallStandings.map((s, i) => ({
+          position: i + 1,
+          team: s.team,
+          points: s.points,
+          positionPoints: s.positionPoints,
+          killPoints: s.killPoints,
+          kills: s.kills,
+          chickenDinners: s.chickenDinners,
+          matchesPlayed: s.matchesPlayed
+        })),
+        byGroup: Object.keys(standingsByGroup).length > 0
+          ? Object.entries(standingsByGroup).reduce((acc, [groupName, standings]) => {
+            acc[groupName] = standings.map((s, i) => ({
+              position: i + 1,
+              team: s.team,
+              points: s.points,
+              kills: s.kills,
+              chickenDinners: s.chickenDinners
+            }));
+            return acc;
+          }, {})
+          : null
+      },
+      advancement: {
+        teamsAdvanced: teamsAdvanced.length,
+        details: advancementDetails,
+        nextPhases: [...new Set(advancementDetails.map(d => d.nextPhase))]
+      },
+      stats: {
+        matchesProcessed: matches.length,
+        standingsCalculated: overallStandings.length,
+        isFinalPhase: phaseIndex + 1 >= tournament.phases.length
+      }
+    };
+
+    // If final phase, include final standings
+    if (tournament.status === 'completed') {
+      response.finalStandings = tournament.finalStandings;
+    }
+
+    console.log('=== ADVANCE PHASE END ===');
+    res.json(response);
+
+  } catch (error) {
+    console.error('❌ Error advancing phase:', error);
+
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ error: 'Validation failed', errors });
+    }
+
+    res.status(500).json({
+      error: 'Failed to advance phase',
+      message: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Helper function (if not already defined)
+function getPlacementPoints(position) {
+  const pointsMap = {
+    1: 10, 2: 6, 3: 5, 4: 4, 5: 3, 6: 2, 7: 1, 8: 1
+  };
+  return pointsMap[position] || 0;
+}
+
+
 // ============================================================================
 // GET SPECIFIC TOURNAMENT (OPTIMIZED FOR NEW SCHEMA)
 // ============================================================================
@@ -158,7 +637,7 @@ router.get('/:tournamentId', verifyOrgAuth, async (req, res) => {
     }
 
     // Fetch all related data in parallel
-    const [registrations, phaseStandings,  matches] = await Promise.all([
+    const [registrations, phaseStandings, matches] = await Promise.all([
       // Get all registrations with team data
       Registration.find({ tournament: tournamentId })
         .populate('team', 'teamName teamTag logo primaryGame region')

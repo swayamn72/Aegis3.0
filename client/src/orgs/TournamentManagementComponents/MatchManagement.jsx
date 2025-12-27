@@ -291,11 +291,11 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${match.status === 'scheduled' ? 'bg-blue-500/20 text-blue-400' :
-                                            match.status === 'in_progress' ? 'bg-green-500/20 text-green-400' :
-                                                match.status === 'completed' ? 'bg-gray-500/20 text-gray-400' :
-                                                    'bg-red-500/20 text-red-400'
+                                        match.status === 'in_progress' ? 'bg-green-500/20 text-green-400' :
+                                            match.status === 'completed' ? 'bg-gray-500/20 text-gray-400' :
+                                                'bg-red-500/20 text-red-400'
                                         }`}>
-                                        {match.status.replace('_', ' ')}
+                                        {(match.status || 'unknown').replace('_', ' ')}
                                     </span>
                                     <button
                                         onClick={() => {
@@ -354,7 +354,7 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                                             const currentPoints = team.points?.totalPoints || 0;
 
                                             return (
-                                                <div key={index} className="flex items-center gap-3 p-3 bg-gray-700/50 rounded-lg">
+                                                <div key={teamId || index} className="flex items-center gap-3 p-3 bg-gray-700/50 rounded-lg">
                                                     <div className="flex-1 min-w-0">
                                                         <span className="text-white font-medium truncate block">{teamName}</span>
                                                     </div>
