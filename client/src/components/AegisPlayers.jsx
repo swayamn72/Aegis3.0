@@ -38,8 +38,8 @@ const FilterDropdown = React.memo(({ options, selected, onSelect, placeholder, i
                             key={option}
                             onClick={() => handleSelect(option)}
                             className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${(option === 'All' && !selected) || option === selected
-                                    ? 'bg-zinc-900 text-[#FF4500] font-medium'
-                                    : 'text-zinc-300 hover:bg-zinc-900 hover:text-white'
+                                ? 'bg-zinc-900 text-[#FF4500] font-medium'
+                                : 'text-zinc-300 hover:bg-zinc-900 hover:text-white'
                                 }`}
                         >
                             {option}
@@ -125,15 +125,6 @@ const PlayerCard = React.memo(({ player, onViewProfile }) => {
                     </div>
                 </div>
 
-                {/* Aegis Rating */}
-                <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-3 mb-3 text-center">
-                    <div className="flex items-center justify-center gap-1.5 mb-1">
-                        <Trophy className="w-4 h-4 text-[#FF4500]" />
-                        <span className="text-zinc-500 text-xs font-semibold uppercase tracking-wider">Aegis Rating</span>
-                    </div>
-                    <div className="text-2xl font-bold text-white">{player.aegisRating || 0}</div>
-                </div>
-
                 {/* Stats Grid */}
                 <div className="grid grid-cols-2 gap-2 mb-3">
                     <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-2 text-center">
@@ -149,8 +140,11 @@ const PlayerCard = React.memo(({ player, onViewProfile }) => {
                 {/* Additional Stats */}
                 <div className="grid grid-cols-3 gap-2 mb-3">
                     <div className="text-center">
-                        <p className="text-zinc-500 text-xs">Earnings</p>
-                        <p className="text-sm font-bold text-green-400">${player.earnings || 0}</p>
+                        <p className="text-zinc-500 text-xs">Location</p>
+                        <div className="flex items-center justify-center gap-1">
+                            <MapPin className="w-3 h-3 text-blue-400" />
+                            <p className="text-sm font-semibold text-white">{player.location || player.country || 'N/A'}</p>
+                        </div>
                     </div>
                     <div className="text-center">
                         <p className="text-zinc-500 text-xs">Game</p>
@@ -162,14 +156,17 @@ const PlayerCard = React.memo(({ player, onViewProfile }) => {
                     </div>
                 </div>
 
-                {/* Team Status & Role */}
+                {/* Team & Role */}
                 <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-3 mb-3">
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="text-zinc-500 text-xs mb-0.5">Team Status</p>
-                            <p className="text-white font-medium text-xs capitalize">
-                                {player.teamStatus || 'N/A'}
-                            </p>
+                            <p className="text-zinc-500 text-xs mb-0.5">Current Team</p>
+                            <div className="flex items-center gap-1">
+                                <Users className="w-3 h-3 text-[#FF4500]" />
+                                <p className="text-white font-medium text-xs">
+                                    {player.team?.teamName || 'Free Agent'}
+                                </p>
+                            </div>
                         </div>
                         <div className="text-right">
                             <p className="text-zinc-500 text-xs mb-0.5">Role</p>
@@ -178,23 +175,7 @@ const PlayerCard = React.memo(({ player, onViewProfile }) => {
                             </p>
                         </div>
                     </div>
-
-                    {/* Show availability */}
-                    {player.availability && (
-                        <div className="pt-2 mt-2 border-t border-zinc-800">
-                            <p className="text-zinc-600 text-xs">
-                                Available: {player.availability}
-                            </p>
-                        </div>
-                    )}
                 </div>
-
-                {/* Bio */}
-                {player.bio && (
-                    <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-3 mb-3">
-                        <p className="text-zinc-400 text-xs line-clamp-2">{player.bio}</p>
-                    </div>
-                )}
 
                 {/* Action Buttons */}
                 <div className="flex gap-2">

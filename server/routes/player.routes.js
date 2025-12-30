@@ -42,9 +42,10 @@ router.get("/all", async (req, res) => {
     // Only select fields needed for the player card
     const players = await Player.find({})
       .select(
-        "_id username inGameName realName profilePicture verified primaryGame country location aegisRating tournamentsPlayed matchesPlayed earnings age bio teamStatus inGameRole availability team"
+        "_id username inGameName realName profilePicture verified primaryGame country location tournamentsPlayed matchesPlayed age teamStatus inGameRole team"
       )
-      .sort({ aegisRating: -1 })
+      .populate('team', 'teamName')
+      .sort({ createdAt: -1 })
       .limit(limit)
       .skip(skip);
 
@@ -229,9 +230,9 @@ router.get('/dashboard-data', auth, async (req, res) => {
           participantCount < (t.slots?.total || 0);
       })
       .map(tournament => {
-        const participantCount = countMap.get(tournament._id.toString()) || 
-                                tournament.participatingTeamsCount || 0;
-        
+        const participantCount = countMap.get(tournament._id.toString()) ||
+          tournament.participatingTeamsCount || 0;
+
         return {
           _id: tournament._id,
           tournamentName: tournament.tournamentName,
@@ -413,9 +414,9 @@ router.get('/get-recent3-tourney', async (req, res) => {
 
     // Enrich tournaments with participant data
     const enrichedTournaments = openTournaments.map(tournament => {
-      const participantCount = countMap.get(tournament._id.toString()) || 
-                              tournament.participatingTeamsCount || 0;
-      
+      const participantCount = countMap.get(tournament._id.toString()) ||
+        tournament.participatingTeamsCount || 0;
+
       return {
         ...tournament,
         participantCount,

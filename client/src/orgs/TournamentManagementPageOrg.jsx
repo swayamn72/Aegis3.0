@@ -13,7 +13,7 @@ import PointsTable from './TournamentManagementComponents/PointsTable';
 import TeamGrouping from './TournamentManagementComponents/TeamGrouping';
 import MatchManagement from './TournamentManagementComponents/MatchManagement';
 import TeamSelector from './TournamentManagementComponents/TeamSelector';
-// import PrizeDistributionForm from '../components/PrizeDistributionForm';
+import PrizeDistributionForm from './TournamentManagementComponents/PrizeDistributionForm';
 import TournamentForm from './TournamentManagementComponents/TournamentForm';
 
 const TournamentManagementPageOrg = () => {
