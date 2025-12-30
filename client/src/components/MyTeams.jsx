@@ -54,6 +54,14 @@ const MyTeams = () => {
     const [showKickConfirm, setShowKickConfirm] = useState(false);
     const [kickPlayerData, setKickPlayerData] = useState(null);
 
+    // Optimized redirect: If user has a team, navigate directly to team page
+    useEffect(() => {
+        if (!authLoading && user?.team) {
+            const teamId = user.team._id || user.team;
+            navigate(`/team/${teamId}`, { replace: true });
+        }
+    }, [authLoading, user, navigate]);
+
     // TanStack Query: Fetch team data
     const {
         data: teamDataResponse,
