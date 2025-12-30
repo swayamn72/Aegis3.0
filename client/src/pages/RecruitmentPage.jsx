@@ -1,11 +1,14 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { Search, ChevronDown, MapPin, Gamepad2, Trophy, Award, Eye, Check, Target, Briefcase, UserPlus, User, Send, MessageCircle, Users, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search, ChevronDown, MapPin, Gamepad2, Trophy, Award, Eye, Check, Target, Briefcase, UserPlus, User, Send, MessageCircle, Users, X, Crown } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import {
     useLFTPosts,
+    useLFPPosts,
     useRecruitingTeams,
     useCreateLFTPost,
+    useCreateLFPPost,
     useApproachPlayer
 } from '../hooks/useRecruitment';
 import { useDebounce } from '../hooks/useDebounce';
@@ -38,8 +41,7 @@ const LFTPostForm = React.memo(({ onSubmit, onClose }) => {
     const { user } = useAuth();
     const [formData, setFormData] = useState({
         description: '',
-        roles: [],
-        requirements: ''
+        roles: []
     });
 
     const roles = ['IGL', 'assaulter', 'support', 'sniper', 'fragger'];
@@ -112,17 +114,6 @@ const LFTPostForm = React.memo(({ onSubmit, onClose }) => {
                         />
                     </div>
 
-                    <div>
-                        <label className="block text-zinc-300 mb-2 font-medium">Additional Requirements</label>
-                        <textarea
-                            value={formData.requirements}
-                            onChange={(e) => setFormData(prev => ({ ...prev, requirements: e.target.value }))}
-                            placeholder="Any specific requirements from the team (e.g., rank, communication, etc.)"
-                            className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-3 text-white placeholder-zinc-400 focus:outline-none focus:border-orange-500 resize-none"
-                            rows="3"
-                        />
-                    </div>
-
                     <div className="flex gap-3">
                         <button
                             type="submit"
@@ -146,101 +137,301 @@ const LFTPostForm = React.memo(({ onSubmit, onClose }) => {
 
 LFTPostForm.displayName = 'LFTPostForm';
 
+// LFP Post Form Component (For Team Captains)
+const LFPPostForm = React.memo(({ onSubmit, onClose, userTeam }) => {
+    const [formData, setFormData] = useState({
+        description: '',
+        openRoles: []
+    });
+
+    const roles = ['IGL', 'assaulter', 'support', 'sniper', 'fragger'];
+
+    const handleRoleToggle = (role) => {
+        setFormData(prev => ({
+            ...prev,
+            openRoles: prev.openRoles.includes(role)
+                ? prev.openRoles.filter(r => r !== role)
+                : [...prev.openRoles, role]
+        }));
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if (!formData.description || formData.openRoles.length === 0) {
+            toast.error('Please fill in all required fields');
+            return;
+        }
+
+        const postData = {
+            ...formData,
+            game: userTeam?.primaryGame || '',
+            region: userTeam?.region || 'Global'
+        };
+
+        onSubmit(postData);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl max-w-2xl w-full p-6">
+                <div className="flex items-center justify-between mb-6">
+                    <div>
+                        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                            <Crown className="w-6 h-6 text-orange-500" />
+                            Post Looking for Players
+                        </h2>
+                        <p className="text-zinc-400 text-sm mt-1">Recruiting for: {userTeam?.teamName}</p>
+                    </div>
+                    <button onClick={onClose} className="p-2 hover:bg-zinc-800 rounded-lg">
+                        <X className="w-5 h-5 text-zinc-400" />
+                    </button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="block text-zinc-300 mb-2 font-medium">Open Roles *</label>
+                        <div className="flex flex-wrap gap-2">
+                            {roles.map(role => (
+                                <button
+                                    key={role}
+                                    type="button"
+                                    onClick={() => handleRoleToggle(role)}
+                                    className={`px-4 py-2 rounded-lg font-medium transition-all ${formData.openRoles.includes(role)
+                                        ? 'bg-orange-500 text-white'
+                                        : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                                        }`}
+                                >
+                                    {role}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-zinc-300 mb-2 font-medium">Description *</label>
+                        <textarea
+                            value={formData.description}
+                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                            placeholder="Describe what you're looking for in players..."
+                            className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
+                            rows="4"
+                        />
+                    </div>
+
+                    <div className="flex gap-3 pt-4">
+                        <button
+                            type="submit"
+                            className="flex-1 bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white py-3 rounded-lg font-medium transition-all"
+                        >
+                            Post LFP
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="px-6 bg-zinc-700 hover:bg-zinc-600 text-white py-3 rounded-lg transition-colors"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+});
+
+LFPPostForm.displayName = 'LFPPostForm';
+
 const LFTPostCard = React.memo(({ post, onApproach }) => {
-    const getRankColor = () => {
+    const getGameColor = () => {
         switch (post.game) {
             case 'VALO': return 'text-red-400';
             case 'CS2': return 'text-blue-400';
             case 'BGMI': return 'text-yellow-400';
-            default: return 'text-gray-400';
+            default: return 'text-zinc-400';
         }
     };
 
     return (
-        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden transition-all duration-300 hover:border-cyan-500/50 hover:scale-[1.02] hover:shadow-2xl hover:shadow-cyan-500/10 group">
-            <div className="p-6">
-                <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-4">
-                        <div className="relative">
-                            <img
-                                src={post.player.profilePicture || `https://api.dicebear.com/7.x/avatars/svg?seed=${post.player.username}`}
-                                alt={post.player.inGameName}
-                                className="w-16 h-16 rounded-xl object-cover"
-                            />
-                            {post.player.verified && (
-                                <div className="absolute -bottom-1 -right-1 bg-gradient-to-r from-orange-400 to-red-500 p-1 rounded-full">
-                                    <Check className="w-3 h-3 text-white" />
-                                </div>
-                            )}
-                        </div>
-                        <div>
-                            <h3 className="text-xl font-bold text-white group-hover:text-cyan-400 transition-colors">{post.player.inGameName || post.player.username}</h3>
-                            <p className="text-gray-300 text-sm">{post.player.realName || `@${post.player.username}`}</p>
-                        </div>
+        <div className="bg-zinc-950 border border-zinc-900 rounded-lg overflow-hidden transition-all duration-300 hover:border-zinc-800 hover:shadow-2xl hover:shadow-black/50 group">
+            <div className="relative p-5">
+                {/* Looking for Team Badge - Top Right */}
+                <div className="absolute top-3 right-3 bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-semibold rounded-md px-2 py-1">
+                    LFT
+                </div>
+
+                {/* Verified Badge - Top Left */}
+                {post.player.verified && (
+                    <div className="absolute top-3 left-3 flex items-center gap-1 bg-[#FF4500]/10 border border-[#FF4500]/30 rounded-md px-2 py-1">
+                        <Check className="w-3 h-3 text-[#FF4500]" />
+                        <span className="text-[#FF4500] text-xs font-semibold">Verified</span>
                     </div>
-                    <div className="px-3 py-1 rounded-full text-xs font-semibold border border-green-400/30 bg-green-400/10 text-green-400">
-                        Looking for Team
+                )}
+
+                {/* Player Header */}
+                <div className="flex items-center gap-3 mb-3 mt-8">
+                    <div className="relative">
+                        <img
+                            src={post.player.profilePicture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.player.username}`}
+                            alt={post.player.inGameName || post.player.username}
+                            className="w-14 h-14 rounded-lg bg-zinc-900 border border-zinc-800"
+                        />
+                        {post.player.verified && (
+                            <div className="absolute -bottom-1 -right-1 bg-[#FF4500] p-0.5 rounded-full">
+                                <Check className="w-2.5 h-2.5 text-white" />
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <h3 className="text-lg font-bold text-white group-hover:text-[#FF4500] transition-colors truncate">
+                            {post.player.inGameName || post.player.username}
+                        </h3>
+                        <p className="text-zinc-400 text-xs truncate">{post.player.realName || 'N/A'}</p>
+                        <p className="text-zinc-600 text-xs">{post.game || 'N/A'} • {post.region || 'Global'}</p>
                     </div>
                 </div>
 
-                <div className="bg-gradient-to-r from-cyan-600/20 to-blue-500/20 border border-cyan-400/30 rounded-lg p-3 mb-4 text-center">
-                    <div className="flex items-center justify-center gap-2 mb-1">
-                        <Trophy className="w-4 h-4 text-cyan-400" />
-                        <span className="text-cyan-400 text-sm font-semibold">Aegis Rating</span>
-                    </div>
-                    <div className="text-2xl font-bold text-white">{post.player.aegisRating}</div>
-                </div>
-
-                <div className="mb-4">
-                    <p className="text-zinc-400 text-sm mb-2">Looking for roles:</p>
-                    <div className="flex flex-wrap gap-2">
+                {/* Roles Section */}
+                <div className="mb-3">
+                    <p className="text-zinc-500 text-xs mb-1.5">Looking for roles:</p>
+                    <div className="flex flex-wrap gap-1.5">
                         {post.roles && post.roles.map(role => (
-                            <span key={role} className="px-3 py-1 bg-cyan-500/20 border border-cyan-400/30 rounded-full text-cyan-400 text-sm font-medium">
+                            <span key={role} className="px-2.5 py-0.5 bg-cyan-500/20 border border-cyan-400/30 rounded-full text-cyan-400 text-xs font-medium">
                                 {role}
                             </span>
                         ))}
                     </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 mb-4">
-                    <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-2 text-center">
-                        <p className="text-zinc-400 text-xs">Game</p>
-                        <p className={`font-semibold ${getRankColor()}`}>{post.game}</p>
+                {/* Game & Region Info */}
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                    <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-2 text-center">
+                        <p className="text-zinc-500 text-xs mb-0.5">Region</p>
+                        <p className="text-sm font-semibold text-white">{post.region || 'Global'}</p>
                     </div>
-                    <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-2 text-center">
-                        <p className="text-zinc-400 text-xs">Region</p>
-                        <p className="text-white font-semibold">{post.region || 'Global'}</p>
+                    <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-2 text-center">
+                        <p className="text-zinc-500 text-xs mb-0.5">Game</p>
+                        <p className={`text-sm font-semibold ${getGameColor()}`}>{post.game || 'N/A'}</p>
+                    </div>
+                    <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-2 text-center">
+                        <p className="text-zinc-500 text-xs mb-0.5">Age</p>
+                        <p className="text-sm font-semibold text-white">{post.player.age || 'N/A'}</p>
                     </div>
                 </div>
 
-                <div className="mb-4">
-                    <p className="text-zinc-400 text-sm mb-2">Description:</p>
-                    <p className="text-zinc-300 text-sm line-clamp-3">{post.description}</p>
-                </div>
-
-                {post.requirements && (
-                    <div className="mb-4">
-                        <p className="text-zinc-400 text-sm mb-2">Requirements:</p>
-                        <p className="text-zinc-300 text-sm line-clamp-2">{post.requirements}</p>
+                {/* Description */}
+                {post.description && (
+                    <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-2.5 mb-3">
+                        <p className="text-white text-xs line-clamp-2">{post.description}</p>
                     </div>
                 )}
 
-                <div className="flex gap-3">
+                {/* Action Buttons */}
+                <div className="flex gap-2">
                     <button
                         onClick={() => onApproach(post)}
-                        className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white py-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2"
+                        className="flex-1 bg-[#FF4500] hover:bg-[#FF4500]/90 text-white text-sm font-semibold py-2 rounded-lg transition-all"
                     >
-                        <MessageCircle className="w-5 h-5" />
                         Approach Player
+                    </button>
+                    <button
+                        onClick={() => window.open(`/detailed/${post.player._id}`, '_blank')}
+                        className="flex-1 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-white text-sm font-semibold py-2 rounded-lg transition-all"
+                    >
+                        View Profile
                     </button>
                 </div>
             </div>
-            <div className="bg-gradient-to-r from-cyan-500 to-blue-500 h-1 w-0 group-hover:w-full transition-all duration-500"></div>
+            <div className="bg-gradient-to-r from-[#FF4500] to-orange-500 h-0.5 w-0 group-hover:w-full transition-all duration-500"></div>
         </div>
     );
 });
 
 LFTPostCard.displayName = 'LFTPostCard';
+
+// LFP Post Card Component (Team Looking For Players)
+const LFPPostCard = React.memo(({ post, onApproach }) => {
+    const navigate = useNavigate();
+
+    return (
+        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden transition-all duration-300 hover:border-orange-500/50 hover:scale-[1.02] hover:shadow-2xl hover:shadow-orange-500/10 group">
+            <div className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-4">
+                        <div className="relative">
+                            <img
+                                src={post.team.logo || 'https://placehold.co/200x200/1a1a1a/ffffff?text=TEAM'}
+                                alt={post.team.teamName}
+                                className="w-16 h-16 rounded-xl object-cover"
+                            />
+                            <div className="absolute -bottom-1 -right-1 bg-gradient-to-r from-orange-400 to-red-500 p-1 rounded-full">
+                                <Crown className="w-3 h-3 text-white" />
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-bold text-white group-hover:text-orange-400 transition-colors">
+                                {post.team.teamName}
+                            </h3>
+                            <p className="text-gray-300 text-sm">{post.team.teamTag || 'Team'}</p>
+                        </div>
+                    </div>
+                    <div className="px-3 py-1 rounded-full text-xs font-semibold border border-orange-400/30 bg-orange-400/10 text-orange-400">
+                        Looking for Players
+                    </div>
+                </div>
+
+                <div className="mb-4">
+                    <p className="text-zinc-400 text-sm mb-2">Open roles:</p>
+                    <div className="flex flex-wrap gap-2">
+                        {post.openRoles && post.openRoles.map(role => (
+                            <span key={role} className="px-3 py-1 bg-orange-500/20 border border-orange-400/30 rounded-full text-orange-400 text-sm font-medium">
+                                {role}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+
+                {post.description && (
+                    <div className="mb-4">
+                        <p className="text-zinc-300 text-sm leading-relaxed">
+                            {post.description.length > 150 ? `${post.description.slice(0, 150)}...` : post.description}
+                        </p>
+                    </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className="flex items-center gap-2 text-sm">
+                        <Gamepad2 className="w-4 h-4 text-orange-400" />
+                        <span className="text-zinc-400">{post.game}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                        <MapPin className="w-4 h-4 text-orange-400" />
+                        <span className="text-zinc-400">{post.region}</span>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-4 border-t border-zinc-800">
+                    <button
+                        onClick={() => navigate(`/team/${post.team._id}`)}
+                        className="flex-1 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2"
+                    >
+                        <Users className="w-4 h-4" />
+                        View Team
+                    </button>
+                    <button
+                        onClick={() => onApproach(post)}
+                        className="flex-1 px-4 py-2 bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2"
+                    >
+                        <Send className="w-4 h-4" />
+                        Apply
+                    </button>
+                </div>
+            </div>
+            <div className="bg-gradient-to-r from-orange-500 to-red-500 h-1 w-0 group-hover:w-full transition-all duration-500"></div>
+        </div>
+    );
+});
+
+LFPPostCard.displayName = 'LFPPostCard';
 
 const OrganizationCard = React.memo(({ org, onApproach }) => {
     const getBudgetColor = () => {
@@ -321,8 +512,19 @@ const RecruitmentPage = () => {
     const [playerFilters, setPlayerFilters] = useState({ game: '', region: '', role: '' });
 
     const [showLFTForm, setShowLFTForm] = useState(false);
+    const [showLFPForm, setShowLFPForm] = useState(false);
     const [showApproachDialog, setShowApproachDialog] = useState(false);
     const [selectedPost, setSelectedPost] = useState(null);
+
+    // Check if user is a team captain
+    const isCaptain = useMemo(() => {
+        return user?.team?.captain?._id === user?._id || user?.team?.captain === user?._id;
+    }, [user]);
+
+    // Check if user can post LFT (not in a team)
+    const canPostLFT = useMemo(() => {
+        return !user?.team;
+    }, [user]);
 
     // Debounce search terms to reduce filtering frequency
     const debouncedOrgSearch = useDebounce(orgSearchTerm, 300);
@@ -330,12 +532,14 @@ const RecruitmentPage = () => {
 
     // React Query hooks - replace manual state management
     const { data: lftPosts = [], isLoading: loadingLFTPosts } = useLFTPosts(playerFilters);
+    const { data: lfpPosts = [], isLoading: loadingLFPPosts } = useLFPPosts(orgFilters);
     const { data: teams = [], isLoading: loadingTeams } = useRecruitingTeams(orgFilters);
     const createLFTPostMutation = useCreateLFTPost();
+    const createLFPPostMutation = useCreateLFPPost();
     const approachPlayerMutation = useApproachPlayer();
 
     // Determine loading state based on active tab
-    const loading = activeTab === 'find-players' ? loadingLFTPosts : loadingTeams;
+    const loading = activeTab === 'find-players' ? loadingLFTPosts : (activeTab === 'find-teams' ? (loadingTeams || loadingLFPPosts) : false);
 
     // Memoize callback functions to prevent child re-renders
     const handleCreateLFTPost = useCallback((postData) => {
@@ -345,6 +549,14 @@ const RecruitmentPage = () => {
             }
         });
     }, [createLFTPostMutation]);
+
+    const handleCreateLFPPost = useCallback((postData) => {
+        createLFPPostMutation.mutate(postData, {
+            onSuccess: () => {
+                setShowLFPForm(false);
+            }
+        });
+    }, [createLFPPostMutation]);
 
     const handleApproachPlayer = useCallback((post) => {
         if (!user) {
@@ -423,7 +635,7 @@ const RecruitmentPage = () => {
                 </div>
 
                 <div className="flex justify-center mb-8">
-                    <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-2 flex">
+                    <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-2 flex flex-wrap justify-center gap-2">
                         <button
                             onClick={() => setActiveTab('find-players')}
                             className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 ${activeTab === 'find-players'
@@ -434,20 +646,37 @@ const RecruitmentPage = () => {
                             <UserPlus className="w-5 h-5" />
                             Find Players
                         </button>
-                        <button
-                            onClick={() => setActiveTab('post-lft')}
-                            className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 ${activeTab === 'post-lft'
-                                ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white'
-                                : 'text-zinc-400 hover:text-white'
-                                }`}
-                        >
-                            <Briefcase className="w-5 h-5" />
-                            Post LFT
-                        </button>
+
+                        {canPostLFT && (
+                            <button
+                                onClick={() => setActiveTab('post-lft')}
+                                className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 ${activeTab === 'post-lft'
+                                    ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white'
+                                    : 'text-zinc-400 hover:text-white'
+                                    }`}
+                            >
+                                <Briefcase className="w-5 h-5" />
+                                Post LFT
+                            </button>
+                        )}
+
+                        {isCaptain && (
+                            <button
+                                onClick={() => setActiveTab('post-lfp')}
+                                className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 ${activeTab === 'post-lfp'
+                                    ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white'
+                                    : 'text-zinc-400 hover:text-white'
+                                    }`}
+                            >
+                                <Crown className="w-5 h-5" />
+                                Post LFP
+                            </button>
+                        )}
+
                         <button
                             onClick={() => setActiveTab('find-teams')}
                             className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 ${activeTab === 'find-teams'
-                                ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white'
+                                ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white'
                                 : 'text-zinc-400 hover:text-white'
                                 }`}
                         >
@@ -482,7 +711,7 @@ const RecruitmentPage = () => {
                                 <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500"></div>
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {filteredLFTPosts.map(post => (
                                     <LFTPostCard
                                         key={post._id}
@@ -501,7 +730,7 @@ const RecruitmentPage = () => {
                     </div>
                 )}
 
-                {activeTab === 'post-lft' && (
+                {activeTab === 'post-lft' && canPostLFT && (
                     <div className="text-center py-12">
                         <div className="max-w-2xl mx-auto">
                             <Briefcase className="w-16 h-16 text-green-400 mx-auto mb-4" />
@@ -514,6 +743,28 @@ const RecruitmentPage = () => {
                                 className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white px-8 py-4 rounded-lg font-medium transition-all"
                             >
                                 Create LFT Post
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'post-lfp' && isCaptain && (
+                    <div className="text-center py-12">
+                        <div className="max-w-2xl mx-auto">
+                            <Crown className="w-16 h-16 text-orange-400 mx-auto mb-4" />
+                            <h2 className="text-3xl font-bold text-white mb-4">Looking for Players?</h2>
+                            <p className="text-zinc-400 mb-8">
+                                Post your team's recruitment needs. Let players know what roles you need and what you're offering.
+                            </p>
+                            <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4 mb-6">
+                                <p className="text-white font-semibold">Posting as Captain of:</p>
+                                <p className="text-orange-400 text-xl">{user?.team?.teamName}</p>
+                            </div>
+                            <button
+                                onClick={() => setShowLFPForm(true)}
+                                className="bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white px-8 py-4 rounded-lg font-medium transition-all"
+                            >
+                                Create LFP Post
                             </button>
                         </div>
                     </div>
@@ -544,20 +795,52 @@ const RecruitmentPage = () => {
                                 <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500"></div>
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8">
-                                {filteredTeams.map(team => (
-                                    <OrganizationCard
-                                        key={team._id}
-                                        org={team}
-                                        onApproach={handleApproachTeam}
-                                    />
-                                ))}
-                            </div>
+                            <>
+                                {/* LFP Posts Section */}
+                                {lfpPosts.length > 0 && (
+                                    <div className="mb-8">
+                                        <h3 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
+                                            <Crown className="w-6 h-6 text-orange-400" />
+                                            Teams Looking for Players
+                                        </h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                            {lfpPosts.map(post => (
+                                                <LFPPostCard
+                                                    key={post._id}
+                                                    post={post}
+                                                    onApproach={() => {
+                                                        toast.info('Apply feature coming soon!');
+                                                    }}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Recruiting Teams Section */}
+                                {filteredTeams.length > 0 && (
+                                    <div>
+                                        <h3 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
+                                            <Users className="w-6 h-6 text-purple-400" />
+                                            Recruiting Teams
+                                        </h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8">
+                                            {filteredTeams.map(team => (
+                                                <OrganizationCard
+                                                    key={team._id}
+                                                    org={team}
+                                                    onApproach={handleApproachTeam}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </>
                         )}
 
-                        {!loading && filteredTeams.length === 0 && (
+                        {!loading && filteredTeams.length === 0 && lfpPosts.length === 0 && (
                             <div className="text-center py-12 text-zinc-400">
-                                <p className="text-lg">No teams recruiting match your filters.</p>
+                                <p className="text-lg">No teams or LFP posts match your filters.</p>
                             </div>
                         )}
                     </div>
@@ -568,6 +851,14 @@ const RecruitmentPage = () => {
                 <LFTPostForm
                     onSubmit={handleCreateLFTPost}
                     onClose={() => setShowLFTForm(false)}
+                />
+            )}
+
+            {showLFPForm && (
+                <LFPPostForm
+                    onSubmit={handleCreateLFPPost}
+                    onClose={() => setShowLFPForm(false)}
+                    userTeam={user?.team}
                 />
             )}
 

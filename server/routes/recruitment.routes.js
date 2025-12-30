@@ -1,5 +1,6 @@
 import express from 'express';
 import LFTPost from '../models/lftPost.model.js';
+import LFPPost from '../models/lfpPost.model.js';
 import Player from '../models/player.model.js';
 import Team from '../models/team.model.js';
 import RecruitmentApproach from '../models/recruitmentApproach.model.js';
@@ -269,7 +270,6 @@ router.get('/lft-posts', async (req, res) => {
           game: 1,
           roles: 1,
           region: 1,
-          requirements: 1,
           status: 1,
           createdAt: 1,
           updatedAt: 1,
@@ -314,7 +314,6 @@ router.get('/lft-posts', async (req, res) => {
 
 
 const MAX_DESC_LEN = 1200;
-const MAX_REQUIREMENTS_LEN = 800;
 const MAX_ROLES = 5;
 const ALLOWED_GAMES = ['BGMI', 'Valorant', 'CODM', 'Dota2']; // extend as needed
 const ALLOWED_REGIONS = ['India', 'Asia', 'EU', 'NA']; // extend
@@ -322,11 +321,10 @@ const ALLOWED_REGIONS = ['India', 'Asia', 'EU', 'NA']; // extend
 router.post('/lft-posts', auth, async (req, res) => {
   const session = await mongoose.startSession().catch(() => null);
   try {
-    const { description = '', game, roles = [], region, requirements = '' } = req.body || {};
+    const { description = '', game, roles = [], region } = req.body || {};
 
     // Basic validation + sanitization
     const desc = String(description).trim().slice(0, MAX_DESC_LEN);
-    const reqs = String(requirements).trim().slice(0, MAX_REQUIREMENTS_LEN);
 
     // Validate game/region if provided
     if (game && !ALLOWED_GAMES.includes(game)) {
@@ -374,7 +372,6 @@ router.post('/lft-posts', auth, async (req, res) => {
         game,
         roles: cleanRoles,
         region,
-        requirements: reqs,
         status: 'active',
       }], { session });
 
@@ -392,7 +389,6 @@ router.post('/lft-posts', auth, async (req, res) => {
         game,
         roles: cleanRoles,
         region,
-        requirements: reqs,
         status: 'active',
       });
 
@@ -542,6 +538,246 @@ router.post('/approach/:approachId/reject', auth, async (req, res) => {
   } catch (error) {
     console.error('Error rejecting approach:', error);
     res.status(500).json({ error: 'Failed to reject approach' });
+  }
+});
+
+// ==========================================
+// LFP (Looking For Players) POST ROUTES
+// ==========================================
+
+const MAX_LFP_DESC_LEN = 1000;
+const MAX_OPEN_ROLES = 5;
+
+// GET LFP Posts - Fetch all active LFP posts with filters
+router.get('/lfp-posts', async (req, res) => {
+  try {
+    const {
+      game,
+      region,
+      role,
+      limit: rawLimit = '20',
+      page: rawPage = '1',
+      status = 'active'
+    } = req.query;
+
+    const limit = Math.min(Math.max(parseInt(rawLimit, 10) || 20, 1), 50);
+    const page = Math.max(parseInt(rawPage, 10) || 1, 1);
+    const skip = (page - 1) * limit;
+
+    const match = {};
+    if (status) match.status = status;
+    if (game) match.game = game;
+    if (region) match.region = region;
+    if (role) {
+      match.openRoles = { $in: [role] };
+    }
+
+    const agg = [
+      { $match: match },
+      {
+        $lookup: {
+          from: 'teams',
+          localField: 'team',
+          foreignField: '_id',
+          as: 'team'
+        }
+      },
+      { $unwind: '$team' },
+      {
+        $lookup: {
+          from: 'players',
+          localField: 'team.captain',
+          foreignField: '_id',
+          as: 'captain'
+        }
+      },
+      { $unwind: { path: '$captain', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          description: 1,
+          game: 1,
+          openRoles: 1,
+          region: 1,
+          status: 1,
+          views: 1,
+          createdAt: 1,
+          'team._id': 1,
+          'team.teamName': 1,
+          'team.teamTag': 1,
+          'team.logo': 1,
+          'team.aegisRating': 1,
+          'team.primaryGame': 1,
+          'team.region': 1,
+          'team.statistics': 1,
+          'captain._id': 1,
+          'captain.username': 1,
+          'captain.inGameName': 1,
+          'captain.profilePicture': 1
+        }
+      },
+      {
+        $facet: {
+          posts: [{ $sort: { createdAt: -1 } }, { $skip: skip }, { $limit: limit }],
+          totalCount: [{ $count: 'count' }]
+        }
+      }
+    ];
+
+    const [result] = await LFPPost.aggregate(agg).exec();
+    const posts = result.posts || [];
+    const totalCount = result.totalCount.length > 0 ? result.totalCount[0].count : 0;
+
+    res.json({
+      posts,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        pages: Math.ceil(totalCount / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching LFP posts:', error);
+    res.status(500).json({ error: 'Failed to fetch LFP posts' });
+  }
+});
+
+// POST LFP Post - Create new LFP post (Captain only)
+router.post('/lfp-posts', auth, async (req, res) => {
+  const session = await mongoose.startSession().catch(() => null);
+  try {
+    const { description = '', game, openRoles = [], region } = req.body || {};
+
+    // Sanitize input
+    const desc = String(description).trim().slice(0, MAX_LFP_DESC_LEN);
+
+    // Validate required fields
+    if (!desc) {
+      return res.status(400).json({ error: 'Description is required' });
+    }
+
+    // Validate roles
+    let cleanRoles = [];
+    if (Array.isArray(openRoles)) {
+      cleanRoles = openRoles
+        .map(r => String(r).trim())
+        .filter(Boolean)
+        .slice(0, MAX_OPEN_ROLES);
+    }
+
+    if (cleanRoles.length === 0) {
+      return res.status(400).json({ error: 'At least one open role is required' });
+    }
+
+    // Get player and team
+    const player = await Player.findById(req.user.id).populate('team');
+    if (!player) {
+      return res.status(400).json({ error: 'Player profile not found' });
+    }
+
+    if (!player.team) {
+      return res.status(400).json({ error: 'You must be in a team to post LFP' });
+    }
+
+    // Verify player is captain
+    if (player.team.captain.toString() !== req.user.id.toString()) {
+      return res.status(403).json({ error: 'Only team captains can post LFP' });
+    }
+
+    // Use team's game and region if not provided
+    const postGame = game || player.team.primaryGame;
+    const postRegion = region || player.team.region;
+
+    // Check for existing active LFP post
+    let createdPost;
+    if (session) {
+      session.startTransaction();
+      const exists = await LFPPost.findOne({ team: player.team._id, status: 'active' }).session(session);
+      if (exists) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({ error: 'Your team already has an active LFP post' });
+      }
+
+      createdPost = await LFPPost.create([{
+        team: player.team._id,
+        description: desc,
+        game: postGame,
+        openRoles: cleanRoles,
+        region: postRegion,
+        status: 'active',
+      }], { session });
+
+      await session.commitTransaction();
+      session.endSession();
+      createdPost = createdPost[0];
+    } else {
+      const exists = await LFPPost.findOne({ team: player.team._id, status: 'active' });
+      if (exists) return res.status(400).json({ error: 'Your team already has an active LFP post' });
+
+      createdPost = new LFPPost({
+        team: player.team._id,
+        description: desc,
+        game: postGame,
+        openRoles: cleanRoles,
+        region: postRegion,
+        status: 'active',
+      });
+
+      try {
+        await createdPost.save();
+      } catch (err) {
+        if (err && err.code === 11000) {
+          return res.status(400).json({ error: 'Your team already has an active LFP post' });
+        }
+        throw err;
+      }
+    }
+
+    await createdPost.populate({
+      path: 'team',
+      populate: { path: 'captain', select: 'username inGameName profilePicture' }
+    });
+
+    res.status(201).json({ message: 'LFP post created successfully', post: createdPost });
+  } catch (error) {
+    console.error('Error creating LFP post:', error);
+    res.status(500).json({ error: 'Failed to create LFP post' });
+  }
+});
+
+// DELETE LFP Post - Delete own team's LFP post
+router.delete('/lfp-posts/:postId', auth, async (req, res) => {
+  try {
+    const { postId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(postId)) {
+      return res.status(400).json({ error: 'Invalid post ID' });
+    }
+
+    const player = await Player.findById(req.user.id).populate('team');
+    if (!player || !player.team) {
+      return res.status(400).json({ error: 'Player or team not found' });
+    }
+
+    // Verify player is captain
+    if (player.team.captain.toString() !== req.user.id.toString()) {
+      return res.status(403).json({ error: 'Only team captains can delete LFP posts' });
+    }
+
+    const post = await LFPPost.findOneAndDelete({
+      _id: postId,
+      team: player.team._id
+    });
+
+    if (!post) {
+      return res.status(404).json({ error: 'LFP post not found' });
+    }
+
+    res.json({ message: 'LFP post deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting LFP post:', error);
+    res.status(500).json({ error: 'Failed to delete LFP post' });
   }
 });
 

@@ -29,16 +29,25 @@ export const recruitmentKeys = {
 
     // LFT Posts - serialize filters to avoid reference issues
     lftPosts: (filters) => [
-        ...recruitmentKeys.all, 
-        'lft-posts', 
+        ...recruitmentKeys.all,
+        'lft-posts',
         filters.game || 'all',
-        filters.region || 'all', 
+        filters.region || 'all',
+        filters.role || 'all'
+    ],
+
+    // LFP Posts - serialize filters to avoid reference issues
+    lfpPosts: (filters) => [
+        ...recruitmentKeys.all,
+        'lfp-posts',
+        filters.game || 'all',
+        filters.region || 'all',
         filters.role || 'all'
     ],
 
     // Recruiting Teams - serialize filters to avoid reference issues
     recruitingTeams: (filters) => [
-        ...recruitmentKeys.all, 
+        ...recruitmentKeys.all,
         'recruiting-teams',
         filters.game || 'all',
         filters.region || 'all',

@@ -11,6 +11,17 @@ export const fetchLFTPosts = async (filters = {}) => {
     return data.posts || [];
 };
 
+// Fetch LFP Posts (Looking For Players)
+export const fetchLFPPosts = async (filters = {}) => {
+    const params = new URLSearchParams();
+    if (filters.game) params.append('game', filters.game);
+    if (filters.region) params.append('region', filters.region);
+    if (filters.role) params.append('role', filters.role);
+
+    const { data } = await axiosInstance.get(`/api/recruitment/lfp-posts?${params}`);
+    return data.posts || [];
+};
+
 // Fetch Recruiting Teams
 export const fetchRecruitingTeams = async (filters = {}) => {
     const params = new URLSearchParams();
@@ -25,6 +36,18 @@ export const fetchRecruitingTeams = async (filters = {}) => {
 // Create LFT Post
 export const createLFTPost = async (postData) => {
     const { data } = await axiosInstance.post('/api/recruitment/lft-posts', postData);
+    return data;
+};
+
+// Create LFP Post (Looking For Players)
+export const createLFPPost = async (postData) => {
+    const { data } = await axiosInstance.post('/api/recruitment/lfp-posts', postData);
+    return data;
+};
+
+// Delete LFP Post
+export const deleteLFPPost = async (postId) => {
+    const { data } = await axiosInstance.delete(`/api/recruitment/lfp-posts/${postId}`);
     return data;
 };
 

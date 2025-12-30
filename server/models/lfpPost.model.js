@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
 
-const lftPostSchema = new mongoose.Schema({
-    player: {
+const lfpPostSchema = new mongoose.Schema({
+    team: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Player',
+        ref: 'Team',
         required: true,
     },
     description: {
@@ -17,7 +17,7 @@ const lftPostSchema = new mongoose.Schema({
         required: true,
         enum: ['VALO', 'CS2', 'BGMI'],
     },
-    roles: [{
+    openRoles: [{
         type: String,
         enum: ['IGL', 'assaulter', 'support', 'sniper', 'fragger'],
         required: true,
@@ -37,14 +37,14 @@ const lftPostSchema = new mongoose.Schema({
         default: 0,
     },
 }, {
-    timestamps: true  // ✅ This automatically adds createdAt and updatedAt
+    timestamps: true
 });
 
 // Index for efficient queries
-lftPostSchema.index({ game: 1, region: 1, roles: 1, status: 1 });
-lftPostSchema.index({ player: 1, status: 1 });
-lftPostSchema.index({ createdAt: -1 });
+lfpPostSchema.index({ game: 1, region: 1, openRoles: 1, status: 1 });
+lfpPostSchema.index({ team: 1, status: 1 });
+lfpPostSchema.index({ createdAt: -1 });
 
-const LFTPost = mongoose.model('LFTPost', lftPostSchema);
+const LFPPost = mongoose.model('LFPPost', lfpPostSchema);
 
-export default LFTPost;
+export default LFPPost;
