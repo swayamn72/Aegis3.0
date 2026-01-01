@@ -4,13 +4,24 @@ import Organization from '../models/organization.model.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { verifyOrgToken } from '../middleware/orgAuth.js';
+import rateLimit from 'express-rate-limit';
 
 const router = express.Router();
+
+// Strict rate limiter for auth endpoints (login/signup)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // limit each IP to 5 requests per windowMs
+  message: 'Too many authentication attempts, please try again after 15 minutes',
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // Don't count successful requests
+});
 
 // ==========================
 //   PLAYER SIGNUP ROUTE
 // ==========================
-router.post('/signup', async (req, res) => {
+router.post('/signup', authLimiter, async (req, res) => {
   try {
     const { email, password, username } = req.body;
 
@@ -64,7 +75,7 @@ router.post('/signup', async (req, res) => {
 // ==========================
 //   PLAYER LOGIN ROUTE
 // ==========================
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
