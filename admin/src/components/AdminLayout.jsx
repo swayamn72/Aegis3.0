@@ -44,9 +44,8 @@ const AdminLayout = ({ children }) => {
       )}
 
       {/* Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-zinc-900 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 ${
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-      }`}>
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-zinc-900 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}>
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="flex items-center justify-center h-16 px-4 bg-gradient-to-r from-orange-500 to-red-500">
@@ -62,11 +61,10 @@ const AdminLayout = ({ children }) => {
                 <Link
                   key={item.name}
                   to={item.href}
-                  className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
-                    isActive(item.href)
-                      ? 'bg-orange-500 text-white'
-                      : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
-                  }`}
+                  className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${isActive(item.href)
+                    ? 'bg-orange-500 text-white'
+                    : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                    }`}
                   onClick={() => setSidebarOpen(false)}
                 >
                   <Icon className="w-5 h-5 mr-3" />
@@ -102,7 +100,7 @@ const AdminLayout = ({ children }) => {
 
       {/* Main content */}
       <div className="lg:pl-64">
-        {/* Top bar */}
+        {/* Top bar (mobile only) */}
         <div className="sticky top-0 z-10 bg-zinc-950 border-b border-zinc-800 lg:hidden">
           <div className="flex items-center justify-between h-16 px-4">
             <button
@@ -120,7 +118,7 @@ const AdminLayout = ({ children }) => {
         </div>
 
         {/* Page content */}
-        <main className="p-6">
+        <main className="px-6">
           {children}
         </main>
       </div>

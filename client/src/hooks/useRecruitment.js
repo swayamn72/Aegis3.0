@@ -112,7 +112,12 @@ export const useApproachPlayer = () => {
         },
         onError: (error) => {
             console.error('Error approaching player:', error);
-            toast.error(error.error || 'Failed to send approach');
+            // Show specific backend error message if available
+            if (error && (error.error || error.message)) {
+                toast.error(error.error || error.message);
+            } else {
+                toast.error('Failed to send approach');
+            }
         },
     });
 };

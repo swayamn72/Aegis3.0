@@ -16,12 +16,23 @@ router.get("/me", auth, async (req, res) => {
     // req.user.id is set by the auth middleware
     const userId = req.user.id;
 
-    const user = await Player.findById(userId).select("-password").populate({
-      path: 'team',
-      populate: {
-        path: 'captain'
-      }
-    });
+    const user = await Player.findById(userId)
+      .select(
+        [
+          // User fields
+          "_id", "realName", "age", "location", "bio", "languages", "profilePicture", "inGameName", "earnings", "inGameRole", "teamStatus", "availability", "discordTag", "twitch", "youtube", "profileVisibility", "cardTheme", "username", "country", "aegisRating", "verified", "createdAt", "previousTeams", "team", "primaryGame", "tournamentsPlayed", "matchesPlayed"
+        ].join(" ")
+      )
+      .populate({
+        path: 'team',
+        select: [
+          "_id", "teamName", "teamTag", "logo", "primaryGame", "region", "bio", "players", "captain"
+        ].join(" "),
+        populate: {
+          path: 'captain',
+          select: ["_id", "username", "profilePicture"].join(" ")
+        }
+      });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }

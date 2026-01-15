@@ -4,11 +4,11 @@ import { Shield, PlusCircle, Trash2, Edit2 } from 'lucide-react';
 import { useAdmin } from '../context/AdminContext';
 
 // API functions
-const fetchRewards = async (token) => {
+const fetchRewards = async () => {
   try {
     const res = await fetch('http://localhost:5000/api/admin/rewards', {
+      credentials: 'include',
       headers: {
-        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
     });
@@ -20,12 +20,12 @@ const fetchRewards = async (token) => {
   }
 };
 
-const addReward = async (token, reward) => {
+const addReward = async (reward) => {
   try {
     const res = await fetch('http://localhost:5000/api/admin/rewards', {
       method: 'POST',
+      credentials: 'include',
       headers: {
-        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(reward),
@@ -38,11 +38,12 @@ const addReward = async (token, reward) => {
   }
 };
 
-const deleteReward = async (token, rewardId) => {
+const deleteReward = async (rewardId) => {
   try {
     const res = await fetch(`http://localhost:5000/api/admin/rewards/${rewardId}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
     });
     if (!res.ok) throw new Error('Failed to delete reward');
     return await res.json();
@@ -53,7 +54,7 @@ const deleteReward = async (token, rewardId) => {
 };
 
 const AdminRewards = () => {
-  const { token } = useAdmin();
+  const { admin } = useAdmin();
   const [rewards, setRewards] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newReward, setNewReward] = useState({ name: '', points: '' });
@@ -63,19 +64,19 @@ const AdminRewards = () => {
   useEffect(() => {
     const loadRewards = async () => {
       setLoading(true);
-      const data = await fetchRewards(token);
+      const data = await fetchRewards();
       setRewards(data);
       setLoading(false);
     };
     loadRewards();
-  }, [token]);
+  }, []);
 
   const handleAddReward = async (e) => {
     e.preventDefault();
     if (!newReward.name || !newReward.points) return;
     setSaving(true);
     try {
-      const added = await addReward(token, {
+      const added = await addReward({
         name: newReward.name,
         points: parseInt(newReward.points),
       });
@@ -91,7 +92,7 @@ const AdminRewards = () => {
   const handleDeleteReward = async (id) => {
     if (!window.confirm('Are you sure you want to delete this reward?')) return;
     try {
-      await deleteReward(token, id);
+      await deleteReward(id);
       setRewards(rewards.filter((r) => r._id !== id));
     } catch (err) {
       alert('Failed to delete reward');

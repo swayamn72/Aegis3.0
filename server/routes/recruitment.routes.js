@@ -112,14 +112,19 @@ router.post('/approach-player/:playerId', auth, async (req, res) => {
       return res.status(400).json({ error: 'Your team roster is full' });
     }
 
-    // Prevent duplicate pending approach (race prone — below we try to use transaction)
-    const existing = await RecruitmentApproach.findOne({
+    // Allow a new approach only if the last one is older than 7 days
+    const lastApproach = await RecruitmentApproach.findOne({
       team: team._id,
-      player: targetPlayer._id,
-      status: 'pending'
-    });
-    if (existing) {
-      return res.status(400).json({ error: 'You already have a pending approach with this player' });
+      player: targetPlayer._id
+    }).sort({ createdAt: -1 });
+
+    if (lastApproach) {
+      const now = new Date();
+      const diffMs = now - lastApproach.createdAt;
+      const diffDays = diffMs / (1000 * 60 * 60 * 24);
+      if (diffDays < 7) {
+        return res.status(400).json({ error: 'You can only send a new approach to this player after 7 days from the last approach.' });
+      }
     }
 
     // Use transaction when available to create approach + system chat message atomically
@@ -530,7 +535,7 @@ router.post('/approach/:approachId/reject', auth, async (req, res) => {
     }
 
     await ChatMessage.updateOne(
-      { 'metadata.approachId': approachId },
+      { 'metadata.approachId': new mongoose.Types.ObjectId(approachId) },
       { $set: { 'metadata.approachStatus': 'rejected' } }
     );
 

@@ -10,21 +10,40 @@ export const useAdmin = () => {
   return context;
 };
 
+
 export const AdminProvider = ({ children }) => {
   const [admin, setAdmin] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('adminToken'));
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Check authentication on mount
   useEffect(() => {
-    if (token) {
-      // Validate token and set admin data
-      setIsAuthenticated(true);
-      // You might want to decode JWT token here or fetch admin profile
-      setAdmin({ username: 'Admin' }); // Placeholder
-    }
-  }, [token]);
+    const checkAuth = async () => {
+      try {
+        const response = await fetch('/api/admin/verify', {
+          credentials: 'include',
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setIsAuthenticated(true);
+          setAdmin(data.admin);
+        } else {
+          setIsAuthenticated(false);
+          setAdmin(null);
+        }
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        setIsAuthenticated(false);
+        setAdmin(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, []);
 
   const login = async (email, password) => {
     setLoading(true);
@@ -36,17 +55,16 @@ export const AdminProvider = ({ children }) => {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({ email, password }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Login failed');
+        throw new Error(data.error || data.message || 'Login failed');
       }
 
-      localStorage.setItem('adminToken', data.token);
-      setToken(data.token);
       setIsAuthenticated(true);
       setAdmin(data.admin);
 
@@ -59,12 +77,19 @@ export const AdminProvider = ({ children }) => {
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('adminToken');
-    setToken(null);
-    setAdmin(null);
-    setIsAuthenticated(false);
-    setError(null);
+  const logout = async () => {
+    try {
+      await fetch('/api/admin/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      setAdmin(null);
+      setIsAuthenticated(false);
+      setError(null);
+    }
   };
 
   const clearError = () => {
@@ -73,7 +98,6 @@ export const AdminProvider = ({ children }) => {
 
   const value = {
     admin,
-    token,
     isAuthenticated,
     loading,
     error,

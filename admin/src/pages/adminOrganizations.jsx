@@ -17,7 +17,7 @@ import {
 import { toast } from 'react-toastify';
 
 const AdminOrganizations = () => {
-  const { token } = useAdmin();
+  const { admin } = useAdmin();
   const [organizations, setOrganizations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedOrg, setSelectedOrg] = useState(null);
@@ -32,16 +32,15 @@ const AdminOrganizations = () => {
   const fetchOrganizations = async () => {
     setLoading(true);
     try {
-      const endpoint = filter === 'pending' 
+      const endpoint = filter === 'pending'
         ? 'http://localhost:5000/api/organizations/pending'
         : `http://localhost:5000/api/organizations?status=${filter}`;
-      
+
       const response = await fetch(endpoint, {
+        credentials: 'include',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        },
-        credentials: 'include'
+        }
       });
 
       if (!response.ok) {
@@ -62,11 +61,10 @@ const AdminOrganizations = () => {
     try {
       const response = await fetch(`http://localhost:5000/api/organizations/${orgId}/approve`, {
         method: 'PATCH',
+        credentials: 'include',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        },
-        credentials: 'include'
+        }
       });
 
       if (!response.ok) {
@@ -92,11 +90,10 @@ const AdminOrganizations = () => {
     try {
       const response = await fetch(`http://localhost:5000/api/organizations/${orgId}/reject`, {
         method: 'PATCH',
+        credentials: 'include',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        credentials: 'include',
         body: JSON.stringify({ reason: rejectionReason })
       });
 
@@ -175,11 +172,10 @@ const AdminOrganizations = () => {
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  filter === f
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === f
                     ? 'bg-orange-500 text-white'
                     : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-                }`}
+                  }`}
               >
                 {f.charAt(0).toUpperCase() + f.slice(1)}
               </button>
@@ -232,7 +228,7 @@ const AdminOrganizations = () => {
             <Building2 className="w-16 h-16 text-zinc-600 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-white mb-2">No Organizations Found</h3>
             <p className="text-zinc-400">
-              {filter === 'pending' 
+              {filter === 'pending'
                 ? 'There are no pending organization registrations.'
                 : `No ${filter} organizations found.`}
             </p>
@@ -291,9 +287,9 @@ const AdminOrganizations = () => {
                         {org.socials?.website && (
                           <div className="flex items-center gap-2 text-sm">
                             <Globe className="w-4 h-4 text-zinc-500" />
-                            <a 
-                              href={org.socials.website} 
-                              target="_blank" 
+                            <a
+                              href={org.socials.website}
+                              target="_blank"
                               rel="noopener noreferrer"
                               className="text-orange-400 hover:text-orange-300"
                             >
@@ -423,7 +419,7 @@ const AdminOrganizations = () => {
                           <Globe className="w-4 h-4 text-zinc-500" />
                           <span className="text-xs text-zinc-500 uppercase font-semibold">Website</span>
                         </div>
-                        <a 
+                        <a
                           href={selectedOrg.socials.website}
                           target="_blank"
                           rel="noopener noreferrer"

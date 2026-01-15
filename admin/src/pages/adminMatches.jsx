@@ -16,12 +16,12 @@ import {
 } from 'lucide-react';
 
 // API functions
-const fetchMatches = async (params = {}, token) => {
+const fetchMatches = async (params = {}) => {
   try {
     const queryString = new URLSearchParams(params).toString();
     const response = await fetch(`/api/admin/matches?${queryString}`, {
+      credentials: 'include',
       headers: {
-        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       }
     });
@@ -36,12 +36,12 @@ const fetchMatches = async (params = {}, token) => {
   }
 };
 
-const deleteMatch = async (matchId, token) => {
+const deleteMatch = async (matchId) => {
   try {
     const response = await fetch(`/api/admin/matches/${matchId}`, {
       method: 'DELETE',
+      credentials: 'include',
       headers: {
-        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       }
     });
@@ -215,7 +215,7 @@ const MatchTable = ({ matches, onEdit, onDelete, onView }) => {
 };
 
 const AdminMatches = () => {
-  const { admin, token } = useAdmin();
+  const { admin } = useAdmin();
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -223,43 +223,9 @@ const AdminMatches = () => {
   const [tournamentFilter, setTournamentFilter] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  // Mock data for demonstration
-  const mockMatches = [
-    {
-      _id: '1',
-      matchNumber: 1245,
-      matchType: 'group_stage',
-      tournament: {
-        tournamentName: 'BGMI Championship 2024',
-        shortName: 'BGMI Champs'
-      },
-      tournamentPhase: 'Group Stage Day 1',
-      status: 'in_progress',
-      map: 'Erangel',
-      scheduledStartTime: '2024-01-15T14:00:00Z',
-      matchDuration: 35,
-      participatingTeams: Array(16).fill({})
-    },
-    {
-      _id: '2',
-      matchNumber: 1246,
-      matchType: 'final',
-      tournament: {
-        tournamentName: 'Valorant Champions League',
-        shortName: 'VCL'
-      },
-      tournamentPhase: 'Grand Finals',
-      status: 'scheduled',
-      map: 'Miramar',
-      scheduledStartTime: '2024-01-16T16:00:00Z',
-      matchDuration: null,
-      participatingTeams: Array(2).fill({})
-    }
-  ];
 
   useEffect(() => {
     const loadMatches = async () => {
-      if (!token) return; // Don't make API calls if no token
 
       setLoading(true);
       try {
@@ -268,19 +234,18 @@ const AdminMatches = () => {
         if (statusFilter) params.status = statusFilter;
         if (tournamentFilter) params.tournament = tournamentFilter;
 
-        const data = await fetchMatches(params, token);
+        const data = await fetchMatches(params);
         setMatches(data.matches || []);
       } catch (error) {
         console.error('Error loading matches:', error);
-        // Fallback to mock data if API fails
-        setMatches(mockMatches);
+        setMatches([]);
       } finally {
         setLoading(false);
       }
     };
 
     loadMatches();
-  }, [searchTerm, statusFilter, tournamentFilter, token]);
+  }, [searchTerm, statusFilter, tournamentFilter]);
 
   const handleEdit = (match) => {
     console.log('Edit match:', match);
@@ -290,14 +255,14 @@ const AdminMatches = () => {
   const handleDelete = async (match) => {
     if (window.confirm(`Are you sure you want to delete Match #${match.matchNumber}?`)) {
       try {
-        await deleteMatch(match._id, token);
+        await deleteMatch(match._id);
         // Refresh the matches list after successful deletion
         const params = {};
         if (searchTerm) params.search = searchTerm;
         if (statusFilter) params.status = statusFilter;
         if (tournamentFilter) params.tournament = tournamentFilter;
 
-        const data = await fetchMatches(params, token);
+        const data = await fetchMatches(params);
         setMatches(data.matches || []);
       } catch (error) {
         console.error('Error deleting match:', error);
