@@ -1,3 +1,14 @@
+// Firebase Admin SDK for FCM
+import admin from 'firebase-admin';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const serviceAccount = require('../aegis-app-88edd-firebase-adminsdk-fbsvc-456276ea78.json');
+
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+}
 import { Server } from 'socket.io';
 import Player from '../models/player.model.js';
 import TryoutChat from '../models/tryoutChat.model.js';
@@ -76,15 +87,40 @@ const initChat = (server) => {
         chat.messages.push(newMessage);
         await chat.save();
 
+
         // Populate sender info for response
         await chat.populate('messages.sender', 'username profilePicture inGameName');
         const populatedMessage = chat.messages[chat.messages.length - 1];
 
-        // ✅ Broadcast to all in room
+        // Broadcast to all in room
         io.to(`tryout_${chatId}`).emit('newTryoutMessage', {
           chatId,
           message: populatedMessage
         });
+
+        // Push Notification (FCM) for mobile recipient
+        // Find recipient (other than sender)
+        const recipientId = chat.participants.find(p => p.toString() !== senderId);
+        if (recipientId) {
+          const Player = (await import('../models/player.model.js')).default;
+          const recipient = await Player.findById(recipientId).select('fcmToken username');
+          if (recipient && recipient.fcmToken) {
+            // Get sender's name
+            const sender = await Player.findById(senderId).select('username');
+            const senderName = sender ? sender.username : 'Someone';
+            try {
+              await admin.messaging().send({
+                notification: {
+                  title: 'New Chat Message',
+                  body: `${senderName}: ${message}`
+                },
+                token: recipient.fcmToken
+              });
+            } catch (err) {
+              console.error('FCM send error:', err);
+            }
+          }
+        }
 
       } catch (error) {
         console.error('Error sending tryout message:', error);

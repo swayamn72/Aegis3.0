@@ -1,3 +1,4 @@
+
 import mongoose from 'mongoose';
 
 const playerSchema = new mongoose.Schema(
@@ -36,7 +37,7 @@ const playerSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-        verified: {
+    verified: {
       type: Boolean,
       default: false,
     },
@@ -53,6 +54,10 @@ const playerSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: '',
+    },
+    fcmToken: {
+      type: String,
+      default: null,
     },
     primaryGame: {
       type: String,
@@ -169,7 +174,7 @@ const playerSchema = new mongoose.Schema(
       enum: ['orange', 'blue', 'purple', 'red', 'green', 'pink'],
       default: 'orange',
     },
-      coins: {
+    coins: {
       type: Number,
       default: 0,
       min: 0,
@@ -203,7 +208,7 @@ const playerSchema = new mongoose.Schema(
     posts: [
       {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Post", 
+        ref: "Post",
       },
     ],
     connections: [{ type: mongoose.Schema.Types.ObjectId, ref: "Player" }],
