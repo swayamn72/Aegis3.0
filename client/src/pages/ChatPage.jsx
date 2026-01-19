@@ -7,13 +7,13 @@ import {
   AlertCircle, Ban, CheckCircle, XCircle
 } from 'lucide-react';
 import ChatMessage from '../components/ChatMessage';
-import { useChatSocket, useTryoutChatSocket } from '../hooks/useChatSocket';
+import { useOptimizedChat } from '../hooks/useOptimizedChat';
 import { useChatMessages } from '../hooks/useChatMessages';
 import { useChatData } from '../hooks/useChatData';
 import { useChatActions } from '../hooks/useChatActions';
 import { chatKeys } from '../hooks/queryKeys';
 import axios from '../utils/axiosConfig';
-import { toast } from 'react-toastify'; 
+import { toast } from 'react-toastify';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
@@ -34,8 +34,6 @@ export default function ChatPage() {
   const [onlineUsers, setOnlineUsers] = useState(new Set());
   const [showApplications, setShowApplications] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
-  // ✅ WORKING FIX: Use useState to force re-render + update cache
-  const [localMessages, setLocalMessages] = useState([]);
 
   // Refs
   const messagesEndRef = useRef(null);
@@ -105,11 +103,11 @@ export default function ChatPage() {
     }
   }, []);
 
-  // Socket hooks - use the appropriate one based on chat type
-  useChatSocket({
+  // ✅ OPTIMIZED: Single socket connection, just manages rooms
+  const { isConnected, sendMessage: socketSendMessage } = useOptimizedChat({
     userId,
-    chatType: chatType === 'direct' ? 'direct' : null, // Only for direct chats
-    selectedChatId: chatType === 'direct' ? selectedChat?._id : null,
+    chatType,
+    selectedChatId: selectedChat?._id,
     showNotification
   });
 
@@ -119,70 +117,6 @@ export default function ChatPage() {
     selectedChat,
     chatType,
   });
-
-  // ✅ FIX: Use useRef to store refetch functions to avoid recreating callbacks
-  const refetchCurrentMessagesRef = useRef(refetchCurrentMessages);
-  const refetchTryoutsRef = useRef(refetchTryouts);
-
-  // Update refs when functions change
-  useEffect(() => {
-    refetchCurrentMessagesRef.current = refetchCurrentMessages;
-    refetchTryoutsRef.current = refetchTryouts;
-  }, [refetchCurrentMessages, refetchTryouts]);
-
-  // ✅ FIX: Callback uses ref to get current chatId
-  const handleNewTryoutMessage = useCallback((message) => {
-    console.log('🎯 New message received:', message);
-
-    const currentChatId = selectedChatRef.current?._id;
-    if (!currentChatId) return;
-
-    const cacheKey = ['chat', 'tryouts', currentChatId];
-
-    // ✅ 1. Update local state immediately (instant UI update)
-    setLocalMessages(prev => [...prev, message]);
-
-    // ✅ 2. Update React Query cache (for persistence)
-    queryClient.setQueryData(cacheKey, (oldData) => {
-      if (!oldData) return oldData;
-
-      return {
-        ...oldData,
-        chat: {
-          ...oldData.chat,
-          messages: [...(oldData.chat.messages || []), message]
-        }
-      };
-    });
-
-  }, [queryClient]);
-
-  const handleTryoutEvent = useCallback((eventType, data) => {
-    console.log('Tryout event:', eventType, data);
-
-    // Use refs instead of direct function calls
-    refetchCurrentMessagesRef.current();
-    refetchTryoutsRef.current();
-
-    // Show toast notification
-    if (eventType === 'ended') {
-      toast.info('Tryout has been ended');
-    } else if (eventType === 'offerSent') {
-      toast.success('Team offer has been sent!');
-    } else if (eventType === 'offerAccepted') {
-      toast.success('Player has accepted the team offer!');
-    } else if (eventType === 'offerRejected') {
-      toast.info('Player has declined the team offer');
-    }
-  }, []); // ✅ Empty dependencies - uses refs instead
-
-  // ✅ Tryout chat socket with stable callbacks
-  const { sendMessage: sendTryoutMessage } = useTryoutChatSocket(
-    chatType === 'tryout' ? selectedChat?._id : null,
-    userId,
-    handleNewTryoutMessage,
-    handleTryoutEvent
-  );
 
   // Scroll handling
   const handleScroll = useCallback((e) => {
@@ -223,30 +157,25 @@ export default function ChatPage() {
     }
   }, [connections, selectedUserId, selectedChat]);
 
-  // ✅ Sync localMessages with React Query data
-  useEffect(() => {
-    if (chatType === 'tryout' && tryoutChatData?.messages) {
-      setLocalMessages(tryoutChatData.messages);
-    }
-  }, [chatType, tryoutChatData]);
-
-  // ✅ Override messages from React Query with local state
-  const displayMessages = chatType === 'tryout' ? localMessages : messages;
-
-  // Scroll to bottom when messages change - update dependency
+  // Scroll to bottom when messages change
   useEffect(() => {
     scrollToBottom();
-  }, [displayMessages, scrollToBottom]); // ✅ Changed from `messages` to `displayMessages`
+  }, [messages, scrollToBottom]);
 
-  // Message sending
+  // ✅ OPTIMIZED: Unified message sending
   const sendMessage = () => {
-    if (!input.trim()) return;
+    if (!input.trim() || !selectedChat) return;
 
-    if (chatType === 'tryout' && sendTryoutMessage) {
-      sendTryoutMessage(input);
-      setInput("");
-      // ❌ DON'T call refetchCurrentMessages here
+    if (chatType === 'tryout') {
+      // Tryout chats use optimized socket
+      const success = socketSendMessage(input);
+      if (success) {
+        setInput("");
+      } else {
+        toast.error('Failed to send message');
+      }
     } else {
+      // Direct chats use actions (HTTP POST)
       actions.sendMessage(input, () => setInput(""));
     }
   };
@@ -688,13 +617,13 @@ export default function ChatPage() {
               </div>
             </div>
 
-            {/* Chat Messages - USE displayMessages instead of messages */}
+            {/* Chat Messages */}
             <div
               ref={messagesContainerRef}
               onScroll={handleScroll}
               className="flex-1 overflow-y-auto p-4 space-y-4 flex flex-col w-full"
             >
-              {displayMessages.map((msg, index) => {
+              {messages.map((msg, index) => {
                 const isMine = chatType === 'direct'
                   ? msg.senderId === userId
                   : msg.sender?._id === userId || msg.sender === userId;
@@ -827,7 +756,7 @@ export default function ChatPage() {
                     chatType={chatType}
                     selectedChat={selectedChat}
                     index={index}
-                    messages={displayMessages}
+                    messages={messages}
                   />
                 );
               })}

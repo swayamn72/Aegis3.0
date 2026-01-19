@@ -242,6 +242,16 @@ const LFPPostForm = React.memo(({ onSubmit, onClose, userTeam }) => {
 LFPPostForm.displayName = 'LFPPostForm';
 
 const LFTPostCard = React.memo(({ post, onApproach }) => {
+    // Debug log to check profilePicture data
+    React.useEffect(() => {
+        console.log('LFT Post Player Data:', {
+            username: post.player?.username,
+            profilePicture: post.player?.profilePicture,
+            profilePictureType: typeof post.player?.profilePicture,
+            profilePictureLength: post.player?.profilePicture?.length
+        });
+    }, [post.player]);
+
     const getGameColor = () => {
         switch (post.game) {
             case 'VALO': return 'text-red-400';
@@ -271,11 +281,15 @@ const LFTPostCard = React.memo(({ post, onApproach }) => {
                 <div className="flex items-center gap-3 mb-3 mt-8">
                     <div className="relative">
                         <img
-                            src={post.player.profilePicture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.player.username}`}
-                            alt={post.player.inGameName || post.player.username}
-                            className="w-14 h-14 rounded-lg bg-zinc-900 border border-zinc-800"
+                            src={(post.player?.profilePicture && post.player.profilePicture.trim()) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.player?.username || 'default'}`}
+                            alt={post.player?.inGameName || post.player?.username || 'Player'}
+                            className="w-14 h-14 rounded-lg bg-zinc-900 border border-zinc-800 object-cover"
+                            onError={(e) => {
+                                e.target.onerror = null;
+                                e.target.src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.player?.username || 'default'}`;
+                            }}
                         />
-                        {post.player.verified && (
+                        {post.player?.verified && (
                             <div className="absolute -bottom-1 -right-1 bg-[#FF4500] p-0.5 rounded-full">
                                 <Check className="w-2.5 h-2.5 text-white" />
                             </div>

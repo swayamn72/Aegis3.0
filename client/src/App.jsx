@@ -22,134 +22,146 @@ import DetailedTournamentInfoPage from './pages/DetailedTournamentInfoPage';
 import TournamentManagementPageOrg from "./orgs/TournamentManagementPageOrg";
 
 import AegisOrgPendingApproval from "./orgs/OrgPendingApproval";
-import OrgDashboard from "./orgs/OrgDashboard"; 
+import OrgDashboard from "./orgs/OrgDashboard";
 
 import { AuthProvider } from "./context/AuthContext";
+import { SocketProvider } from "./context/SocketContext";
 import ProtectedRoute from "./components/ProtectedRoute";
+import { useAuth } from "./context/AuthContext";
+
+// Wrapper component to access auth context
+function AppContent() {
+  const { user } = useAuth();
+
+  return (
+    <SocketProvider userId={user?._id}>
+      <BrowserRouter>
+        <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop={false} closeOnClick pauseOnFocusLoss draggable pauseOnHover />
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
+
+          {/* Organization Routes */}
+          <Route
+            path="/org/pending-approval"
+            element={
+              <ProtectedRoute requireRole="organization">
+                <AegisOrgPendingApproval />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/org/dashboard"
+            element={
+              <ProtectedRoute requireRole="organization">
+                <OrgDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Player-Only Protected Routes */}
+          <Route
+            path="/complete-profile"
+            element={
+              <ProtectedRoute requireRole="player">
+                <AegisProfileCompletionPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute requireRole="player">
+                <HomePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/my-teams"
+            element={
+              <ProtectedRoute requireRole="player">
+                <MyTeamsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/team/:id"
+            element={
+              <ProtectedRoute requireRole="player">
+                <DetailedTeamInfoPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/chat"
+            element={
+              <ProtectedRoute requireRole="player">
+                <ChatPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/recruitment"
+            element={
+              <ProtectedRoute requireRole="player">
+                <RecruitmentActualPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute requireRole="player">
+                <SettingsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/my-profile"
+            element={
+              <ProtectedRoute requireRole="player">
+                <MyProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/players"
+            element={
+              <ProtectedRoute requireRole="player">
+                <PlayersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/tournaments"
+            element={
+              <ProtectedRoute requireRole="player">
+                <TournamentsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/tournament/:id"
+            element={
+              <ProtectedRoute requireRole="player">
+                <DetailedTournamentInfoPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/org/tournament/:id" element={<ProtectedRoute requireRole="organization"><TournamentManagementPageOrg /></ProtectedRoute>} />
+        </Routes>
+      </BrowserRouter>
+    </SocketProvider>
+  );
+}
 
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <BrowserRouter>
-          <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop={false} closeOnClick pauseOnFocusLoss draggable pauseOnHover />
-          <Routes>
-            {/* Public Routes */}
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/signup" element={<SignupPage />} />
-
-            {/* Organization Routes */}
-            <Route
-              path="/org/pending-approval"
-              element={
-                <ProtectedRoute requireRole="organization">
-                  <AegisOrgPendingApproval />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/org/dashboard"
-              element={
-                <ProtectedRoute requireRole="organization">
-                  <OrgDashboard />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* Player-Only Protected Routes */}
-            <Route
-              path="/complete-profile"
-              element={
-                <ProtectedRoute requireRole="player">
-                  <AegisProfileCompletionPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute requireRole="player">
-                  <HomePage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/my-teams"
-              element={
-                <ProtectedRoute requireRole="player">
-                  <MyTeamsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/team/:id"
-              element={
-                <ProtectedRoute requireRole="player">
-                  <DetailedTeamInfoPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/chat"
-              element={
-                <ProtectedRoute requireRole="player">
-                  <ChatPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/recruitment"
-              element={
-                <ProtectedRoute requireRole="player">
-                  <RecruitmentActualPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/settings"
-              element={
-                <ProtectedRoute requireRole="player">
-                  <SettingsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/my-profile"
-              element={
-                <ProtectedRoute requireRole="player">
-                  <MyProfilePage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/players"
-              element={
-                <ProtectedRoute requireRole="player">
-                  <PlayersPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/tournaments"
-              element={
-                <ProtectedRoute requireRole="player">
-                  <TournamentsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/tournament/:id"
-              element={
-                <ProtectedRoute requireRole="player">
-                  <DetailedTournamentInfoPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="/org/tournament/:id" element={<ProtectedRoute requireRole="organization"><TournamentManagementPageOrg /></ProtectedRoute>} />
-          </Routes>
-        </BrowserRouter>
+        <AppContent />
       </AuthProvider>
-
       <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>
   );

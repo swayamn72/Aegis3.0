@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
-import { getSocket } from './useChatSocket';
+import { useSocket } from '../context/SocketContext';
 import axios from '../utils/axiosConfig';
 import { chatKeys } from './queryKeys';
 
@@ -10,7 +10,7 @@ export const useChatActions = ({ userId, selectedChat, chatType }) => {
     const [showOfferModal, setShowOfferModal] = useState(false);
     const [endReason, setEndReason] = useState('');
     const [offerMessage, setOfferMessage] = useState('');
-    const socket = getSocket();
+    const { emit, isConnected } = useSocket();
     const queryClient = useQueryClient();
 
     // Start tryout mutation
@@ -214,6 +214,7 @@ export const useChatActions = ({ userId, selectedChat, chatType }) => {
                 senderId: userId,
                 receiverId: selectedChat._id,
                 message: input,
+                messageType: 'text',
                 timestamp: new Date(),
             };
 
@@ -226,7 +227,25 @@ export const useChatActions = ({ userId, selectedChat, chatType }) => {
                 return old ? [...old, msg] : [msg];
             });
 
-            socket.emit("sendMessage", msg);
+            // Save to database via HTTP POST (this will also emit via socket on server)
+            axios.post('/api/chat/send-notification', {
+                receiverId: selectedChat._id,
+                message: input,
+                messageType: 'text'
+            })
+                .then(() => {
+                    console.log('✅ Message saved to database');
+                })
+                .catch((error) => {
+                    console.error('Failed to save message:', error);
+                    toast.error('Failed to send message');
+                    // Remove optimistic update on failure
+                    queryClient.setQueryData(queryKey, (old) => {
+                        return old ? old.filter(m => m.timestamp !== msg.timestamp) : old;
+                    });
+                });
+
+            clearInput?.();
         } else if (chatType === 'tryout') {
             const tempId = `temp_${Date.now()}_${Math.random()}`;
             const optimisticMessage = {
@@ -246,15 +265,26 @@ export const useChatActions = ({ userId, selectedChat, chatType }) => {
                 };
             });
 
-            socket.emit('tryoutMessage', {
+            if (!isConnected) {
+                console.error('Socket not connected');
+                toast.error('Connection lost. Please refresh.');
+                return;
+            }
+
+            const success = emit('sendTryoutMessage', {
                 chatId: selectedChat._id,
                 senderId: userId,
                 message: input
             });
+
+            if (!success) {
+                console.error('Failed to emit tryoutMessage');
+                toast.error('Failed to send message');
+            }
         }
 
-        clearInput();
-    }, [userId, selectedChat, chatType, socket, queryClient]);
+        clearInput?.();
+    }, [userId, selectedChat, chatType, emit, isConnected, queryClient]);
 
     // Wrapper functions that handle callbacks
     const handleStartTryout = (applicationId, callbacks) => {

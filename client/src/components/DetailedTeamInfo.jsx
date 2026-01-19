@@ -37,7 +37,7 @@ const DetailedTeamInfo = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('matches');
 
   // Captain functionality states
   const [showEditLogoModal, setShowEditLogoModal] = useState(false);
@@ -531,22 +531,6 @@ const DetailedTeamInfo = () => {
 
               {/* Right Side - Stats */}
               <div className="lg:w-80">
-                <div className="bg-gradient-to-r from-cyan-600/20 to-purple-500/20 border border-cyan-400/30 rounded-xl p-6 mb-4">
-                  <div className="text-center">
-                    <div className="flex items-center justify-center gap-2 mb-2">
-                      <Trophy className="w-6 h-6 text-amber-400" />
-                      <span className="text-amber-400 font-semibold text-lg">Total Earnings</span>
-                    </div>
-                    <div className="text-4xl font-bold text-white mb-2">
-                      ₹{((teamData.totalEarnings || 0) / 100000).toFixed(1)}L
-                    </div>
-                    <div className="flex items-center justify-center gap-2 text-green-400 text-sm">
-                      <TrendingUp className="w-4 h-4" />
-                      <span>Aegis Rating: {teamData.aegisRating || 0}</span>
-                    </div>
-                  </div>
-                </div>
-
                 <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4 space-y-3">
                   <h3 className="text-white font-semibold flex items-center gap-2">
                     <Award className="w-5 h-5 text-cyan-400" />
@@ -579,49 +563,93 @@ const DetailedTeamInfo = () => {
             </div>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-              <StatBox
-                icon={Trophy}
-                label="Total Earnings"
-                value={`₹${((teamData.totalEarnings || 0) / 100000).toFixed(1)}L`}
-                color="green"
-              />
-              <StatBox
-                icon={Target}
-                label="Aegis Rating"
-                value={teamData.aegisRating || 0}
-                color="cyan"
-              />
-              <StatBox
-                icon={Users}
-                label="Active Players"
-                value={teamData.players?.length || 0}
-                color="blue"
-              />
-              <StatBox
-                icon={Star}
-                label="Qualified Events"
-                value={teamData.qualifiedEvents?.length || 0}
-                color="purple"
-              />
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-6">
+              <div className="bg-zinc-800/50 rounded-xl p-4 border border-zinc-700 hover:border-blue-500/50 transition-all group">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center border border-blue-500/30 group-hover:bg-blue-500/20 transition-colors">
+                    <Users className="w-5 h-5 text-blue-400" />
+                  </div>
+                  <div className="text-2xl font-bold text-white">{teamData.players?.length || 0}</div>
+                </div>
+                <div className="text-sm text-zinc-400">Active Players</div>
+                <div className="mt-2 text-xs text-blue-400">{5 - (teamData.players?.length || 0)} slots open</div>
+              </div>
+
+              <div className="bg-zinc-800/50 rounded-xl p-4 border border-zinc-700 hover:border-green-500/50 transition-all group">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center border border-green-500/30 group-hover:bg-green-500/20 transition-colors">
+                    <Target className="w-5 h-5 text-green-400" />
+                  </div>
+                  <div className="text-2xl font-bold text-white">{teamData.matchesWon || 0}</div>
+                </div>
+                <div className="text-sm text-zinc-400">Matches Won</div>
+                <div className="mt-2 text-xs text-green-400">
+                  {teamData.matchesPlayed ? Math.round((teamData.matchesWon || 0) / teamData.matchesPlayed * 100) : 0}% win rate
+                </div>
+              </div>
+
+              <div className="bg-zinc-800/50 rounded-xl p-4 border border-zinc-700 hover:border-amber-500/50 transition-all group">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 bg-amber-500/10 rounded-lg flex items-center justify-center border border-amber-500/30 group-hover:bg-amber-500/20 transition-colors">
+                    <Trophy className="w-5 h-5 text-amber-400" />
+                  </div>
+                  <div className="text-2xl font-bold text-white">{teamData.tournamentsWon || 0}</div>
+                </div>
+                <div className="text-sm text-zinc-400">Tournaments Won</div>
+                <div className="mt-2 text-xs text-amber-400">{teamData.tournamentsPlayed || 0} participated</div>
+              </div>
             </div>
           </div>
+        </div>
+
+        {/* Team Roster - Always Visible */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 mb-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+              <Users className="w-6 h-6 text-cyan-400" />
+              Current Roster ({teamData.players?.length || 0}/5)
+            </h2>
+            {isCaptain && (
+              <button
+                onClick={() => setShowInviteModal(true)}
+                className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg transition-colors flex items-center gap-2 text-sm"
+              >
+                <UserPlus className="w-4 h-4" />
+                Invite Player
+              </button>
+            )}
+          </div>
+
+          {(!teamData.players || teamData.players.length === 0) ? (
+            <div className="text-center py-16">
+              <div className="w-20 h-20 mx-auto mb-6 bg-zinc-900 border border-zinc-800 rounded-full flex items-center justify-center">
+                <Users className="w-10 h-10 text-zinc-600" />
+              </div>
+              <h3 className="text-xl font-semibold text-white mb-2">No roster information available</h3>
+              <p className="text-zinc-400">Team roster will be displayed here once available</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {teamData.players.map(player => (
+                <PlayerCard key={player._id} player={player} showActions={true} />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Navigation Tabs */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-1 mb-6">
           <div className="flex gap-1">
-            {['overview', 'roster', 'achievements'].map(tab => (
+            {['matches', 'tournaments', 'achievements'].map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`flex-1 px-6 py-2.5 rounded-lg font-medium transition-colors ${
-                  activeTab === tab
-                    ? 'bg-cyan-600 text-white'
-                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-                }`}
+                className={`flex-1 px-6 py-2.5 rounded-lg font-medium transition-colors ${activeTab === tab
+                  ? 'bg-cyan-600 text-white'
+                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                  }`}
               >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {tab === 'matches' ? 'Match History' : tab === 'tournaments' ? 'Tournaments' : tab.charAt(0).toUpperCase() + tab.slice(1)}
               </button>
             ))}
           </div>
@@ -629,91 +657,225 @@ const DetailedTeamInfo = () => {
 
         {/* Tab Content */}
         <div className="min-h-[500px]">
-          {activeTab === 'overview' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Team Stats */}
-              <div className="lg:col-span-2 bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-                <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                  <TrendingUp className="w-6 h-6 text-cyan-400" />
-                  Team Statistics
-                </h2>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-green-400 mb-2">
-                      ₹{((teamData.totalEarnings || 0) / 100000).toFixed(1)}L
-                    </div>
-                    <div className="text-zinc-400 text-sm">Total Earnings</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-cyan-400 mb-2">{teamData.aegisRating || 0}</div>
-                    <div className="text-zinc-400 text-sm">Aegis Rating</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-blue-400 mb-2">{teamData.players?.length || 0}</div>
-                    <div className="text-zinc-400 text-sm">Active Players</div>
-                  </div>
-                </div>
-              </div>
+          {activeTab === 'matches' && (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+              <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                <Target className="w-6 h-6 text-cyan-400" />
+                Recent Match History
+              </h2>
+              <div className="space-y-3">
+                {[
+                  { map: 'Erangel', date: '2 days ago', tournament: 'BGMI Pro League', phase: 'Week 4', kills: 18, placement: 1, points: 28, chickenDinner: true },
+                  { map: 'Miramar', date: '3 days ago', tournament: 'BGMI Masters', phase: 'Finals', kills: 15, placement: 2, points: 23, chickenDinner: false },
+                  { map: 'Sanhok', date: '5 days ago', tournament: 'BMOC', phase: 'Semi-Finals', kills: 12, placement: 8, points: 14, chickenDinner: false },
+                  { map: 'Vikendi', date: '1 week ago', tournament: 'Skyesports Championship', phase: 'Grand Finals', kills: 16, placement: 1, points: 26, chickenDinner: true },
+                  { map: 'Erangel', date: '1 week ago', tournament: 'ESL India Premiership', phase: 'Playoffs', kills: 9, placement: 12, points: 9, chickenDinner: false },
+                  { map: 'Miramar', date: '2 weeks ago', tournament: 'NODWIN Invitational', phase: 'Group Stage', kills: 14, placement: 3, points: 20, chickenDinner: false },
+                  { map: 'Sanhok', date: '2 weeks ago', tournament: 'BGMI Masters', phase: 'Qualifiers', kills: 11, placement: 5, points: 15, chickenDinner: false },
+                ].map((match, idx) => (
+                  <div key={idx} className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4 hover:border-zinc-600 transition-colors">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="flex items-center gap-4 flex-1">
+                        <div className={`w-16 h-16 rounded-lg flex items-center justify-center font-bold ${match.placement <= 3
+                          ? 'bg-green-500/20 text-green-400 border-2 border-green-500/50'
+                          : match.placement <= 10
+                            ? 'bg-blue-500/20 text-blue-400 border-2 border-blue-500/50'
+                            : 'bg-red-500/20 text-red-400 border-2 border-red-500/50'
+                          }`}>
+                          <div className="text-center">
+                            <div className="text-xs text-zinc-400">Rank</div>
+                            <div className="text-xl">#{match.placement}</div>
+                          </div>
+                        </div>
 
-              {/* Organization Info */}
-              {teamData.organization && (
-                <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-                  <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                    <Briefcase className="w-5 h-5 text-cyan-400" />
-                    Organization
-                  </h3>
-                  <div className="text-center">
-                    <img
-                      src={teamData.organization.logo || `https://placehold.co/80x80/4A5568/FFFFFF?text=${teamData.organization.orgName?.charAt(0) || 'O'}`}
-                      alt={teamData.organization.orgName}
-                      className="w-16 h-16 rounded-xl mx-auto mb-4"
-                    />
-                    <h4 className="text-lg font-bold text-white mb-2">{teamData.organization.orgName}</h4>
-                    <p className="text-zinc-400 text-sm mb-4">
-                      {teamData.organization.description || 'Professional Esports Organization'}
-                    </p>
-                    <div className="text-sm text-zinc-500">
-                      Est. {new Date(teamData.organization.establishedDate).getFullYear()}
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="text-white font-semibold text-lg">{match.map}</h3>
+                            {match.chickenDinner && (
+                              <span className="bg-amber-500/20 text-amber-400 text-xs font-bold px-2 py-1 rounded border border-amber-500/50">
+                                🍗 WINNER
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 text-sm text-zinc-400">
+                            <span className="flex items-center gap-1">
+                              <Trophy className="w-3 h-3" />
+                              {match.tournament}
+                            </span>
+                            <span>•</span>
+                            <span className="text-cyan-400 font-medium">{match.phase}</span>
+                            <span>•</span>
+                            <span>{match.date}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-3 text-center">
+                        <div className="bg-zinc-900/50 rounded-lg px-4 py-2 border border-zinc-700">
+                          <div className="text-xl font-bold text-red-400">{match.kills}</div>
+                          <div className="text-xs text-zinc-500">Kills</div>
+                        </div>
+                        <div className="bg-zinc-900/50 rounded-lg px-4 py-2 border border-zinc-700">
+                          <div className="text-xl font-bold text-purple-400">#{match.placement}</div>
+                          <div className="text-xs text-zinc-500">Position</div>
+                        </div>
+                        <div className="bg-zinc-900/50 rounded-lg px-4 py-2 border border-zinc-700">
+                          <div className="text-xl font-bold text-cyan-400">{match.points}</div>
+                          <div className="text-xs text-zinc-500">Points</div>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                ))}
+              </div>
             </div>
           )}
 
-          {activeTab === 'roster' && (
+          {activeTab === 'tournaments' && (
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                  <Users className="w-6 h-6 text-cyan-400" />
-                  Current Roster ({teamData.players?.length || 0}/5)
-                </h2>
-                {isCaptain && (
-                  <button
-                    onClick={() => setShowInviteModal(true)}
-                    className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg transition-colors flex items-center gap-2 text-sm"
-                  >
-                    <UserPlus className="w-4 h-4" />
-                    Invite Player
-                  </button>
-                )}
-              </div>
+              <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                <Trophy className="w-6 h-6 text-amber-400" />
+                Tournament History
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[
+                  {
+                    name: 'BGMI Masters Series',
+                    phase: 'Season 3 Finals',
+                    placement: '1st',
+                    prize: '₹25,00,000',
+                    date: 'Jan 2026',
+                    participants: 24,
+                    kills: 156,
+                    matches: 18,
+                    chickenDinners: 7,
+                    avgPlacement: 3.2,
+                    eliminated: 'Champions'
+                  },
+                  {
+                    name: 'BMOC',
+                    phase: 'Grand Finals',
+                    placement: '2nd',
+                    prize: '₹12,50,000',
+                    date: 'Dec 2025',
+                    participants: 32,
+                    kills: 142,
+                    matches: 15,
+                    chickenDinners: 5,
+                    avgPlacement: 4.1,
+                    eliminated: 'Grand Finals'
+                  },
+                  {
+                    name: 'Skyesports Championship',
+                    phase: 'Winter Series',
+                    placement: '3rd',
+                    prize: '₹8,00,000',
+                    date: 'Nov 2025',
+                    participants: 20,
+                    kills: 98,
+                    matches: 12,
+                    chickenDinners: 3,
+                    avgPlacement: 5.8,
+                    eliminated: 'Finals'
+                  },
+                  {
+                    name: 'ESL India Premiership',
+                    phase: 'Winter Finals',
+                    placement: '1st',
+                    prize: '₹20,00,000',
+                    date: 'Oct 2025',
+                    participants: 24,
+                    kills: 203,
+                    matches: 21,
+                    chickenDinners: 9,
+                    avgPlacement: 2.8,
+                    eliminated: 'Champions'
+                  },
+                  {
+                    name: 'NODWIN Gaming Invitational',
+                    phase: 'Playoffs',
+                    placement: '4th',
+                    prize: '₹4,50,000',
+                    date: 'Sep 2025',
+                    participants: 16,
+                    kills: 87,
+                    matches: 10,
+                    chickenDinners: 2,
+                    avgPlacement: 7.2,
+                    eliminated: 'Semi-Finals'
+                  },
+                  {
+                    name: 'Pro League India',
+                    phase: 'Stage 2',
+                    placement: '2nd',
+                    prize: '₹15,00,000',
+                    date: 'Aug 2025',
+                    participants: 20,
+                    kills: 178,
+                    matches: 14,
+                    chickenDinners: 6,
+                    avgPlacement: 3.9,
+                    eliminated: 'Finals'
+                  },
+                ].map((tournament, idx) => (
+                  <div key={idx} className="bg-gradient-to-br from-zinc-800/80 to-zinc-800/40 border border-zinc-700 rounded-lg p-5 hover:border-amber-500/50 transition-all group">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1">
+                        <h3 className="text-white font-bold text-lg mb-1 group-hover:text-cyan-400 transition-colors">
+                          {tournament.name}
+                        </h3>
+                        <div className="text-sm text-cyan-400 font-medium mb-2">{tournament.phase}</div>
+                        <div className="flex items-center gap-2 text-sm text-zinc-400 mb-1">
+                          <Calendar className="w-4 h-4" />
+                          {tournament.date}
+                        </div>
+                        <div className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded ${tournament.eliminated === 'Champions'
+                            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                            : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                          }`}>
+                          {tournament.eliminated === 'Champions' ? '🏆 Champions' : `❌ Eliminated: ${tournament.eliminated}`}
+                        </div>
+                      </div>
+                      <div className={`px-4 py-2 rounded-lg font-bold text-lg ${tournament.placement === '1st'
+                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/50'
+                        : tournament.placement === '2nd'
+                          ? 'bg-zinc-400/20 text-zinc-300 border border-zinc-400/50'
+                          : tournament.placement === '3rd'
+                            ? 'bg-orange-500/20 text-orange-400 border border-orange-500/50'
+                            : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
+                        }`}>
+                        {tournament.placement}
+                      </div>
+                    </div>
 
-              {(!teamData.players || teamData.players.length === 0) ? (
-                <div className="text-center py-16">
-                  <div className="w-20 h-20 mx-auto mb-6 bg-zinc-900 border border-zinc-800 rounded-full flex items-center justify-center">
-                    <Users className="w-10 h-10 text-zinc-600" />
+                    <div className="bg-zinc-900/50 rounded-lg p-3 mb-3 border border-zinc-700">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-zinc-400 text-sm">Prize Money</span>
+                        <span className="text-green-400 font-bold text-lg">{tournament.prize}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-zinc-400 text-sm">Participants</span>
+                        <span className="text-white font-medium">{tournament.participants} teams</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="bg-zinc-900/50 rounded-lg p-2 text-center border border-zinc-700">
+                        <div className="text-xl font-bold text-red-400">{tournament.kills}</div>
+                        <div className="text-xs text-zinc-500">Kills</div>
+                      </div>
+                      <div className="bg-zinc-900/50 rounded-lg p-2 text-center border border-zinc-700">
+                        <div className="text-xl font-bold text-amber-400">{tournament.chickenDinners}</div>
+                        <div className="text-xs text-zinc-500">Dinners</div>
+                      </div>
+                      <div className="bg-zinc-900/50 rounded-lg p-2 text-center border border-zinc-700">
+                        <div className="text-xl font-bold text-cyan-400">{tournament.avgPlacement}</div>
+                        <div className="text-xs text-zinc-500">Avg Rank</div>
+                      </div>
+                    </div>
                   </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">No roster information available</h3>
-                  <p className="text-zinc-400">Team roster will be displayed here once available</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {teamData.players.map(player => (
-                    <PlayerCard key={player._id} player={player} showActions={true} />
-                  ))}
-                </div>
-              )}
+                ))}
+              </div>
             </div>
           )}
 
@@ -767,7 +929,7 @@ const DetailedTeamInfo = () => {
             <Share2 className="w-4 h-4" />
             Share
           </button>
-          <button 
+          <button
             onClick={() => {
               navigator.clipboard.writeText(window.location.href);
               toast.success('Team URL copied to clipboard!');
@@ -902,11 +1064,10 @@ const DetailedTeamInfo = () => {
                       <div
                         key={player._id}
                         onClick={() => setSelectedPlayer(player)}
-                        className={`p-3 rounded-lg cursor-pointer transition-colors ${
-                          selectedPlayer?._id === player._id
-                            ? 'bg-cyan-500/20 border border-cyan-500/30'
-                            : 'bg-zinc-800/50 hover:bg-zinc-700/50 border border-zinc-700'
-                        }`}
+                        className={`p-3 rounded-lg cursor-pointer transition-colors ${selectedPlayer?._id === player._id
+                          ? 'bg-cyan-500/20 border border-cyan-500/30'
+                          : 'bg-zinc-800/50 hover:bg-zinc-700/50 border border-zinc-700'
+                          }`}
                       >
                         <div className="flex items-center gap-3">
                           {player.profilePicture ? (

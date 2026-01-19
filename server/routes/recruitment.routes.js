@@ -282,7 +282,9 @@ router.get('/lft-posts', async (req, res) => {
           'player._id': 1,
           'player.username': 1,
           'player.inGameName': 1,
+          'player.realName': 1,
           'player.profilePicture': 1,
+          'player.age': 1,
           'player.aegisRating': 1,
           'player.verified': 1
         }
