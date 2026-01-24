@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, X, MessageCircle, Coins } from 'lucide-react';
-import logo from '../assets/logo.png';
+import logo from '../assets/newlogo.png';
 import { useAuth } from '../context/AuthContext';
 import ProfileDropdown from './ProfileDropdown';
 import axios from "axios";
@@ -14,11 +14,9 @@ const Navbar = () => {
   const coins = user?.coins || 0;
 
   const navLinks = [
-    { to: "/myfeed", text: "MyFeed" },
-    { to: "/players", text: "Players" },
+    { to: "/", text: "Dashboard" },
     { to: "/recruitment", text: "Opportunities" },
     { to: "/tournaments", text: "Tournaments" },
-    { to: "/communities", text: "Communities" },
   ];
 
   const CustomNavLink = ({ to, text }) => {
@@ -26,11 +24,10 @@ const Navbar = () => {
     return (
       <NavLink
         to={to}
-        className={`relative text-sm font-semibold uppercase tracking-wider transition-all duration-300 px-3 py-2 rounded-md ${
-          isActive 
-            ? 'text-white bg-zinc-900/50' 
-            : 'text-zinc-400 hover:text-white hover:bg-zinc-900/30'
-        }`}
+        className={`relative text-sm font-semibold uppercase tracking-wider transition-all duration-300 px-3 py-2 rounded-md ${isActive
+          ? 'text-white bg-zinc-900/50'
+          : 'text-zinc-400 hover:text-white hover:bg-zinc-900/30'
+          }`}
       >
         {text}
         {isActive && (
@@ -46,11 +43,10 @@ const Navbar = () => {
       <NavLink
         to={to}
         onClick={() => setIsOpen(false)}
-        className={`block text-sm font-semibold uppercase tracking-wider transition-all duration-300 py-3 px-4 rounded-md ${
-          isActive
-            ? 'text-white bg-zinc-900/50'
-            : 'text-zinc-400 hover:text-white hover:bg-zinc-900/30'
-        }`}
+        className={`block text-sm font-semibold uppercase tracking-wider transition-all duration-300 py-3 px-4 rounded-md ${isActive
+          ? 'text-white bg-zinc-900/50'
+          : 'text-zinc-400 hover:text-white hover:bg-zinc-900/30'
+          }`}
       >
         {text}
       </NavLink>
@@ -59,10 +55,10 @@ const Navbar = () => {
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-black/95 backdrop-blur-xl border-b border-zinc-900">
-      
+
       {/* Subtle top accent line */}
       <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#FF4500]/50 to-transparent"></div>
-      
+
       <div className="container mx-auto flex items-center justify-between h-20 px-6">
 
         {/* Logo */}
@@ -132,8 +128,8 @@ const Navbar = () => {
 
         {/* Mobile Menu Button */}
         <div className="md:hidden">
-          <button 
-            onClick={() => setIsOpen(!isOpen)} 
+          <button
+            onClick={() => setIsOpen(!isOpen)}
             className="text-white p-2 rounded-lg hover:bg-zinc-900/50 transition-all duration-300"
           >
             {isOpen ? <X size={24} /> : <Menu size={24} />}
@@ -146,7 +142,7 @@ const Navbar = () => {
         <div className="md:hidden bg-black/98 backdrop-blur-xl absolute top-20 left-0 w-full border-t border-zinc-900 shadow-2xl">
           <nav className="flex flex-col items-stretch gap-2 py-6 px-4">
             {navLinks.map(link => <MobileNavLink key={link.text} {...link} />)}
-            
+
             <div className="flex flex-col items-stretch gap-3 mt-6 pt-6 border-t border-zinc-900">
               {!isAuthenticated ? (
                 <>
@@ -168,7 +164,7 @@ const Navbar = () => {
               ) : (
                 <>
                   {/* Mobile coin display */}
-                  <div 
+                  <div
                     className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-zinc-950 border border-zinc-900 text-yellow-400 font-bold text-sm cursor-pointer"
                     onClick={() => {
                       navigate("/rewards");

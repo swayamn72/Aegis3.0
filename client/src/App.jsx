@@ -16,13 +16,15 @@ import ChatPage from "./pages/ChatPage";
 import RecruitmentActualPage from "./pages/RecruitmentActualPage";
 import SettingsPage from "./pages/SettingsPage";
 import MyProfilePage from "./pages/MyProfilePage";
-import PlayersPage from "./pages/PlayersPage";
+
 import TournamentsPage from "./pages/TournamentsPage";
 import DetailedTournamentInfoPage from './pages/DetailedTournamentInfoPage';
 import TournamentManagementPageOrg from "./orgs/TournamentManagementPageOrg";
+import DetailedPlayerProfilePage from "./pages/DetailedPlayerProfilePage";
 
 import AegisOrgPendingApproval from "./orgs/OrgPendingApproval";
 import OrgDashboard from "./orgs/OrgDashboard";
+import NotFoundPage from "./pages/NotFoundPage";
 
 import { AuthProvider } from "./context/AuthContext";
 import { SocketProvider } from "./context/SocketContext";
@@ -41,6 +43,7 @@ function AppContent() {
           {/* Public Routes */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
+          <Route path="/detailed/:id" element={<DetailedPlayerProfilePage />} />
 
           {/* Organization Routes */}
           <Route
@@ -126,14 +129,6 @@ function AppContent() {
             }
           />
           <Route
-            path="/players"
-            element={
-              <ProtectedRoute requireRole="player">
-                <PlayersPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
             path="/tournaments"
             element={
               <ProtectedRoute requireRole="player">
@@ -150,6 +145,9 @@ function AppContent() {
             }
           />
           <Route path="/org/tournament/:id" element={<ProtectedRoute requireRole="organization"><TournamentManagementPageOrg /></ProtectedRoute>} />
+
+          {/* 404 Catch-all Route - must be last */}
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </BrowserRouter>
     </SocketProvider>

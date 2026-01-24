@@ -170,7 +170,7 @@ router.get("/:receiverId", auth, async (req, res) => {
       })
       .lean();
 
-    res.json(messages.reverse());
+    res.json({ messages: messages.reverse() });
   } catch (err) {
     console.error("Error fetching messages:", err);
     res.status(500).json({ message: "Server error fetching messages" });

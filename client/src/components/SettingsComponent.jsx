@@ -204,7 +204,7 @@ const SettingsComponent = () => {
 
 
   return (
-    <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans mt-[100px]">
+    <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans pt-24">
       <div className="container mx-auto px-6 py-8">
 
         {/* Header */}
@@ -225,12 +225,20 @@ const SettingsComponent = () => {
           )}
         </div>
 
+
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
 
           {/* Sidebar Navigation */}
           <div className="lg:col-span-1">
             <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 sticky top-[calc(5rem+1rem)] z-20">
               <nav className="space-y-2">
+                <SettingsSection
+                  id="profile"
+                  title="Edit Profile"
+                  icon={User}
+                  isActive={activeSection === 'profile'}
+                  onClick={setActiveSection}
+                />
                 <SettingsSection
                   id="privacy"
                   title="Privacy & Security"

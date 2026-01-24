@@ -279,10 +279,6 @@ const AegisMyProfile = () => {
                 >
                   <Share2 className="w-4 h-4" />
                 </button>
-
-                <button className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors">
-                  <Settings className="w-4 h-4" />
-                </button>
               </div>
             </div>
 

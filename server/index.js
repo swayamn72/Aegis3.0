@@ -35,7 +35,7 @@ initChat(server);
 connectDB();
 
 // Middlewares
-app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:5174'], credentials: true }));
+app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:5174','https://m07n1t5z-5000.inc1.devtunnels.ms/' ], credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());

@@ -44,31 +44,7 @@ router.get("/me", auth, async (req, res) => {
   }
 });
 
-// --- Get All Players Route ---
-router.get("/all", async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit) || 20;
-    const skip = parseInt(req.query.skip) || 0;
 
-    // Only select fields needed for the player card
-    const players = await Player.find({})
-      .select(
-        "_id username inGameName realName profilePicture verified primaryGame country location tournamentsPlayed matchesPlayed age teamStatus inGameRole team"
-      )
-      .populate('team', 'teamName')
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .skip(skip);
-
-    res.status(200).json({
-      message: "Players retrieved successfully",
-      players: players
-    });
-  } catch (error) {
-    console.error("Get all players error:", error);
-    res.status(500).json({ message: "Server error" });
-  }
-});
 
 // --- Update Profile Route ---
 router.put("/update-profile", auth, async (req, res) => {
@@ -525,5 +501,82 @@ router.get('/recent3matches', auth, async (req, res) => {
     });
   }
 });
+
+// GET /api/players/:id/matches - Get player's match history with pagination
+router.get('/:id/matches', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const limit = parseInt(req.query.limit) || 5;
+    const skip = parseInt(req.query.skip) || 0;
+
+    // Verify player exists
+    const player = await Player.findById(id);
+    if (!player) {
+      return res.status(404).json({ message: 'Player not found' });
+    }
+
+    // Find player's team
+    const team = await Team.findOne({ players: id }).select('_id');
+
+    if (!team) {
+      // Player has no team, return empty matches
+      return res.json({ matches: [] });
+    }
+
+    // Find matches where the player's team participated
+    const matches = await Match.find({
+      $or: [
+        { 'team1._id': team._id },
+        { 'team2._id': team._id }
+      ]
+    })
+      .populate('tournament', 'name game')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    res.json({ matches });
+  } catch (error) {
+    console.error('Error fetching player matches:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// GET /api/players/:id/profile - Get player profile details (excluding matches, tournaments, achievements)
+router.get('/:id/profile', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const player = await Player.findById(id)
+      .select('_id username inGameName realName profilePicture verified primaryGame country location age teamStatus inGameRole team bio languages previousTeams createdAt discordTag twitch youtube twitter')
+      .populate({
+        path: 'team',
+        select: '_id teamName teamTag logo primaryGame region players captain',
+        populate: {
+          path: 'captain',
+          select: '_id username profilePicture'
+        }
+      });
+    if (!player) {
+      return res.status(404).json({ message: 'Player not found' });
+    }
+    // For team members grid, you may want to populate team.players with minimal info
+    let teamMembers = [];
+    if (player.team && player.team.players) {
+      teamMembers = await Player.find({ _id: { $in: player.team.players } })
+        .select('_id username inGameName profilePicture')
+        .lean();
+    }
+    res.json({
+      player,
+      teamMembers
+    });
+  } catch (error) {
+    console.error('Error fetching player profile:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+
 
 export default router;
