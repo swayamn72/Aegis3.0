@@ -203,9 +203,55 @@ const SettingsComponent = () => {
 
 
 
+  // Check if profile is incomplete
+  const isProfileIncomplete = !(
+    profileSettings.realName &&
+    profileSettings.age &&
+    profileSettings.location &&
+    profileSettings.country &&
+    profileSettings.primaryGame &&
+    profileSettings.teamStatus &&
+    profileSettings.availability
+  );
+
   return (
     <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans pt-24">
       <div className="container mx-auto px-6 py-8">
+
+        {/* Incomplete Profile Banner */}
+        {isProfileIncomplete && (
+          <div className="bg-gradient-to-r from-orange-500/20 via-red-500/20 to-amber-600/20 border-2 border-orange-500/50 rounded-2xl p-6 mb-8 backdrop-blur-sm">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0">
+                <div className="w-16 h-20 bg-gradient-to-b from-orange-400 via-red-500 to-amber-600 rounded-t-full rounded-b-lg border-2 border-orange-300 relative overflow-hidden shadow-lg shadow-orange-500/50 animate-pulse">
+                  <div className="absolute inset-0">
+                    <div className="absolute top-2 left-1/2 transform -translate-x-1/2 w-6 h-6 bg-yellow-300/30 rounded-full" />
+                  </div>
+                  <div className="absolute top-6 left-3 w-2 h-2 bg-yellow-300 rounded-full animate-pulse" />
+                  <div className="absolute top-6 right-3 w-2 h-2 bg-yellow-300 rounded-full animate-pulse" />
+                  <div className="absolute top-9 left-1/2 transform -translate-x-1/2 w-3 h-1 bg-yellow-200/90 rounded-full" />
+                </div>
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-5 h-5 text-orange-400" />
+                  <h3 className="text-xl font-bold text-orange-400">⚔️ Mission Incomplete! ⚔️</h3>
+                </div>
+                <p className="text-zinc-300 mb-3">
+                  Your warrior profile needs attention! Complete your stats to unlock the full power of Aegis and join the battlefield.
+                </p>
+                <div className="flex flex-wrap gap-2 text-sm">
+                  {!profileSettings.realName && <span className="px-3 py-1 bg-orange-500/20 border border-orange-500/30 rounded-full text-orange-300">Real Name</span>}
+                  {!profileSettings.age && <span className="px-3 py-1 bg-orange-500/20 border border-orange-500/30 rounded-full text-orange-300">Age</span>}
+                  {!profileSettings.location && <span className="px-3 py-1 bg-orange-500/20 border border-orange-500/30 rounded-full text-orange-300">Location</span>}
+                  {!profileSettings.primaryGame && <span className="px-3 py-1 bg-orange-500/20 border border-orange-500/30 rounded-full text-orange-300">Primary Game</span>}
+                  {!profileSettings.teamStatus && <span className="px-3 py-1 bg-orange-500/20 border border-orange-500/30 rounded-full text-orange-300">Team Status</span>}
+                  {!profileSettings.availability && <span className="px-3 py-1 bg-orange-500/20 border border-orange-500/30 rounded-full text-orange-300">Availability</span>}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Header */}
         <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6 mb-8">

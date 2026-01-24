@@ -8,7 +8,6 @@ import "react-toastify/dist/ReactToastify.css";
 
 import SignupPage from "./pages/SignUpPage";
 import LoginPage from "./pages/LoginPage";
-import AegisProfileCompletionPage from "./pages/AegisProfileCompletionPage";
 import HomePage from "./pages/HomePage";
 import MyTeamsPage from "./pages/MyTeamsPage";
 import DetailedTeamInfoPage from "./pages/DetailedTeamInfoPage";
@@ -29,6 +28,7 @@ import NotFoundPage from "./pages/NotFoundPage";
 import { AuthProvider } from "./context/AuthContext";
 import { SocketProvider } from "./context/SocketContext";
 import ProtectedRoute from "./components/ProtectedRoute";
+import PublicRoute from "./components/PublicRoute";
 import { useAuth } from "./context/AuthContext";
 
 // Wrapper component to access auth context
@@ -41,8 +41,8 @@ function AppContent() {
         <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop={false} closeOnClick pauseOnFocusLoss draggable pauseOnHover />
         <Routes>
           {/* Public Routes */}
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
+          <Route path="/signup" element={<PublicRoute><SignupPage /></PublicRoute>} />
           <Route path="/detailed/:id" element={<DetailedPlayerProfilePage />} />
 
           {/* Organization Routes */}
@@ -64,14 +64,6 @@ function AppContent() {
           />
 
           {/* Player-Only Protected Routes */}
-          <Route
-            path="/complete-profile"
-            element={
-              <ProtectedRoute requireRole="player">
-                <AegisProfileCompletionPage />
-              </ProtectedRoute>
-            }
-          />
           <Route
             path="/"
             element={
@@ -146,7 +138,7 @@ function AppContent() {
           />
           <Route path="/org/tournament/:id" element={<ProtectedRoute requireRole="organization"><TournamentManagementPageOrg /></ProtectedRoute>} />
 
-          {/* 404 Catch-all Route - must be last */}
+          {/* 404 Catch-all Route */}
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </BrowserRouter>

@@ -94,7 +94,7 @@ const AegisLogin = () => {
         if (result.isProfileComplete) {
           navigate('/my-profile');
         } else {
-          navigate('/complete-profile');
+          navigate('/settings');
         }
       }
     } else {
