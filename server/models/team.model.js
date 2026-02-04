@@ -2,6 +2,13 @@ import mongoose from 'mongoose';
 
 const teamSchema = new mongoose.Schema(
   {
+    teamId: {
+      type: String,
+      unique: true,
+      required: true,
+      index: true,
+      length: 6,
+    },
     teamName: {
       type: String,
       required: true,
@@ -10,14 +17,14 @@ const teamSchema = new mongoose.Schema(
       index: true,
       maxlength: 100,
     },
-    teamTag: { 
+    teamTag: {
       type: String,
       trim: true,
       uppercase: true,
       minlength: 2,
       maxlength: 6,
     },
-    logo: { 
+    logo: {
       type: String,
       trim: true,
       default: 'https://placehold.co/200x200/1a1a1a/ffffff?text=TEAM',
@@ -69,7 +76,7 @@ const teamSchema = new mongoose.Schema(
       min: 0,
       max: 3000,
     },
-    
+
     // Tournament and match statistics
     statistics: {
       tournamentsPlayed: { type: Number, default: 0 },
@@ -77,9 +84,9 @@ const teamSchema = new mongoose.Schema(
       totalKills: { type: Number, default: 0 },
       chickenDinners: { type: Number, default: 0 },
       averagePlacement: { type: Number, default: 0 },
-      winRate: { type: Number, default: 0 }, 
+      winRate: { type: Number, default: 0 },
     },
-    
+
     // Recent tournament results
     recentResults: [
       {
@@ -93,8 +100,8 @@ const teamSchema = new mongoose.Schema(
         date: Date,
       }
     ],
-    
-    qualifiedEvents: [ 
+
+    qualifiedEvents: [
       {
         tournament: {
           type: mongoose.Schema.Types.ObjectId,
@@ -104,13 +111,13 @@ const teamSchema = new mongoose.Schema(
         qualificationDate: Date,
       },
     ],
-    
+
     organization: { // If the team belongs to a larger organization
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Organization',
       default: null,
     },
-    
+
     socials: {
       discord: { type: String, trim: true, default: '' },
       twitter: { type: String, trim: true, default: '' },
@@ -118,20 +125,20 @@ const teamSchema = new mongoose.Schema(
       youtube: { type: String, trim: true, default: '' },
       website: { type: String, trim: true, default: '' },
     },
-    
+
     profileVisibility: {
       type: String,
       enum: ['public', 'private'],
       default: 'public',
     },
-    
+
     // Team status and availability
     status: {
       type: String,
       enum: ['active', 'inactive', 'disbanded', 'looking_for_players'],
       default: 'active',
     },
-    
+
     // Recruitment information
     lookingForPlayers: {
       type: Boolean,
@@ -152,13 +159,13 @@ const teamSchema = new mongoose.Schema(
 );
 
 // Virtual for win rate calculation
-teamSchema.virtual('winRatePercentage').get(function() {
+teamSchema.virtual('winRatePercentage').get(function () {
   if (this.statistics.matchesPlayed === 0) return 0;
   return Math.round((this.statistics.matchesWon / this.statistics.matchesPlayed) * 100);
 });
 
 // Virtual for average kills per match
-teamSchema.virtual('averageKillsPerMatch').get(function() {
+teamSchema.virtual('averageKillsPerMatch').get(function () {
   if (this.statistics.matchesPlayed === 0) return 0;
   return Math.round((this.statistics.totalKills / this.statistics.matchesPlayed) * 100) / 100;
 });
@@ -174,35 +181,58 @@ teamSchema.index({ players: 1 });
 
 
 // Static method to find teams by game and region
-teamSchema.statics.findByGameAndRegion = function(game, region, limit = 10) {
+teamSchema.statics.findByGameAndRegion = function (game, region, limit = 10) {
   return this.find({
     primaryGame: game,
     region: region,
     profileVisibility: 'public',
     status: 'active'
   })
-  .populate('captain', 'username profilePicture')
-  .populate('players', 'username profilePicture')
-  .sort({ aegisRating: -1 })
-  .limit(limit);
+    .populate('captain', 'username profilePicture')
+    .populate('players', 'username profilePicture')
+    .sort({ aegisRating: -1 })
+    .limit(limit);
 };
 
 // Static method to find teams looking for players
-teamSchema.statics.findLookingForPlayers = function(game, role, limit = 10) {
+teamSchema.statics.findLookingForPlayers = function (game, role, limit = 10) {
   const query = {
     lookingForPlayers: true,
     status: 'active',
     profileVisibility: 'public'
   };
-  
+
   if (game) query.primaryGame = game;
   if (role) query.openRoles = role;
-  
+
   return this.find(query)
     .populate('captain', 'username profilePicture')
     .populate('players', 'username profilePicture')
     .sort({ aegisRating: -1 })
     .limit(limit);
+};
+
+// Static method to generate unique 6-character alphanumeric teamId (all capitals)
+teamSchema.statics.generateTeamId = async function () {
+  let teamId;
+  let isUnique = false;
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+
+  while (!isUnique) {
+    // Generate random 6-character alphanumeric string
+    teamId = '';
+    for (let i = 0; i < 6; i++) {
+      teamId += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
+
+    // Check if this teamId already exists
+    const existingTeam = await this.findOne({ teamId });
+    if (!existingTeam) {
+      isUnique = true;
+    }
+  }
+
+  return teamId;
 };
 
 const Team = mongoose.model('Team', teamSchema);

@@ -3,7 +3,7 @@ import AdminLogin from "./pages/adminLogin";
 import AdminDashboard from "./pages/adminDashboard";
 import AdminOrganizations from "./pages/adminOrganizations";
 import AdminMatches from "./pages/adminMatches";
-import AdminRewards from "./pages/adminRewards";
+import AdminTournaments from "./pages/adminTournaments";
 import ProtectedRoute from "./components/protectedRoute";
 
 export default function App() {
@@ -35,10 +35,10 @@ export default function App() {
         }
       />
       <Route
-        path="/admin/rewards"
+        path="/admin/tournaments"
         element={
           <ProtectedRoute>
-            <AdminRewards />
+            <AdminTournaments />
           </ProtectedRoute>
         }
       />

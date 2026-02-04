@@ -15,6 +15,7 @@ import ChatPage from "./pages/ChatPage";
 import RecruitmentActualPage from "./pages/RecruitmentActualPage";
 import SettingsPage from "./pages/SettingsPage";
 import MyProfilePage from "./pages/MyProfilePage";
+import RewardsPage from "./pages/RewardsPage";
 
 import TournamentsPage from "./pages/TournamentsPage";
 import DetailedTournamentInfoPage from './pages/DetailedTournamentInfoPage';
@@ -117,6 +118,14 @@ function AppContent() {
             element={
               <ProtectedRoute requireRole="player">
                 <MyProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/rewards"
+            element={
+              <ProtectedRoute requireRole="player">
+                <RewardsPage />
               </ProtectedRoute>
             }
           />

@@ -5,7 +5,7 @@ import {
   LayoutDashboard,
   Trophy,
   Building2,
-  Gift,
+  Calendar,
   LogOut,
   Menu,
   Shield
@@ -25,8 +25,8 @@ const AdminLayout = ({ children }) => {
   const navigation = [
     { name: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard },
     { name: 'Organizations', href: '/admin/organizations', icon: Building2 },
-    { name: 'Matches', href: '/admin/matches', icon: Trophy },
-    { name: 'Rewards', href: '/admin/rewards', icon: Gift },
+    { name: 'Tournaments', href: '/admin/tournaments', icon: Trophy },
+    { name: 'Matches', href: '/admin/matches', icon: Calendar },
   ];
 
   const isActive = (href) => {

@@ -17,6 +17,7 @@ const Navbar = () => {
     { to: "/", text: "Dashboard" },
     { to: "/recruitment", text: "Opportunities" },
     { to: "/tournaments", text: "Tournaments" },
+    { to: "/rewards", text: "Rewards" },
   ];
 
   const CustomNavLink = ({ to, text }) => {

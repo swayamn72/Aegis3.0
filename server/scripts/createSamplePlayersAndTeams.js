@@ -40,7 +40,10 @@ async function main() {
         const teamPlayers = players.slice(i * 4, (i + 1) * 4);
         // teamTag: T01, T02, ..., T31 (always 3 chars, fits maxlength: 6)
         const teamTag = `T${String(i + 1).padStart(2, '0')}`;
+        // Generate unique 6-digit teamId
+        const teamId = await Team.generateTeamId();
         const team = new Team({
+            teamId,
             teamName: `Team${i + 1}`,
             teamTag,
             logo: '',

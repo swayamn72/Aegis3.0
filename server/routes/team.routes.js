@@ -184,8 +184,11 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'You are already in a team' });
     }
 
-    const newTeam = new Team({
+    // Generate unique 6-digit teamId
+    const teamId = await Team.generateTeamId();
 
+    const newTeam = new Team({
+      teamId,
       teamName,
       teamTag: teamTag ? teamTag.toUpperCase() : undefined,
       primaryGame: primaryGame || 'BGMI',
