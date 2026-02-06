@@ -16,8 +16,16 @@ import TryoutChat from '../models/tryoutChat.model.js';
 const initChat = (server) => {
   const io = new Server(server, {
     cors: {
-      origin: 'http://localhost:5173',
+      origin: [
+        'http://localhost:5173',
+        'http://localhost:5174',
+        'http://localhost:3000',
+        'http://swayam-vite-site-12345.s3-website.ap-south-1.amazonaws.com',
+        'http://13.232.101.212:5173',
+        'http://13.232.101.212:5174'
+      ],
       credentials: true,
+      methods: ["GET", "POST"]
     },
   });
 

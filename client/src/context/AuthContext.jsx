@@ -102,7 +102,8 @@ export const AuthProvider = ({ children }) => {
         }
       }
 
-      return { success: false, message: data.message };
+      // Pass through all error data including requiresVerification flag
+      return { success: false, message: data.message, ...data };
     } catch (error) {
       console.error("Login failed:", error);
       return { success: false, message: "Network error" };

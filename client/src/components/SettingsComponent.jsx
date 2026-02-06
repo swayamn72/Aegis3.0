@@ -326,6 +326,24 @@ const SettingsComponent = () => {
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-white">Personal Information</h3>
 
+                    {/* Username Display (Read-only) */}
+                    <div>
+                      <label className="block text-zinc-300 font-medium mb-2 flex items-center gap-2">
+                        Username
+                        <span className="text-xs text-zinc-500 font-normal">(Cannot be changed)</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={user?.username || ''}
+                          readOnly
+                          disabled
+                          className="w-full bg-zinc-900/50 border border-zinc-700/50 rounded-lg px-4 py-2 text-zinc-400 cursor-not-allowed opacity-75"
+                        />
+                        <Lock className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-600" />
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
                         <label className="block text-zinc-300 font-medium mb-2">Real Name *</label>

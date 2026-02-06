@@ -19,6 +19,8 @@ const AegisMyProfile = () => {
   const [showCreatePostModal, setShowCreatePostModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const [teamLogoError, setTeamLogoError] = useState(false);
 
   const isLoading = !user || !user.username;
 
@@ -42,6 +44,16 @@ const AegisMyProfile = () => {
   const connections = connectionsData?.connections || [];
   const pendingRequests = connectionsData?.pendingRequests || [];
   const loading = connectionsLoading || teamLoading;
+
+  // Reset image error when user changes
+  useEffect(() => {
+    setImageError(false);
+  }, [user?.profilePicture]);
+
+  // Reset team logo error when team changes
+  useEffect(() => {
+    setTeamLogoError(false);
+  }, [team?.logo]);
 
   // Reset modal state when component mounts
   useEffect(() => {
@@ -229,11 +241,12 @@ const AegisMyProfile = () => {
               <div className="flex items-end gap-4">
                 {/* Profile Picture */}
                 <div className="relative">
-                  {userData.profilePicture ? (
+                  {userData.profilePicture && !imageError ? (
                     <img
                       src={userData.profilePicture}
                       alt="Profile"
                       className="w-28 h-28 rounded-xl border-4 border-zinc-900 object-cover"
+                      onError={() => setImageError(true)}
                     />
                   ) : (
                     <div className="w-28 h-28 rounded-xl border-4 border-zinc-900 bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center">
@@ -530,11 +543,12 @@ const AegisMyProfile = () => {
               </h3>
               {team ? (
                 <div className="text-center">
-                  {team.logo ? (
+                  {team.logo && !teamLogoError ? (
                     <img
                       src={team.logo}
                       alt={`${team.teamName} logo`}
                       className="w-16 h-16 rounded-lg object-cover mx-auto mb-3 border border-zinc-700"
+                      onError={() => setTeamLogoError(true)}
                     />
                   ) : (
                     <div className="w-16 h-16 bg-gradient-to-br from-cyan-500 to-purple-600 rounded-lg mx-auto mb-3 flex items-center justify-center">

@@ -8,6 +8,8 @@ import "react-toastify/dist/ReactToastify.css";
 
 import SignupPage from "./pages/SignUpPage";
 import LoginPage from "./pages/LoginPage";
+import EmailVerification from "./pages/EmailVerification";
+import UsernameSetup from "./pages/UsernameSetup";
 import HomePage from "./pages/HomePage";
 import MyTeamsPage from "./pages/MyTeamsPage";
 import DetailedTeamInfoPage from "./pages/DetailedTeamInfoPage";
@@ -44,6 +46,8 @@ function AppContent() {
           {/* Public Routes */}
           <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
           <Route path="/signup" element={<PublicRoute><SignupPage /></PublicRoute>} />
+          <Route path="/verify-email" element={<EmailVerification />} />
+          <Route path="/setup-username" element={<UsernameSetup />} />
           <Route path="/detailed/:id" element={<DetailedPlayerProfilePage />} />
 
           {/* Organization Routes */}

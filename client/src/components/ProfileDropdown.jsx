@@ -4,6 +4,7 @@ import { User, Users, Settings, LogOut, Trophy, Star, Bell, ChevronDown } from '
 
 const ProfileDropdown = ({ user, logout }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const dropdownRef = useRef(null);
   const navigate = useNavigate();
 
@@ -20,6 +21,11 @@ const ProfileDropdown = ({ user, logout }) => {
     };
   }, []);
 
+  // Reset image error when user changes
+  useEffect(() => {
+    setImageError(false);
+  }, [user?.profilePicture]);
+
   const menuItems = [
     { icon: User, label: 'My Profile', href: '/my-profile' },
     { icon: Users, label: 'My Teams', href: '/my-teams' },
@@ -30,7 +36,7 @@ const ProfileDropdown = ({ user, logout }) => {
     { icon: LogOut, label: 'Logout', href: '#', isLogout: true }
   ];
 
- 
+
   const getInitials = (name) => {
     if (!name) return 'US';
     const names = name.split(' ');
@@ -42,14 +48,15 @@ const ProfileDropdown = ({ user, logout }) => {
     <div className="relative" ref={dropdownRef}>
       {/* Profile Icon and Dropdown Button */}
       <div className="flex items-center space-x-2">
-        {user?.profilePicture ? (
+        {user?.profilePicture && !imageError ? (
           <img
             src={user.profilePicture}
             alt={user.username}
-            className="w-12 h-12 rounded-full object-cover"
+            className="w-12 h-12 rounded-full object-cover border-2 border-zinc-800"
+            onError={() => setImageError(true)}
           />
         ) : (
-          <div className="flex items-center justify-center w-12 h-12 bg-orange-500 hover:bg-orange-600 rounded-full text-white font-bold text-lg transition-all duration-200 transform hover:scale-105">
+          <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 rounded-full text-white font-bold text-lg transition-all duration-200 transform hover:scale-105 shadow-lg border-2 border-orange-400/30">
             {getInitials(user?.username)}
           </div>
         )}
@@ -68,14 +75,15 @@ const ProfileDropdown = ({ user, logout }) => {
           {/* User Info Header */}
           <div className="p-4 border-b border-zinc-800/50 bg-gradient-to-r from-[#120E0E] to-[#1a1414]">
             <div className="flex items-center space-x-3">
-              {user?.profilePicture ? (
+              {user?.profilePicture && !imageError ? (
                 <img
                   src={user.profilePicture}
                   alt={user.username}
-                  className="w-12 h-12 rounded-full object-cover"
+                  className="w-12 h-12 rounded-full object-cover border-2 border-zinc-800"
+                  onError={() => setImageError(true)}
                 />
               ) : (
-                <div className="w-12 h-12 bg-orange-500 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg">
                   {getInitials(user?.username)}
                 </div>
               )}
@@ -103,11 +111,10 @@ const ProfileDropdown = ({ user, logout }) => {
                       navigate(item.href);
                     }
                   }}
-                  className={`flex items-center space-x-3 px-4 py-3 text-gray-300 hover:bg-gray-800 transition-all duration-200 ${
-                    item.isLogout
-                      ? 'hover:text-red-400 border-t border-gray-700 mt-2'
-                      : 'hover:text-orange-400'
-                  }`}
+                  className={`flex items-center space-x-3 px-4 py-3 text-gray-300 hover:bg-gray-800 transition-all duration-200 ${item.isLogout
+                    ? 'hover:text-red-400 border-t border-gray-700 mt-2'
+                    : 'hover:text-orange-400'
+                    }`}
                 >
                   <Icon size={18} />
                   <span className="font-medium">{item.label}</span>
@@ -115,9 +122,9 @@ const ProfileDropdown = ({ user, logout }) => {
               );
             })}
           </div>
-        </div>
+        </div >
       )}
-    </div>
+    </div >
   );
 };
 

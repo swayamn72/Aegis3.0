@@ -57,22 +57,22 @@ const AdminLogin = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 flex items-center justify-center p-4">
-      <div className="max-w-md w-full space-y-8">
+    <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+      <div className="max-w-md w-full space-y-6 sm:space-y-8">
         {/* Header */}
         <div className="text-center">
-          <div className="mx-auto h-16 w-16 bg-gradient-to-r from-orange-500 to-red-500 rounded-xl flex items-center justify-center mb-4">
-            <Shield className="h-8 w-8 text-white" />
+          <div className="mx-auto h-12 w-12 sm:h-16 sm:w-16 bg-gradient-to-r from-orange-500 to-red-500 rounded-xl flex items-center justify-center mb-3 sm:mb-4">
+            <Shield className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
           </div>
-          <h2 className="text-3xl font-bold text-white mb-2">Admin Portal</h2>
-          <p className="text-zinc-400">
+          <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Admin Portal</h2>
+          <p className="text-sm sm:text-base text-zinc-400">
             Sign in to access the admin dashboard
           </p>
         </div>
 
         {/* Login Form */}
-        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-8 shadow-2xl">
-          <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 sm:p-8 shadow-2xl">
+          <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
             {/* Error Message */}
             {error && (
               <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 flex items-center gap-3">
@@ -83,11 +83,11 @@ const AdminLogin = () => {
 
             {/* Email Field */}
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-zinc-300 mb-2">
+              <label htmlFor="email" className="block text-xs sm:text-sm font-medium text-zinc-300 mb-2">
                 Email Address
               </label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400" />
+                <Mail className="absolute left-2.5 sm:left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-zinc-400" />
                 <input
                   id="email"
                   name="email"
@@ -96,7 +96,7 @@ const AdminLogin = () => {
                   required
                   value={formData.email}
                   onChange={handleChange}
-                  className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg pl-10 pr-4 py-3 text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg pl-9 sm:pl-10 pr-3 sm:pr-4 py-2.5 sm:py-3 text-sm sm:text-base text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   placeholder="admin@example.com"
                 />
               </div>
@@ -104,11 +104,11 @@ const AdminLogin = () => {
 
             {/* Password Field */}
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-zinc-300 mb-2">
+              <label htmlFor="password" className="block text-xs sm:text-sm font-medium text-zinc-300 mb-2">
                 Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400" />
+                <Lock className="absolute left-2.5 sm:left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-zinc-400" />
                 <input
                   id="password"
                   name="password"
@@ -117,18 +117,18 @@ const AdminLogin = () => {
                   required
                   value={formData.password}
                   onChange={handleChange}
-                  className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg pl-10 pr-12 py-3 text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg pl-9 sm:pl-10 pr-10 sm:pr-12 py-2.5 sm:py-3 text-sm sm:text-base text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   placeholder="Enter your password"
                 />
                 <button
                   type="button"
                   onClick={togglePasswordVisibility}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-zinc-400 hover:text-zinc-300"
+                  className="absolute right-2.5 sm:right-3 top-1/2 transform -translate-y-1/2 text-zinc-400 hover:text-zinc-300"
                 >
                   {showPassword ? (
-                    <EyeOff className="h-5 w-5" />
+                    <EyeOff className="h-4 w-4 sm:h-5 sm:w-5" />
                   ) : (
-                    <Eye className="h-5 w-5" />
+                    <Eye className="h-4 w-4 sm:h-5 sm:w-5" />
                   )}
                 </button>
               </div>
@@ -143,9 +143,9 @@ const AdminLogin = () => {
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
-                  className="h-4 w-4 text-orange-500 bg-zinc-800 border-zinc-600 rounded focus:ring-orange-500 focus:ring-2"
+                  className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-orange-500 bg-zinc-800 border-zinc-600 rounded focus:ring-orange-500 focus:ring-2"
                 />
-                <label htmlFor="remember-me" className="ml-2 block text-sm text-zinc-300">
+                <label htmlFor="remember-me" className="ml-2 block text-xs sm:text-sm text-zinc-300">
                   Remember me
                 </label>
               </div>
@@ -155,11 +155,11 @@ const AdminLogin = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white font-semibold py-3 px-4 rounded-lg hover:from-orange-600 hover:to-red-600 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-zinc-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+              className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white font-semibold py-2.5 sm:py-3 px-4 rounded-lg hover:from-orange-600 hover:to-red-600 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-zinc-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm sm:text-base"
             >
               {loading ? (
                 <div className="flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                  <div className="animate-spin rounded-full h-4 w-4 sm:h-5 sm:w-5 border-b-2 border-white mr-2"></div>
                   Signing in...
                 </div>
               ) : (
@@ -169,8 +169,8 @@ const AdminLogin = () => {
           </form>
 
           {/* Demo Credentials */}
-          <div className="mt-6 p-4 bg-zinc-800/30 rounded-lg border border-zinc-700">
-            <p className="text-sm text-zinc-400 mb-2">Demo Credentials:</p>
+          <div className="mt-4 sm:mt-6 p-3 sm:p-4 bg-zinc-800/30 rounded-lg border border-zinc-700">
+            <p className="text-xs sm:text-sm text-zinc-400 mb-2">Demo Credentials:</p>
             <p className="text-xs text-zinc-500">
               Email: admin@aegis.com<br />
               Password: admin123

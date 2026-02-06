@@ -46,6 +46,34 @@ router.get("/me", auth, async (req, res) => {
 
 
 
+// Check username availability
+router.get("/check-username/:username", async (req, res) => {
+  try {
+    const { username } = req.params;
+
+    // Validate username format
+    const usernameRegex = /^[a-zA-Z0-9_]{3,20}$/;
+    if (!usernameRegex.test(username)) {
+      return res.status(400).json({
+        available: false,
+        message: "Invalid username format"
+      });
+    }
+
+    // Check if username exists
+    const existingUser = await Player.findOne({ username });
+
+    res.status(200).json({
+      available: !existingUser,
+      username
+    });
+
+  } catch (error) {
+    console.error("Check username error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 // --- Update Profile Route ---
 router.put("/update-profile", auth, async (req, res) => {
   try {

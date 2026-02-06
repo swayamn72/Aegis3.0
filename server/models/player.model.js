@@ -27,7 +27,18 @@ const playerSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: true,
+      required: false, // Not required for Google OAuth users
+    },
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true, // Allows multiple null values, only enforces uniqueness for non-null
+    },
+    authProvider: {
+      type: [String],
+      enum: ['local', 'google'],
+      default: ['local'],
+      // Can have both: ['local', 'google'] if user links accounts
     },
     resetPasswordToken: {
       type: String,
@@ -40,6 +51,30 @@ const playerSchema = new mongoose.Schema(
     verified: {
       type: Boolean,
       default: false,
+    },
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    verificationCode: {
+      type: String,
+      select: false, // Don't include in queries by default
+    },
+    verificationCodeExpires: {
+      type: Date,
+      select: false,
+    },
+    verificationCodeAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
+    lastVerificationEmailSent: {
+      type: Date,
+    },
+    usernameCustomized: {
+      type: Boolean,
+      default: true, // true for regular signup, false for Google OAuth until they customize
     },
     country: {
       type: String,
