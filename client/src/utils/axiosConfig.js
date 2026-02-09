@@ -15,7 +15,11 @@ const axiosInstance = axios.create({
 // Request interceptor
 axiosInstance.interceptors.request.use(
     (config) => {
-        // Add any custom headers or tokens here
+        // Add token from localStorage to Authorization header
+        const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
+        if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+        }
         return config;
     },
     (error) => {
@@ -36,8 +40,14 @@ axiosInstance.interceptors.response.use(
             const { status, data } = error.response;
 
             if (status === 401) {
-                // Unauthorized - redirect to login if needed
-                console.error('Unauthorized access');
+                // Unauthorized - clear token and redirect to login
+                console.error('Unauthorized access - clearing token');
+                localStorage.removeItem('token');
+                localStorage.removeItem('adminToken');
+                localStorage.removeItem('user');
+                if (!window.location.pathname.includes('/login')) {
+                    window.location.href = '/login';
+                }
             } else if (status === 403) {
                 console.error('Forbidden access');
             } else if (status === 500) {

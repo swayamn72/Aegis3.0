@@ -106,7 +106,7 @@ const playerSchema = new mongoose.Schema(
     inGameRole: [
       {
         type: String,
-        enum: ['assaulter', 'IGL', 'support', 'filter', 'sniper'],
+        enum: ['Assaulter', 'IGL', 'Support', 'Fragger', 'Sniper'],
       },
     ],
     location: {

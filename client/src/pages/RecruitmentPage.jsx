@@ -44,7 +44,7 @@ const LFTPostForm = React.memo(({ onSubmit, onClose }) => {
         roles: []
     });
 
-    const roles = ['IGL', 'assaulter', 'support', 'sniper', 'fragger'];
+    const roles = ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger'];
 
     const handleRoleToggle = (role) => {
         setFormData(prev => ({
@@ -144,7 +144,7 @@ const LFPPostForm = React.memo(({ onSubmit, onClose, userTeam }) => {
         openRoles: []
     });
 
-    const roles = ['IGL', 'assaulter', 'support', 'sniper', 'fragger'];
+    const roles = ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger'];
 
     const handleRoleToggle = (role) => {
         setFormData(prev => ({
@@ -716,7 +716,7 @@ const RecruitmentPage = () => {
                                 </div>
                                 <FilterDropdown options={['VALO', 'CS2', 'BGMI']} selected={playerFilters.game} onSelect={(v) => handlePlayerFilterChange('game', v)} placeholder="All Games" icon={Gamepad2} />
                                 <FilterDropdown options={['India', 'Asia', 'Europe', 'North America']} selected={playerFilters.region} onSelect={(v) => handlePlayerFilterChange('region', v)} placeholder="All Regions" icon={MapPin} />
-                                <FilterDropdown options={['IGL', 'assaulter', 'support', 'sniper', 'fragger']} selected={playerFilters.role} onSelect={(v) => handlePlayerFilterChange('role', v)} placeholder="All Roles" icon={User} />
+                                <FilterDropdown options={['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger']} selected={playerFilters.role} onSelect={(v) => handlePlayerFilterChange('role', v)} placeholder="All Roles" icon={User} />
                             </div>
                         </div>
 
@@ -800,7 +800,7 @@ const RecruitmentPage = () => {
                                 </div>
                                 <FilterDropdown options={['VALO', 'CS2', 'BGMI']} selected={orgFilters.game} onSelect={(v) => handleOrgFilterChange('game', v)} placeholder="All Games" icon={Gamepad2} />
                                 <FilterDropdown options={['India', 'Asia', 'Europe', 'North America', 'Global']} selected={orgFilters.region} onSelect={(v) => handleOrgFilterChange('region', v)} placeholder="All Regions" icon={MapPin} />
-                                <FilterDropdown options={['IGL', 'assaulter', 'support', 'sniper', 'fragger']} selected={orgFilters.role} onSelect={(v) => handleOrgFilterChange('role', v)} placeholder="All Roles" icon={Target} />
+                                <FilterDropdown options={['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger']} selected={orgFilters.role} onSelect={(v) => handleOrgFilterChange('role', v)} placeholder="All Roles" icon={Target} />
                             </div>
                         </div>
 

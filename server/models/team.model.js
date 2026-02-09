@@ -147,7 +147,7 @@ const teamSchema = new mongoose.Schema(
     openRoles: [
       {
         type: String,
-        enum: ['IGL', 'assaulter', 'support', 'sniper', 'fragger'],
+        enum: ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger'],
       },
     ],
   },

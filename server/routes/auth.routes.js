@@ -110,14 +110,14 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 
     // Check if email is verified (only for local auth users)
-    if (user.authProvider.includes('local') && !user.isEmailVerified) {
-      return res.status(403).json({
-        message: "Please verify your email before logging in",
-        requiresVerification: true,
-        email: user.email,
-        userId: user._id,
-      });
-    }
+    // if (user.authProvider.includes('local') && !user.isEmailVerified) {
+    //   return res.status(403).json({
+    //     message: "Please verify your email before logging in",
+    //     requiresVerification: true,
+    //     email: user.email,
+    //     userId: user._id,
+    //   });
+    // }
 
     if (!user.password) {
       return res.status(400).json({ message: "This account uses Google login only" });

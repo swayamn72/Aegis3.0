@@ -2,6 +2,7 @@ import express from "express";
 import mongoose from "mongoose";
 import ChatMessage from "../models/chat.model.js";
 import Player from "../models/player.model.js";
+import Tournament from "../models/tournament.model.js";
 import auth from "../middleware/auth.js";
 
 const router = express.Router();
@@ -190,22 +191,72 @@ router.post("/tournament-reference/:tournamentId", auth, async (req, res) => {
       return res.status(400).json({ message: 'Captain ID is required' });
     }
 
-    // Verify tournament exists (only fetch needed fields)
+    // Verify tournament exists and fetch relevant fields
     const tournament = await Tournament.findById(tournamentId)
-      .select('tournamentName')
+      .select('tournamentName gameTitle tier region prizePool startDate endDate slots status format media.logo')
       .lean();
 
     if (!tournament) {
       return res.status(404).json({ message: 'Tournament not found' });
     }
 
+    // Format dates
+    const startDate = new Date(tournament.startDate).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+    const endDate = new Date(tournament.endDate).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+
+    // Format prize pool
+    const prizePoolText = tournament.prizePool?.total
+      ? `💰 Prize Pool: ${tournament.prizePool.currency === 'USD' ? '$' : '₹'}${tournament.prizePool.total.toLocaleString()}`
+      : '';
+
+    // Format slots info
+    const slotsText = tournament.slots?.total
+      ? `👥 Slots: ${tournament.slots.registered || 0}/${tournament.slots.total}`
+      : '';
+
+    // Build enhanced message
+    const tournamentUrl = `/tournament/${tournamentId}`;
+    const messageParts = [
+      `🏆 ${tournament.tournamentName}`,
+      '',
+      `🎮 Game: ${tournament.gameTitle || 'BGMI'}`,
+      `📍 Region: ${tournament.region || 'India'} | Tier: ${tournament.tier || 'Community'}`,
+      `📅 ${startDate} - ${endDate}`,
+      prizePoolText,
+      slotsText,
+      tournament.format ? `⚔️ Format: ${tournament.format}` : '',
+      '',
+      `Status: ${tournament.status?.replace(/_/g, ' ').toUpperCase() || 'ANNOUNCED'}`,
+      '',
+      `[View Tournament](https://aegis.gg${tournamentUrl})`
+    ].filter(line => line !== '').join('\n');
+
     // Create tournament reference message
     const message = new ChatMessage({
       senderId: req.user.id,
       receiverId: captainId,
-      message: `Check out this tournament: ${tournament.tournamentName}`,
+      message: messageParts,
       messageType: 'tournament_reference',
       tournamentId: tournamentId,
+      metadata: {
+        tournamentName: tournament.tournamentName,
+        logo: tournament.media?.logo || null,
+        tier: tournament.tier,
+        prizePool: tournament.prizePool?.total || 0,
+        currency: tournament.prizePool?.currency || 'INR'
+      },
+      button: {
+        text: 'View Tournament Details',
+        url: `https://aegis.gg${tournamentUrl}`
+      }
     });
 
     await message.save();

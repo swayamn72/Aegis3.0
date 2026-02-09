@@ -25,7 +25,7 @@ async function main() {
             verified: true,
             country: 'India',
             primaryGame: 'BGMI',
-            inGameRole: ['assaulter'],
+            inGameRole: ['Assaulter'],
             teamStatus: 'in a team',
             profileVisibility: 'public',
         });

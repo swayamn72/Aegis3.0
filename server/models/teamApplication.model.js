@@ -27,7 +27,7 @@ const teamApplicationSchema = new mongoose.Schema(
     appliedRoles: [
       {
         type: String,
-        enum: ['IGL', 'assaulter', 'support', 'sniper', 'fragger'],
+        enum: ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger'],
       },
     ],
     // Tryout chat room (only created when status moves to 'in_tryout')

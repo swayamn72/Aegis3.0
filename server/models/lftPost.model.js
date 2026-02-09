@@ -19,7 +19,7 @@ const lftPostSchema = new mongoose.Schema({
     },
     roles: [{
         type: String,
-        enum: ['IGL', 'assaulter', 'support', 'sniper', 'fragger'],
+        enum: ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger'],
         required: true,
     }],
     region: {

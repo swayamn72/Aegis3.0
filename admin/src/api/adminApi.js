@@ -6,7 +6,22 @@ const API = axios.create({
   timeout: 15000, // SECURITY: 15 second timeout to prevent hanging requests
 });
 
-// SECURITY: Add request interceptor for error handling
+// SECURITY: Add request interceptor to include auth token
+API.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('adminToken');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    console.error('Request error:', error);
+    return Promise.reject(error);
+  }
+);
+
+// SECURITY: Add response interceptor for error handling
 API.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -15,7 +30,8 @@ API.interceptors.response.use(
 
     // Handle authentication errors
     if (error.response?.status === 401) {
-      // Token expired or invalid - redirect to login
+      // Token expired or invalid - clear token and redirect to login
+      localStorage.removeItem('adminToken');
       window.location.href = '/admin';
     }
 
