@@ -104,7 +104,7 @@ const AegisLogin = () => {
       if (result.requiresVerification && result.email) {
         toast.warning('📧 Please verify your email first');
         setTimeout(() => {
-          navigate(`/verify-email?email=${encodeURIComponent(result.email)}`);
+          navigate(`/verify-email?email=${encodeURIComponent(result.email)}&role=${formData.role}`);
         }, 1500);
         return;
       }

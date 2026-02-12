@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Mail, Lock, User, Gamepad2, Shield, CheckCircle, AlertCircle, ArrowRight, Building2, Phone, MapPin, Calendar } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, User, Gamepad2, Shield, CheckCircle, AlertCircle, ArrowRight, Building2, Phone, MapPin, Calendar, Instagram } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 
@@ -22,7 +22,8 @@ const AegisSignup = () => {
     establishedDate: '',
     website: '',
     ownerName: '',
-    ownerInstagram: ''
+    ownerInstagram: '',
+    orgInstagram: ''
   });
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({});
@@ -145,35 +146,18 @@ const AegisSignup = () => {
 
     setIsLoading(true);
     try {
+      let response;
       if (formData.role === 'player') {
-        // Player registration with email verification
-        const response = await axios.post(`${API_URL}/api/auth/signup`, {
+        response = await axios.post(`${API_URL}/api/auth/signup`, {
           username: formData.username,
           email: formData.email,
           password: formData.password,
         }, {
           withCredentials: true,
         });
-
         console.log("Signup response:", response.data);
-
-        // Check if email verification is required
-        if (response.data.requiresVerification) {
-          if (response.data.emailSent) {
-            toast.success("📧 Account created! Check your email for verification code.");
-            setTimeout(() => navigate(`/verify-email?email=${encodeURIComponent(formData.email)}`), 1500);
-          } else {
-            toast.error("Account created but failed to send verification email. Please contact support.");
-          }
-        } else {
-          // Fallback for old flow (if backend doesn't require verification)
-          toast.success("Account created successfully! Redirecting to login...");
-          setTimeout(() => navigate('/login'), 1000);
-        }
-
       } else if (formData.role === 'organization') {
-        // Organization registration - FIXED ENDPOINT
-        const response = await axios.post(`${API_URL}/api/auth/organization/signup`, {
+        response = await axios.post(`${API_URL}/api/auth/organization/signup`, {
           orgName: formData.orgName,
           ownerName: formData.ownerName,
           email: formData.email,
@@ -183,16 +167,23 @@ const AegisSignup = () => {
           description: formData.description,
           contactPhone: formData.contactPhone,
           website: formData.website,
+          orgInstagram: formData.orgInstagram,
           ownerSocial: {
             instagram: formData.ownerInstagram
           }
         }, {
           withCredentials: true,
         });
-
         console.log("Organization registration response:", response.data);
-        toast.success("🎉 Registration submitted! Your organization is pending admin approval. You'll receive an email once approved.");
-        setTimeout(() => navigate('/login'), 3000);
+      }
+
+      // Unified redirect logic for both roles
+      if (response?.data?.requiresVerification) {
+        toast.success("📧 Account created! Check your email for verification code.");
+        setTimeout(() => navigate(`/verify-email?email=${encodeURIComponent(formData.email)}&role=${formData.role}`), 1500);
+      } else {
+        toast.success("Account created successfully! Redirecting to login...");
+        setTimeout(() => navigate('/login'), 1000);
       }
 
     } catch (error) {
@@ -470,7 +461,30 @@ const AegisSignup = () => {
 
                   <div className="relative group">
                     <div className="absolute left-4 sm:left-6 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-orange-400 transition-colors duration-200">
-                      <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />
+                      <Instagram className="w-5 h-5 sm:w-6 sm:h-6" />
+                    </div>
+                    <input
+                      type="text"
+                      name="orgInstagram"
+                      value={formData.orgInstagram}
+                      onChange={handleInputChange}
+                      placeholder="Organization Instagram (optional)"
+                      className={`w-full pl-12 sm:pl-16 pr-4 sm:pr-6 py-3 sm:py-5 bg-gray-900/30 backdrop-blur-sm border-2 rounded-2xl text-white text-base sm:text-lg placeholder-gray-400 focus:outline-none focus:ring-4 transition-all duration-300 ${errors.orgInstagram
+                        ? 'border-red-500/50 focus:ring-red-500/20 focus:border-red-400'
+                        : 'border-gray-600/50 focus:ring-orange-500/20 focus:border-orange-400 hover:border-gray-500/70'
+                        }`}
+                    />
+                    {errors.orgInstagram && (
+                      <div className="flex items-center mt-3 text-red-400 text-sm bg-red-500/10 px-4 py-2 rounded-lg border border-red-500/20">
+                        <AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" />
+                        {errors.orgInstagram}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="relative group">
+                    <div className="absolute left-4 sm:left-6 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-orange-400 transition-colors duration-200">
+                      <User className="w-5 h-5 sm:w-6 sm:h-6" />
                     </div>
                     <input
                       type="text"

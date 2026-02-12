@@ -1247,7 +1247,7 @@ router.post(
           name: req.organization.orgName,
           organizationRef: req.organization._id,
           contactEmail: req.organization.email,
-          website: req.organization.socials?.website || ''
+          website: req.organization.orgSocial?.website || ''
         },
 
         // Sponsors (if provided)

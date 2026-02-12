@@ -10,11 +10,13 @@ const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 export default function EmailVerification() {
     const [searchParams] = useSearchParams();
     const emailFromUrl = searchParams.get('email');
+    const roleFromUrl = searchParams.get('role') || 'player'; // Default to player for backward compatibility
     const navigate = useNavigate();
     const { login } = useAuth();
 
     // State
     const [email, setEmail] = useState(emailFromUrl || '');
+    const [role, setRole] = useState(roleFromUrl);
     const [code, setCode] = useState(['', '', '', '', '', '']);
     const [loading, setLoading] = useState(false);
     const [resending, setResending] = useState(false);
@@ -110,7 +112,12 @@ export default function EmailVerification() {
         setError('');
 
         try {
-            const response = await axios.post(`${API_URL}/api/auth/verify-email`, {
+            // Determine correct endpoint based on role
+            const endpoint = role === 'organization'
+                ? `${API_URL}/api/organization-auth/verify-email`
+                : `${API_URL}/api/auth/verify-email`;
+
+            const response = await axios.post(endpoint, {
                 email,
                 code: verificationCode,
             }, {
@@ -121,17 +128,28 @@ export default function EmailVerification() {
                 setSuccess(true);
                 toast.success('Email verified successfully! 🎉');
 
-                // Store token and user data
+                // Store token and user data for player or organization
                 if (response.data.token) {
-                    localStorage.setItem('token', response.data.token);
-                    localStorage.setItem('user', JSON.stringify(response.data.player));
-                    localStorage.setItem('userRole', 'player');
+                    if (response.data.organization) {
+                        localStorage.setItem('token', response.data.token);
+                        localStorage.setItem('user', JSON.stringify(response.data.organization));
+                        localStorage.setItem('userRole', 'organization');
+                    } else if (response.data.player) {
+                        localStorage.setItem('token', response.data.token);
+                        localStorage.setItem('user', JSON.stringify(response.data.player));
+                        localStorage.setItem('userRole', 'player');
+                    }
                 }
 
                 // Redirect after 1.5 seconds
                 setTimeout(() => {
-                    // Check if profile is complete, redirect accordingly
-                    window.location.href = '/settings';
+                    if (response.data.organization) {
+                        // Org: go to dashboard or pending approval
+                        window.location.href = '/org/dashboard';
+                    } else {
+                        // Player: go to settings/profile
+                        window.location.href = '/settings';
+                    }
                 }, 1500);
             }
         } catch (err) {
@@ -171,7 +189,12 @@ export default function EmailVerification() {
         setError('');
 
         try {
-            const response = await axios.post(`${API_URL}/api/auth/resend-verification`, {
+            // Determine correct endpoint based on role
+            const endpoint = role === 'organization'
+                ? `${API_URL}/api/organization-auth/resend-verification`
+                : `${API_URL}/api/auth/resend-verification`;
+
+            const response = await axios.post(endpoint, {
                 email,
             }, {
                 withCredentials: true,

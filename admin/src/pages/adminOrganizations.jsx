@@ -173,8 +173,8 @@ const AdminOrganizations = () => {
                 key={f}
                 onClick={() => setFilter(f)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === f
-                    ? 'bg-orange-500 text-white'
-                    : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                  ? 'bg-orange-500 text-white'
+                  : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
                   }`}
               >
                 {f.charAt(0).toUpperCase() + f.slice(1)}
@@ -284,11 +284,11 @@ const AdminOrganizations = () => {
                           </div>
                         )}
 
-                        {org.socials?.website && (
+                        {org.orgSocial?.website && (
                           <div className="flex items-center gap-2 text-sm">
                             <Globe className="w-4 h-4 text-zinc-500" />
                             <a
-                              href={org.socials.website}
+                              href={org.orgSocial.website}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-orange-400 hover:text-orange-300"
@@ -413,19 +413,19 @@ const AdminOrganizations = () => {
                       </div>
                     )}
 
-                    {selectedOrg.socials?.website && (
+                    {selectedOrg.orgSocial?.website && (
                       <div className="bg-zinc-800/30 rounded-lg p-4">
                         <div className="flex items-center gap-2 mb-2">
                           <Globe className="w-4 h-4 text-zinc-500" />
                           <span className="text-xs text-zinc-500 uppercase font-semibold">Website</span>
                         </div>
                         <a
-                          href={selectedOrg.socials.website}
+                          href={selectedOrg.orgSocial.website}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-orange-400 hover:text-orange-300 break-all"
                         >
-                          {selectedOrg.socials.website}
+                          {selectedOrg.orgSocial.website}
                         </a>
                       </div>
                     )}

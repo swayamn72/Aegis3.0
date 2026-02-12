@@ -8,6 +8,8 @@ import { verifyOrgToken } from '../middleware/orgAuth.js';
 import rateLimit from 'express-rate-limit';
 import { OAuth2Client } from 'google-auth-library';
 import { sendVerificationEmail, generateVerificationCode } from '../config/email.js';
+import { regenerateVerificationCode } from '../utils/verificationHelper.js';
+import { AUTH_CONSTANTS } from '../config/constants.js';
 
 const router = express.Router();
 
@@ -104,20 +106,11 @@ router.post('/login', authLimiter, async (req, res) => {
       return res.status(400).json({ message: "Email and password are required" });
     }
 
-    const user = await Player.findOne({ email });
+    // Find player and include all needed fields in ONE query
+    const user = await Player.findOne({ email }).select('+password +verificationCode +verificationCodeExpires +lastVerificationEmailSent');
     if (!user) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
-
-    // Check if email is verified (only for local auth users)
-    // if (user.authProvider.includes('local') && !user.isEmailVerified) {
-    //   return res.status(403).json({
-    //     message: "Please verify your email before logging in",
-    //     requiresVerification: true,
-    //     email: user.email,
-    //     userId: user._id,
-    //   });
-    // }
 
     if (!user.password) {
       return res.status(400).json({ message: "This account uses Google login only" });
@@ -126,6 +119,17 @@ router.post('/login', authLimiter, async (req, res) => {
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    // Check if email is verified (only for local auth users)
+    if (user.authProvider.includes('local') && !user.isEmailVerified) {
+      const result = await regenerateVerificationCode(user, user.username, AUTH_CONSTANTS.VERIFICATION_CODE_EXPIRY_MINUTES.PLAYER);
+      return res.status(result.status).json({
+        message: result.message,
+        requiresVerification: result.requiresVerification,
+        email: result.email,
+        emailSent: result.emailSent,
+      });
     }
 
     const token = jwt.sign(
@@ -277,7 +281,7 @@ router.post('/google', authLimiter, async (req, res) => {
 // ==========================
 // ORGANIZATION SIGNUP ROUTE
 // ==========================
-router.post('/organization/signup', async (req, res) => {
+router.post('/organization/signup', authLimiter, async (req, res) => {
   try {
     const {
       orgName,
@@ -289,6 +293,7 @@ router.post('/organization/signup', async (req, res) => {
       description,
       contactPhone,
       website,
+      orgInstagram,
       ownerSocial
     } = req.body;
 
@@ -314,7 +319,12 @@ router.post('/organization/signup', async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create organization with pending status
+    // Generate 6-digit verification code
+    const verificationCode = generateVerificationCode();
+    const hashedCode = await bcrypt.hash(verificationCode, 10);
+    const codeExpiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+    // Create organization with pending status and verification fields
     const newOrg = await Organization.create({
       orgName,
       ownerName,
@@ -325,17 +335,44 @@ router.post('/organization/signup', async (req, res) => {
       description: description || '',
       contactPhone: contactPhone || '',
       ownerSocial: ownerSocial || {},
-      socials: { website: website || '' },
+      orgSocial: {
+        instagram: orgInstagram || '',
+        website: website || ''
+      },
       approvalStatus: 'pending',
       emailVerified: false,
+      verificationCode: hashedCode,
+      verificationCodeExpires: codeExpiry,
+      verificationCodeAttempts: 0,
+      lastVerificationEmailSent: new Date(),
     });
 
+    // Send verification email
+    try {
+      await sendVerificationEmail(email, orgName, verificationCode);
+    } catch (emailError) {
+      console.error('Failed to send verification email:', emailError);
+      // Don't fail registration if email fails, but notify user
+      return res.status(201).json({
+        success: true,
+        message: "Registration successful, but failed to send verification email. Please try resending.",
+        email: newOrg.email,
+        orgId: newOrg._id,
+        requiresVerification: true,
+        emailSent: false,
+      });
+    }
+
     res.status(201).json({
-      message: "Organization registration submitted successfully. Please wait for admin approval.",
+      success: true,
+      message: "Organization registration submitted successfully. Please verify your email.",
+      email: newOrg.email,
+      orgId: newOrg._id,
+      requiresVerification: true,
+      emailSent: true,
       organization: {
         id: newOrg._id,
         orgName: newOrg.orgName,
-        email: newOrg.email,
         approvalStatus: newOrg.approvalStatus,
       },
     });
@@ -349,7 +386,7 @@ router.post('/organization/signup', async (req, res) => {
 // ==========================
 // ORGANIZATION LOGIN ROUTE
 // ==========================
-router.post('/organization/login', async (req, res) => {
+router.post('/organization/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -357,19 +394,30 @@ router.post('/organization/login', async (req, res) => {
       return res.status(400).json({ message: "Email and password are required" });
     }
 
-    // Find organization and include password field
-    const org = await Organization.findOne({ email }).select('+password');
+    // Find organization and include all needed fields in ONE query
+    const org = await Organization.findOne({ email }).select('+password +emailVerified +verificationCode +verificationCodeExpires +lastVerificationEmailSent');
     if (!org) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    // Verify password first (regardless of approval status)
+    // Verify password first
     const isPasswordValid = await bcrypt.compare(password, org.password);
     if (!isPasswordValid) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    // Generate JWT with role (allow login for all approval statuses)
+    // Block login if email is not verified
+    if (!org.emailVerified) {
+      const result = await regenerateVerificationCode(org, org.orgName, AUTH_CONSTANTS.VERIFICATION_CODE_EXPIRY_MINUTES.ORGANIZATION);
+      return res.status(result.status).json({
+        message: result.message,
+        requiresVerification: result.requiresVerification,
+        email: result.email,
+        emailSent: result.emailSent,
+      });
+    }
+
+    // Generate JWT with role
     const token = jwt.sign(
       { id: org._id, role: 'organization' },
       process.env.JWT_SECRET,

@@ -48,7 +48,7 @@ const organizationSchema = new mongoose.Schema(
     password: {
       type: String,
       required: true,
-      select: false, 
+      select: false,
     },
     country: {
       type: String,
@@ -95,14 +95,6 @@ const organizationSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
-    socials: {
-      discord: { type: String, trim: true, default: '' },
-      twitter: { type: String, trim: true, default: '' },
-      twitch: { type: String, trim: true, default: '' },
-      youtube: { type: String, trim: true, default: '' },
-      website: { type: String, trim: true, default: '' },
-      linkedin: { type: String, trim: true, default: '' },
-    },
     profileVisibility: {
       type: String,
       enum: ['public', 'private'],
@@ -131,8 +123,21 @@ const organizationSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    verificationToken: {
+    verificationCode: {
       type: String,
+      select: false,
+    },
+    verificationCodeExpires: {
+      type: Date,
+      select: false,
+    },
+    verificationCodeAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
+    lastVerificationEmailSent: {
+      type: Date,
       select: false,
     },
   },
@@ -145,7 +150,7 @@ const organizationSchema = new mongoose.Schema(
 organizationSchema.index({ approvalStatus: 1, createdAt: -1 });
 
 // Method to check if organization can login
-organizationSchema.methods.canLogin = function() {
+organizationSchema.methods.canLogin = function () {
   return this.approvalStatus === 'approved' && this.emailVerified;
 };
 

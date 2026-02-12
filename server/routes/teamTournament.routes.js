@@ -38,6 +38,47 @@ const verifyTeamCaptain = async (req, res, next) => {
     res.status(401).json({ message: 'Invalid token' });
   }
 };
+
+// ============================================================================
+// CHECK TEAM REGISTRATION STATUS
+// ============================================================================
+router.get('/registration-status/:tournamentId/:teamId', async (req, res) => {
+  try {
+    const { tournamentId, teamId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(tournamentId) || !mongoose.Types.ObjectId.isValid(teamId)) {
+      return res.status(400).json({ error: 'Invalid tournament or team ID' });
+    }
+
+    const registration = await Registration.findOne({
+      tournament: tournamentId,
+      team: teamId
+    })
+      .select('status qualifiedThrough currentStage phase group registeredAt approvedAt')
+      .lean();
+
+    if (!registration) {
+      return res.status(404).json({ error: 'Team not registered for this tournament' });
+    }
+
+    res.json({
+      registration: {
+        _id: registration._id,
+        status: registration.status,
+        qualifiedThrough: registration.qualifiedThrough,
+        currentStage: registration.currentStage,
+        phase: registration.phase,
+        group: registration.group,
+        registeredAt: registration.registeredAt,
+        approvedAt: registration.approvedAt
+      }
+    });
+  } catch (error) {
+    console.error('Error checking registration status:', error);
+    res.status(500).json({ error: 'Failed to check registration status' });
+  }
+});
+
 // ============================================================================
 // ACCEPT TOURNAMENT INVITATION (UPDATED)
 // ============================================================================
@@ -216,7 +257,7 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
     });
 
     if (existingRegistration) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Team already registered for this tournament',
         status: existingRegistration.status
       });
@@ -237,16 +278,17 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
     }
 
     // NEW: Create registration
-    const firstPhase = tournament.phases && tournament.phases.length > 0 ? 
-                      tournament.phases[0] : null;
+    const firstPhase = tournament.phases && tournament.phases.length > 0 ?
+      tournament.phases[0] : null;
 
     const registration = await Registration.create({
       tournament: tournamentId,
       team: req.team._id,
-      status: tournament.isOpenForAll ? 'pending' : 'approved', // Auto-approve if open
+      status: tournament.isOpenForAll ? 'approved' : 'pending', // Auto-approve if open tournament
       qualifiedThrough: 'open_registration',
       currentStage: firstPhase?.name || 'Registered',
       phase: firstPhase?.name,
+      approvedAt: tournament.isOpenForAll ? new Date() : undefined, // Set approval timestamp for open tournaments
       roster: req.team.players.map(playerId => ({
         player: playerId,
         // You can add role info if available in team model
@@ -256,8 +298,8 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
     // Send registration confirmation emails
     try {
       // Fetch player emails (only what's needed)
-      const players = await Player.find({ 
-        _id: { $in: req.team.players } 
+      const players = await Player.find({
+        _id: { $in: req.team.players }
       })
         .select('email username')
         .lean();

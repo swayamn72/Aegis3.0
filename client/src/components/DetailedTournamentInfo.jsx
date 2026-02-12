@@ -32,6 +32,18 @@ const fetchMatches = async (id) => {
   return data.matches || [];
 };
 
+const fetchTeamRegistrationStatus = async (tournamentId, teamId) => {
+  if (!teamId || !tournamentId) return null;
+  try {
+    const { data } = await axiosInstance.get(`/api/team-tournaments/registration-status/${tournamentId}/${teamId}`);
+    return data;
+  } catch (error) {
+    // If 404, team is not registered
+    if (error.response?.status === 404) return null;
+    throw error;
+  }
+};
+
 const DetailedTournamentInfo = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -56,6 +68,7 @@ const DetailedTournamentInfo = () => {
     data: tournamentResp,
     isLoading: tournamentLoading,
     error: tournamentError,
+    refetch: refetchTournament,
   } = useQuery({
     queryKey: ['tournament', id],
     queryFn: () => fetchTournament(id),
@@ -82,6 +95,19 @@ const DetailedTournamentInfo = () => {
     enabled: !!id,
   });
 
+  const userTeam = userTeamResp?.teams?.[0] || null;
+
+  // Query for team's registration status (includes pending registrations)
+  const {
+    data: registrationStatus,
+    isLoading: registrationStatusLoading,
+    refetch: refetchRegistrationStatus,
+  } = useQuery({
+    queryKey: ['teamRegistrationStatus', id, userTeam?._id],
+    queryFn: () => fetchTeamRegistrationStatus(id, userTeam?._id),
+    enabled: !!id && !!userTeam?._id,
+  });
+
   // Derived data
   const tournamentData = tournamentResp?.tournamentData || null;
   const scheduleData = tournamentResp?.scheduleData || [];
@@ -89,23 +115,22 @@ const DetailedTournamentInfo = () => {
   const tournamentStats = tournamentResp?.tournamentStats || null;
   const streamLinks = tournamentResp?.streamLinks || [];
 
-  const userTeam = userTeamResp?.teams?.[0] || null;
   const isCaptain = userTeam && user && userTeam.captain?._id?.toString() === user._id?.toString();
   const teamPlayers = userTeam?.players || [];
   const registrationClosed = tournamentData?.registrationEndDate && new Date(tournamentData.registrationEndDate) < new Date();
 
-  // Registration state
-  const [isTeamRegistered, setIsTeamRegistered] = useState(false);
+  // Registration state based on actual registration status
+  const isTeamRegistered = !!registrationStatus?.registration;
+  const registrationPending = registrationStatus?.registration?.status === 'pending';
+  const registrationApproved = ['approved', 'checked_in'].includes(registrationStatus?.registration?.status);
 
-  // Check registration status when tournament and user team data are loaded
+  // Debug logs
   useEffect(() => {
-    if (userTeam && tournamentData?.participatingTeams) {
-      const isRegistered = tournamentData.participatingTeams.some(participatingTeam =>
-        participatingTeam.team._id.toString() === userTeam._id.toString()
-      );
-      setIsTeamRegistered(isRegistered);
-    }
-  }, [userTeam, tournamentData]);
+    console.log('Registration Status Data:', registrationStatus);
+    console.log('Is team registered:', isTeamRegistered);
+    console.log('Registration pending:', registrationPending);
+    console.log('Registration approved:', registrationApproved);
+  }, [registrationStatus, isTeamRegistered, registrationPending, registrationApproved]);
 
   // Update selectedGroup when selectedPhase changes
   useEffect(() => {
@@ -189,11 +214,17 @@ const DetailedTournamentInfo = () => {
         players: allPlayers.map(player => player.name || player), // assuming player objects or strings
       };
 
-      await axiosInstance.post(`/api/team-tournaments/register/${id}`, registrationData);
+      const response = await axiosInstance.post(`/api/team-tournaments/register/${id}`, registrationData);
+      console.log('Registration response:', response.data);
 
       setRegistrationSuccess(true);
       setShowRegistrationModal(false);
       setRegistrationForm({ agreedToTerms: false });
+
+      // Refetch registration status to update UI
+      console.log('Refetching registration status...');
+      await refetchRegistrationStatus();
+      await refetchTournament();
     } catch (error) {
       setRegistrationError(error.message || (error.error ?? 'Registration failed'));
     } finally {
@@ -825,10 +856,17 @@ const DetailedTournamentInfo = () => {
                       ) : (
                         userTeam ? (
                           isTeamRegistered ? (
-                            <div className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-medium px-4 py-3 rounded-lg text-center flex items-center justify-center gap-2">
-                              <CheckCircle className="w-4 h-4" />
-                              Team Already Registered
-                            </div>
+                            registrationPending ? (
+                              <div className="w-full bg-gradient-to-r from-yellow-500 to-amber-600 text-white font-medium px-4 py-3 rounded-lg text-center flex items-center justify-center gap-2">
+                                <Clock className="w-4 h-4 animate-pulse" />
+                                Registration Pending Approval
+                              </div>
+                            ) : (
+                              <div className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-medium px-4 py-3 rounded-lg text-center flex items-center justify-center gap-2">
+                                <CheckCircle className="w-4 h-4" />
+                                Team Already Registered
+                              </div>
+                            )
                           ) : (
                             isCaptain ? (
                               <button

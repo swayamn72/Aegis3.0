@@ -1,3 +1,5 @@
+
+
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -28,6 +30,7 @@ import matchRoutes from './routes/match.routes.js';
 import organizationRoutes from './routes/organization.routes.js';
 import orgTournamentRoutes from './routes/orgTournament.routes.js';
 import notificationRoutes from './routes/notification.routes.js';
+import organizationAuthRoutes from './routes/organizationAuth.routes.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -91,6 +94,7 @@ app.use('/api/matches', matchRoutes);
 app.use('/api/organizations', organizationRoutes);
 app.use('/api/org-tournaments', orgTournamentRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/organization-auth', organizationAuthRoutes);
 
 // TEST ROUTE
 app.get("/", (req, res) => {
