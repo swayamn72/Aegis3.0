@@ -31,6 +31,7 @@ import organizationRoutes from './routes/organization.routes.js';
 import orgTournamentRoutes from './routes/orgTournament.routes.js';
 import notificationRoutes from './routes/notification.routes.js';
 import organizationAuthRoutes from './routes/organizationAuth.routes.js';
+import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -100,6 +101,9 @@ app.use('/api/organization-auth', organizationAuthRoutes);
 app.get("/", (req, res) => {
   res.send("Server is running!");
 });
+
+// Global error handler (must be last)
+app.use(errorHandler);
 
 // LAMBDA EXPORT
 export const handler = serverless(app);

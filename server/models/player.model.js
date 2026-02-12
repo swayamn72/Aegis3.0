@@ -28,6 +28,7 @@ const playerSchema = new mongoose.Schema(
     password: {
       type: String,
       required: false, // Not required for Google OAuth users
+      select: false, // CRITICAL: Don't expose password in queries
     },
     googleId: {
       type: String,
@@ -71,6 +72,15 @@ const playerSchema = new mongoose.Schema(
     },
     lastVerificationEmailSent: {
       type: Date,
+    },
+    loginAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
+    lockUntil: {
+      type: Date,
+      select: false,
     },
     usernameCustomized: {
       type: Boolean,

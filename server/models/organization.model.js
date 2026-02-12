@@ -119,7 +119,7 @@ const organizationSchema = new mongoose.Schema(
       trim: true,
     },
     // Verification
-    emailVerified: {
+    isEmailVerified: {
       type: Boolean,
       default: false,
     },
@@ -140,6 +140,15 @@ const organizationSchema = new mongoose.Schema(
       type: Date,
       select: false,
     },
+    loginAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
+    lockUntil: {
+      type: Date,
+      select: false,
+    },
   },
   {
     timestamps: true,
@@ -151,7 +160,7 @@ organizationSchema.index({ approvalStatus: 1, createdAt: -1 });
 
 // Method to check if organization can login
 organizationSchema.methods.canLogin = function () {
-  return this.approvalStatus === 'approved' && this.emailVerified;
+  return this.approvalStatus === 'approved' && this.isEmailVerified;
 };
 
 const Organization = mongoose.model('Organization', organizationSchema);

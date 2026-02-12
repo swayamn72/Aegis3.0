@@ -1,6 +1,7 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { resendVerification, verifyEmail } from '../controllers/organizationAuth.controller.js';
+import { validateVerificationCode, validateResendCode } from '../middleware/validate.js';
 
 const router = express.Router();
 
@@ -15,7 +16,7 @@ const authLimiter = rateLimit({
 });
 
 // Organization email verification routes
-router.post('/resend-verification', authLimiter, resendVerification);
-router.post('/verify-email', authLimiter, verifyEmail);
+router.post('/resend-verification', authLimiter, validateResendCode, resendVerification);
+router.post('/verify-email', authLimiter, validateVerificationCode, verifyEmail);
 
 export default router;

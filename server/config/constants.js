@@ -20,4 +20,11 @@ export const AUTH_CONSTANTS = {
     // Login rate limiting
     LOGIN_RATE_LIMIT_WINDOW: 15 * 60 * 1000, // 15 minutes
     LOGIN_RATE_LIMIT_MAX: 5,
+
+    // Brute force protection
+    MAX_LOGIN_ATTEMPTS: 5,
+    LOCK_TIME: 15 * 60 * 1000, // 15 minutes
+
+    // Cookie settings
+    COOKIE_MAX_AGE: 7 * 24 * 60 * 60 * 1000, // 7 days
 };
