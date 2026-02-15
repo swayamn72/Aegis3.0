@@ -13,6 +13,10 @@ export const AUTH_CONSTANTS = {
         ORGANIZATION: 10,
     },
 
+    // Password reset settings
+    PASSWORD_RESET_TOKEN_EXPIRY: 60 * 60 * 1000, // 1 hour in milliseconds
+    PASSWORD_RESET_COOLDOWN_MS: 5 * 60 * 1000, // 5 minutes between reset requests
+
     // Rate limiting
     VERIFICATION_EMAIL_COOLDOWN_MS: 60 * 1000, // 1 minute
     MAX_VERIFICATION_ATTEMPTS: 5,

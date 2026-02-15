@@ -96,3 +96,25 @@ export const validateResendCode = [
         .normalizeEmail(),
     validate
 ];
+
+// Forgot password validation (request reset)
+export const validateForgotPassword = [
+    body('email')
+        .trim()
+        .notEmpty().withMessage('Email is required')
+        .isEmail().withMessage('Invalid email format')
+        .normalizeEmail(),
+    validate
+];
+
+// Reset password validation
+export const validateResetPassword = [
+    body('token')
+        .trim()
+        .notEmpty().withMessage('Reset token is required'),
+    body('newPassword')
+        .notEmpty().withMessage('New password is required')
+        .isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
+        .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage('Password must contain at least one uppercase letter, one lowercase letter, and one number'),
+    validate
+];

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAdmin } from '../context/AdminContext';
 import AdminLayout from '../components/AdminLayout';
@@ -12,44 +12,34 @@ import {
   CheckCircle,
   Clock
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 
-// API functions
+// API functions for TanStack Query
 const fetchDashboardStats = async () => {
-  try {
-    const response = await fetch('/api/admin/dashboard/stats', {
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
-    if (!response.ok) {
-      throw new Error('Failed to fetch dashboard stats');
+  const response = await fetch('/api/admin/dashboard/stats', {
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json'
     }
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('Error fetching dashboard stats:', error);
-    throw error;
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch dashboard stats');
   }
+  return response.json();
 };
 
 const fetchRecentActivity = async () => {
-  try {
-    const response = await fetch('/api/admin/dashboard/activity', {
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
-    if (!response.ok) {
-      throw new Error('Failed to fetch recent activity');
+  const response = await fetch('/api/admin/dashboard/activity', {
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json'
     }
-    const data = await response.json();
-    return data.activities || [];
-  } catch (error) {
-    console.error('Error fetching recent activity:', error);
-    throw error;
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch recent activity');
   }
+  const data = await response.json();
+  return data.activities || [];
 };
 
 const StatCard = ({ title, value, icon: Icon, color = 'blue' }) => {
@@ -116,45 +106,53 @@ const RecentActivity = ({ activities }) => {
 const AdminDashboard = () => {
   const { admin } = useAdmin();
   const navigate = useNavigate();
-  const [stats, setStats] = useState({
-    totalTournaments: 0,
-    activeMatches: 0,
-    totalPlayers: 0,
-    upcomingEvents: 0
+
+  const {
+    data: stats = {
+      totalTournaments: 0,
+      activeMatches: 0,
+      totalPlayers: 0,
+      upcomingEvents: 0
+    },
+    isLoading: statsLoading,
+    isError: statsError
+
+  } = useQuery({
+    queryKey: ['dashboardStats'],
+    queryFn: fetchDashboardStats,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    cacheTime: 10 * 60 * 1000, // 10 minutes
+    refetchOnWindowFocus: false
   });
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const loadDashboardData = async () => {
-      setLoading(true);
-      try {
-        const [statsData, activitiesData] = await Promise.all([
-          fetchDashboardStats(),
-          fetchRecentActivity()
-        ]);
+  const {
+    data: activities = [],
+    isLoading: activityLoading,
+    isError: activityError
 
-        setStats(statsData);
-      } catch (error) {
-        console.error('Error loading dashboard data:', error);
-        setStats({
-          totalTournaments: 0,
-          activeMatches: 0,
-          totalPlayers: 0,
-          upcomingEvents: 0
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
+  } = useQuery({
+    queryKey: ['dashboardActivity'],
+    queryFn: fetchRecentActivity,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    cacheTime: 10 * 60 * 1000, // 10 minutes
+    refetchOnWindowFocus: false
+  });
 
-    loadDashboardData();
-  }, []);
-
-  if (loading) {
+  if (statsLoading || activityLoading) {
     return (
       <AdminLayout>
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  if (statsError || activityError) {
+    return (
+      <AdminLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-red-500">Failed to load dashboard data.</div>
         </div>
       </AdminLayout>
     );
@@ -204,7 +202,7 @@ const AdminDashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         {/* Recent Activity */}
         <div className="lg:col-span-2">
-          <RecentActivity activities={[]} />
+          <RecentActivity activities={activities} />
         </div>
 
         {/* Quick Actions */}

@@ -6,6 +6,22 @@ import upload from '../config/multer.js';
 
 const router = express.Router();
 
+// Get all pending organizations (for admin review)
+router.get('/pending', async (req, res) => {
+  try {
+    // Use index and lean for performance
+    const pendingOrgs = await Organization.find({ approvalStatus: 'pending' })
+      .select('-password') // Exclude password field
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({ organizations: pendingOrgs });
+  } catch (error) {
+    console.error('Error fetching pending organizations:', error);
+    res.status(500).json({ message: 'Error fetching pending organizations' });
+  }
+});
+
 // Get current organization profile (for session check)
 router.get('/me', verifyOrgToken, async (req, res) => {
   try {

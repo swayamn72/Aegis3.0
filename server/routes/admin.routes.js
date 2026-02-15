@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import Tournament from '../models/tournament.model.js';
 import Match from '../models/match.model.js';
 import Registration from '../models/registration.model.js';
+import Organization from '../models/organization.model.js';
 import mongoose from 'mongoose';
 
 const router = express.Router();
@@ -746,6 +747,135 @@ router.get('/tournaments/pending/list', verifyAdminToken, async (req, res) => {
   } catch (error) {
     console.error('Error fetching pending tournaments:', error);
     res.status(500).json({ error: 'Failed to fetch pending tournaments' });
+  }
+});
+
+// ==================== ORGANIZATION ROUTES ====================
+
+// Helper function to validate MongoDB ObjectId
+const validateOrgId = (id) => {
+  return mongoose.Types.ObjectId.isValid(id);
+};
+
+// Rate limiter for organization actions
+const orgActionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // limit each IP to 20 requests per windowMs
+  message: 'Too many organization actions from this IP, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Approve organization (SECURE)
+router.patch('/organizations/:id/approve', verifyAdminToken, orgActionLimiter, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const adminId = req.admin.adminId;
+
+    // SECURITY: Validate ObjectId
+    if (!validateOrgId(id)) {
+      return res.status(400).json({ error: 'Invalid organization ID format' });
+    }
+
+    // SECURITY: Verify organization exists
+    const organization = await Organization.findById(id);
+
+    if (!organization) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+
+    if (organization.approvalStatus === 'approved') {
+      return res.status(400).json({ error: 'Organization is already approved' });
+    }
+
+    // Update organization with approval details
+    organization.approvalStatus = 'approved';
+    organization.approvedBy = adminId;
+    organization.approvalDate = new Date();
+    organization.rejectionReason = undefined; // Clear any previous rejection reason
+
+    await organization.save();
+
+    // Log the action for audit trail
+    console.log(`Admin ${adminId} approved organization ${id} at ${new Date().toISOString()}`);
+
+    res.json({
+      message: 'Organization approved successfully',
+      organization: {
+        id: organization._id,
+        orgName: organization.orgName,
+        approvalStatus: organization.approvalStatus,
+        approvedBy: organization.approvedBy,
+        approvalDate: organization.approvalDate
+      }
+    });
+  } catch (error) {
+    console.error('Error approving organization:', error);
+    res.status(500).json({ error: 'Failed to approve organization' });
+  }
+});
+
+// Reject organization (SECURE)
+router.patch('/organizations/:id/reject', verifyAdminToken, orgActionLimiter, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const adminId = req.admin.adminId;
+
+    // SECURITY: Validate ObjectId
+    if (!validateOrgId(id)) {
+      return res.status(400).json({ error: 'Invalid organization ID format' });
+    }
+
+    // SECURITY: Validate rejection reason
+    if (!reason || typeof reason !== 'string' || reason.trim().length < 10) {
+      return res.status(400).json({
+        error: 'Rejection reason must be at least 10 characters'
+      });
+    }
+
+    if (reason.length > 500) {
+      return res.status(400).json({
+        error: 'Rejection reason must not exceed 500 characters'
+      });
+    }
+
+    const sanitizedReason = reason.trim();
+
+    // SECURITY: Verify organization exists
+    const organization = await Organization.findById(id);
+
+    if (!organization) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+
+    if (organization.approvalStatus === 'rejected') {
+      return res.status(400).json({ error: 'Organization is already rejected' });
+    }
+
+    // Update organization with rejection details
+    organization.approvalStatus = 'rejected';
+    organization.rejectionReason = sanitizedReason;
+    organization.approvedBy = undefined; // Clear any previous approval
+    organization.approvalDate = undefined;
+
+    await organization.save();
+
+    // Log the action for audit trail
+    console.log(`Admin ${adminId} rejected organization ${id} at ${new Date().toISOString()}`);
+
+    res.json({
+      message: 'Organization rejected successfully',
+      organization: {
+        id: organization._id,
+        orgName: organization.orgName,
+        approvalStatus: organization.approvalStatus,
+        rejectionReason: organization.rejectionReason
+      }
+    });
+  } catch (error) {
+    console.error('Error rejecting organization:', error);
+    res.status(500).json({ error: 'Failed to reject organization' });
   }
 });
 

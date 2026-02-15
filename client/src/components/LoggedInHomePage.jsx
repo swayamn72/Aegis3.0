@@ -8,7 +8,7 @@ import {
   Sparkles, Zap, Award, Activity, Gamepad2, ArrowRight, X, Coins
 } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_BACKEND_URL;
 
 // Mock data for fallback
 const mockData = {

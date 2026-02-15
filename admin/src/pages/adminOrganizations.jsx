@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useAdmin } from '../context/AdminContext';
 import AdminLayout from '../components/AdminLayout';
 import {
@@ -15,101 +15,125 @@ import {
   Globe
 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+// API functions
+const fetchOrganizations = async (filter) => {
+  const endpoint = filter === 'pending'
+    ? '/api/organizations/pending'
+    : `/api/organizations?status=${filter}`;
+
+  const response = await fetch(endpoint, {
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch organizations');
+  }
+
+  const data = await response.json();
+  return data.organizations || [];
+};
+
+const approveOrganization = async (orgId) => {
+  const response = await fetch(`/api/admin/organizations/${orgId}/approve`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to approve organization');
+  }
+
+  return response.json();
+};
+
+const rejectOrganization = async ({ orgId, reason }) => {
+  const response = await fetch(`/api/admin/organizations/${orgId}/reject`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ reason })
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to reject organization');
+  }
+
+  return response.json();
+};
 
 const AdminOrganizations = () => {
   const { admin } = useAdmin();
-  const [organizations, setOrganizations] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
-  const [filter, setFilter] = useState('pending'); // pending, approved, rejected, all
+  const [filter, setFilter] = useState('pending');
 
-  useEffect(() => {
-    fetchOrganizations();
-  }, [filter]);
+  // Fetch organizations with TanStack Query
+  const {
+    data: organizations = [],
+    isLoading: loading,
+    isError
+  } = useQuery({
+    queryKey: ['organizations', filter],
+    queryFn: () => fetchOrganizations(filter),
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    cacheTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: false
+  });
 
-  const fetchOrganizations = async () => {
-    setLoading(true);
-    try {
-      const endpoint = filter === 'pending'
-        ? 'http://localhost:5000/api/organizations/pending'
-        : `http://localhost:5000/api/organizations?status=${filter}`;
-
-      const response = await fetch(endpoint, {
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch organizations');
-      }
-
-      const data = await response.json();
-      setOrganizations(data.organizations || []);
-    } catch (error) {
-      console.error('Error fetching organizations:', error);
-      toast.error('Failed to load organizations');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleApprove = async (orgId) => {
-    try {
-      const response = await fetch(`http://localhost:5000/api/organizations/${orgId}/approve`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to approve organization');
-      }
-
+  // Approve mutation
+  const approveMutation = useMutation({
+    mutationFn: approveOrganization,
+    onSuccess: () => {
       toast.success('Organization approved successfully!');
-      fetchOrganizations();
+      queryClient.invalidateQueries(['organizations']);
       setShowModal(false);
       setSelectedOrg(null);
-    } catch (error) {
+    },
+    onError: (error) => {
       console.error('Error approving organization:', error);
       toast.error('Failed to approve organization');
     }
+  });
+
+  // Reject mutation
+  const rejectMutation = useMutation({
+    mutationFn: rejectOrganization,
+    onSuccess: () => {
+      toast.success('Organization rejected');
+      queryClient.invalidateQueries(['organizations']);
+      setShowModal(false);
+      setSelectedOrg(null);
+      setRejectionReason('');
+    },
+    onError: (error) => {
+      console.error('Error rejecting organization:', error);
+      toast.error('Failed to reject organization');
+    }
+  });
+
+  const handleApprove = (orgId) => {
+    approveMutation.mutate(orgId);
   };
 
-  const handleReject = async (orgId) => {
+  const handleReject = (orgId) => {
     if (!rejectionReason.trim()) {
       toast.error('Please provide a rejection reason');
       return;
     }
 
-    try {
-      const response = await fetch(`http://localhost:5000/api/organizations/${orgId}/reject`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ reason: rejectionReason })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to reject organization');
-      }
-
-      toast.success('Organization rejected');
-      fetchOrganizations();
-      setShowModal(false);
-      setSelectedOrg(null);
-      setRejectionReason('');
-    } catch (error) {
-      console.error('Error rejecting organization:', error);
-      toast.error('Failed to reject organization');
-    }
+    rejectMutation.mutate({ orgId, reason: rejectionReason });
   };
 
   const openModal = (org) => {

@@ -109,13 +109,19 @@ const AegisLogin = () => {
         return;
       }
 
-      setErrors({ general: result.message });
-      toast.error(result.message || 'Login failed');
+      // Show specific lock message if present
+      if (result.locked && result.message) {
+        setErrors({ general: result.message });
+        toast.error(result.message);
+      } else {
+        setErrors({ general: result.message });
+        toast.error(result.message || 'Login failed');
+      }
     }
   };
 
   const handleForgotPassword = () => {
-    alert('Forgot password clicked');
+    navigate('/forgot-password');
   };
 
   const handleGoogleLoginSuccess = async (credentialResponse) => {

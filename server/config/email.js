@@ -65,23 +65,15 @@ export const sendPasswordResetEmail = async (email, username, resetLink) => {
     try {
         const transporter = createTransporter();
 
+        // Import templates dynamically to avoid circular dependencies
+        const { passwordResetEmailTemplate, passwordResetEmailPlainText } = await import('./emailTemplates.js');
+
         const mailOptions = {
             from: `"${process.env.APP_NAME || 'Aegis'}" <${process.env.EMAIL_USER}>`,
             to: email,
-            subject: 'Reset Your Password - Aegis',
-            html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2>Password Reset Request</h2>
-          <p>Hi ${username},</p>
-          <p>You requested to reset your password. Click the button below to reset it:</p>
-          <a href="${resetLink}" style="display: inline-block; padding: 12px 24px; background-color: #FF4500; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0;">Reset Password</a>
-          <p>This link will expire in 1 hour.</p>
-          <p>If you didn't request this, please ignore this email.</p>
-          <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
-          <p style="color: #666; font-size: 12px;">Aegis Gaming Platform</p>
-        </div>
-      `,
-            text: `Hi ${username},\n\nYou requested to reset your password. Click the link below:\n\n${resetLink}\n\nThis link expires in 1 hour.\n\nIf you didn't request this, ignore this email.`,
+            subject: 'Reset Your Password - Aegis Gaming Platform',
+            html: passwordResetEmailTemplate(username, resetLink),
+            text: passwordResetEmailPlainText(username, resetLink),
         };
 
         const info = await transporter.sendMail(mailOptions);

@@ -3,11 +3,12 @@ import Player from '../models/player.model.js';
 import Organization from '../models/organization.model.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import auth from '../middleware/auth.js';
 import { verifyOrgToken } from '../middleware/orgAuth.js';
 import rateLimit from 'express-rate-limit';
 import { OAuth2Client } from 'google-auth-library';
-import { sendVerificationEmail, generateVerificationCode } from '../config/email.js';
+import { sendVerificationEmail, generateVerificationCode, sendPasswordResetEmail } from '../config/email.js';
 import { regenerateVerificationCode } from '../utils/verificationHelper.js';
 import { AUTH_CONSTANTS } from '../config/constants.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
@@ -16,7 +17,9 @@ import {
   validatePlayerSignup,
   validateOrgSignup,
   validateVerificationCode,
-  validateResendCode
+  validateResendCode,
+  validateForgotPassword,
+  validateResetPassword
 } from '../middleware/validate.js';
 import {
   checkAccountLock,
@@ -32,7 +35,7 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 // Strict rate limiter for auth endpoints (login/signup)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 requests per windowMs
+  max: 1000, // limit each IP to 5 requests per windowMs
   message: 'Too many authentication attempts, please try again after 15 minutes',
   standardHeaders: true,
   legacyHeaders: false,
@@ -595,6 +598,220 @@ router.get('/verification-status/:email', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+// ==========================
+// ==========================
+// FORGOT PASSWORD - Request Password Reset
+// ==========================
+router.post('/forgot-password', authLimiter, validateForgotPassword, asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  // Find player by email
+  const player = await Player.findOne({ email }).select('+password +resetPasswordToken +resetPasswordExpiry');
+
+  // Always return success message to prevent email enumeration attacks
+  if (!player) {
+    return res.status(200).json({
+      success: true,
+      message: "If an account with that email exists, a password reset link has been sent.",
+    });
+  }
+
+  // Check if user uses Google OAuth and doesn't have a password
+  if (!player.password && player.authProvider.includes('google') && !player.authProvider.includes('local')) {
+    return res.status(400).json({
+      success: false,
+      message: "This account uses Google login only. Please sign in with Google.",
+    });
+  }
+
+  // Check if a reset was recently requested (rate limiting)
+  if (player.resetPasswordExpiry && player.resetPasswordExpiry > Date.now()) {
+    const timeRemaining = Math.ceil((player.resetPasswordExpiry - Date.now()) / 1000 / 60);
+    if (timeRemaining > 55) { // If less than 5 minutes have passed since last request
+      return res.status(429).json({
+        success: false,
+        message: `Please wait ${timeRemaining - 55} more minute(s) before requesting another reset link.`,
+      });
+    }
+  }
+
+  // Generate secure reset token
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+  // Save hashed token and expiry to database
+  player.resetPasswordToken = hashedToken;
+  player.resetPasswordExpiry = Date.now() + AUTH_CONSTANTS.PASSWORD_RESET_TOKEN_EXPIRY;
+  await player.save({ validateBeforeSave: false });
+
+  // Create reset URL
+  const resetUrl = `${process.env.CLIENT_URL || 'http://localhost:5173'}/reset-password/${resetToken}`;
+
+  try {
+    // Send password reset email
+    await sendPasswordResetEmail(email, player.username, resetUrl);
+
+    res.status(200).json({
+      success: true,
+      message: "Password reset link has been sent to your email.",
+    });
+  } catch (emailError) {
+    // If email fails, clear the reset token
+    player.resetPasswordToken = null;
+    player.resetPasswordExpiry = null;
+    await player.save({ validateBeforeSave: false });
+
+    console.error('Failed to send password reset email:', emailError);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send password reset email. Please try again later.",
+    });
+  }
+}));
+
+// ==========================
+// RESET PASSWORD - Reset Password with Token
+// ==========================
+router.post('/reset-password', authLimiter, validateResetPassword, asyncHandler(async (req, res) => {
+  const { token, newPassword } = req.body;
+
+  // Hash the incoming token to compare with database
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+  // Find player with valid token and non-expired expiry
+  const player = await Player.findOne({
+    resetPasswordToken: hashedToken,
+    resetPasswordExpiry: { $gt: Date.now() }, // Token must not be expired
+  }).select('+password');
+
+  if (!player) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid or expired password reset token. Please request a new one.",
+    });
+  }
+
+  // Hash new password
+  const hashedPassword = await bcrypt.hash(newPassword, AUTH_CONSTANTS.BCRYPT_SALT_ROUNDS);
+
+  // Update password and clear reset token fields
+  player.password = hashedPassword;
+  player.resetPasswordToken = null;
+  player.resetPasswordExpiry = null;
+
+  // Add 'local' to authProvider if not already present (for Google users linking account)
+  if (!player.authProvider.includes('local')) {
+    player.authProvider.push('local');
+  }
+
+  await player.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Password has been reset successfully! You can now log in with your new password.",
+  });
+}));
+
+// ==========================
+// ORGANIZATION FORGOT PASSWORD - Request Password Reset
+// ==========================
+router.post('/organization/forgot-password', authLimiter, validateForgotPassword, asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  // Find organization by email
+  const org = await Organization.findOne({ email }).select('+password +resetPasswordToken +resetPasswordExpiry');
+
+  // Always return success message to prevent email enumeration attacks
+  if (!org) {
+    return res.status(200).json({
+      success: true,
+      message: "If an account with that email exists, a password reset link has been sent.",
+    });
+  }
+
+  // Check if a reset was recently requested (rate limiting)
+  if (org.resetPasswordExpiry && org.resetPasswordExpiry > Date.now()) {
+    const timeRemaining = Math.ceil((org.resetPasswordExpiry - Date.now()) / 1000 / 60);
+    if (timeRemaining > 55) { // If less than 5 minutes have passed since last request
+      return res.status(429).json({
+        success: false,
+        message: `Please wait ${timeRemaining - 55} more minute(s) before requesting another reset link.`,
+      });
+    }
+  }
+
+  // Generate secure reset token
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+  // Save hashed token and expiry to database
+  org.resetPasswordToken = hashedToken;
+  org.resetPasswordExpiry = Date.now() + AUTH_CONSTANTS.PASSWORD_RESET_TOKEN_EXPIRY;
+  await org.save({ validateBeforeSave: false });
+
+  // Create reset URL for organizations
+  const resetUrl = `${process.env.CLIENT_URL || 'http://localhost:5173'}/organization/reset-password/${resetToken}`;
+
+  try {
+    // Send password reset email
+    await sendPasswordResetEmail(email, org.orgName, resetUrl);
+
+    res.status(200).json({
+      success: true,
+      message: "Password reset link has been sent to your email.",
+    });
+  } catch (emailError) {
+    // If email fails, clear the reset token
+    org.resetPasswordToken = null;
+    org.resetPasswordExpiry = null;
+    await org.save({ validateBeforeSave: false });
+
+    console.error('Failed to send password reset email:', emailError);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send password reset email. Please try again later.",
+    });
+  }
+}));
+
+// ==========================
+// ORGANIZATION RESET PASSWORD - Reset Password with Token
+// ==========================
+router.post('/organization/reset-password', authLimiter, validateResetPassword, asyncHandler(async (req, res) => {
+  const { token, newPassword } = req.body;
+
+  // Hash the incoming token to compare with database
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+  // Find organization with valid token and non-expired expiry
+  const org = await Organization.findOne({
+    resetPasswordToken: hashedToken,
+    resetPasswordExpiry: { $gt: Date.now() }, // Token must not be expired
+  }).select('+password');
+
+  if (!org) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid or expired password reset token. Please request a new one.",
+    });
+  }
+
+  // Hash new password
+  const hashedPassword = await bcrypt.hash(newPassword, AUTH_CONSTANTS.BCRYPT_SALT_ROUNDS);
+
+  // Update password and clear reset token fields
+  org.password = hashedPassword;
+  org.resetPasswordToken = null;
+  org.resetPasswordExpiry = null;
+
+  await org.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Password has been reset successfully! You can now log in with your new password.",
+  });
+}));
 
 // ==========================
 // SET CUSTOM USERNAME (One-time for Google OAuth users)

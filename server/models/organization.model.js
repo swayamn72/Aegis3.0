@@ -140,6 +140,15 @@ const organizationSchema = new mongoose.Schema(
       type: Date,
       select: false,
     },
+    // Password reset
+    resetPasswordToken: {
+      type: String,
+      default: null,
+    },
+    resetPasswordExpiry: {
+      type: Date,
+      default: null,
+    },
     loginAttempts: {
       type: Number,
       default: 0,

@@ -26,6 +26,7 @@ const AegisSignup = () => {
     orgInstagram: ''
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [passwordStrength, setPasswordStrength] = useState(0);
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
 
@@ -59,12 +60,29 @@ const AegisSignup = () => {
     </div>
   );
 
+
+  // Password strength logic (matches reset password page)
+  const calculatePasswordStrength = (password) => {
+    let strength = 0;
+    if (password.length >= 8) strength += 25;
+    if (password.length >= 12) strength += 10;
+    if (/[a-z]/.test(password)) strength += 15;
+    if (/[A-Z]/.test(password)) strength += 15;
+    if (/\d/.test(password)) strength += 15;
+    if (/[^A-Za-z0-9]/.test(password)) strength += 20;
+    if (strength > 100) strength = 100;
+    return strength;
+  };
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
+    if (name === 'password') {
+      setPasswordStrength(calculatePasswordStrength(value));
+    }
 
     if (errors[name]) {
       setErrors(prev => ({
@@ -104,6 +122,8 @@ const AegisSignup = () => {
       newErrors.password = 'Password is required';
     } else if (formData.password.length < 8) {
       newErrors.password = 'Password must be at least 8 characters';
+    } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(formData.password)) {
+      newErrors.password = 'Password must contain at least one uppercase letter, one lowercase letter, and one number';
     }
 
     // Role-specific validation
@@ -188,7 +208,31 @@ const AegisSignup = () => {
 
     } catch (error) {
       console.error("Signup error:", error.response?.data || error.message);
-      const errorMessage = error.response?.data?.message || "Registration failed. Please try again.";
+      const data = error.response?.data;
+      let errorMessage =
+        (data && (data.message || data.error || data.errorMessage)) ||
+        error.message ||
+        "Registration failed. Please try again.";
+      // Special handling for HTTP 429 (Too Many Requests)
+      if (error.response?.status === 429) {
+        errorMessage = data?.message || "Too many signup attempts. Please try again later.";
+        toast.error(errorMessage);
+        setErrors({ general: errorMessage });
+        return;
+      }
+      // Handle backend validation errors array
+      if (data && Array.isArray(data.errors) && data.errors.length > 0) {
+        const fieldErrors = {};
+        data.errors.forEach(err => {
+          if (err.field && err.message) {
+            fieldErrors[err.field] = err.message;
+          }
+        });
+        setErrors(fieldErrors);
+        // Show the first error as a toast for visibility
+        toast.error(data.errors[0].message);
+        return;
+      }
       toast.error(errorMessage);
       setErrors({ general: errorMessage });
     } finally {
@@ -274,6 +318,12 @@ const AegisSignup = () => {
 
         <div className="flex-1 flex items-center justify-center px-4 py-8 sm:px-8 lg:px-16 xl:px-24 lg:py-0">
           <div className="w-full max-w-md space-y-6 lg:space-y-8">
+            {errors.general && (
+              <div className="flex items-center mb-4 text-red-400 text-base bg-red-500/10 px-4 py-3 rounded-lg border border-red-500/30">
+                <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
+                {errors.general}
+              </div>
+            )}
 
             <div className="text-center space-y-2 lg:space-y-3">
               <h2 className="text-2xl sm:text-3xl font-bold text-white">Create Account</h2>
@@ -546,6 +596,22 @@ const AegisSignup = () => {
                     : 'border-gray-600/50 focus:ring-orange-500/20 focus:border-orange-400 hover:border-gray-500/70'
                     }`}
                 />
+                {formData.password && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-400">Password Strength:</span>
+                      <span className={`font-semibold ${passwordStrength >= 75 ? 'text-green-400' : passwordStrength >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                        {passwordStrength <= 25 ? 'Weak' : passwordStrength <= 50 ? 'Fair' : passwordStrength <= 75 ? 'Good' : 'Strong'}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${passwordStrength <= 25 ? 'bg-red-500' : passwordStrength <= 50 ? 'bg-orange-500' : passwordStrength <= 75 ? 'bg-yellow-500' : 'bg-green-500'} transition-all duration-300`}
+                        style={{ width: `${passwordStrength}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
