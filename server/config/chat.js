@@ -106,26 +106,89 @@ const initChat = (server) => {
           message: populatedMessage
         });
 
-        // Push Notification (FCM) for mobile recipient
-        // Find recipient (other than sender)
-        const recipientId = chat.participants.find(p => p.toString() !== senderId);
-        if (recipientId) {
-          const Player = (await import('../models/player.model.js')).default;
-          const recipient = await Player.findById(recipientId).select('fcmToken username');
-          if (recipient && recipient.fcmToken) {
+        // Push Notification (FCM) for all mobile recipients except sender
+        const Player = (await import('../models/player.model.js')).default;
+        const recipientIds = chat.participants.filter(p => p.toString() !== senderId);
+        if (recipientIds.length > 0) {
+          const recipients = await Player.find({ _id: { $in: recipientIds } }).select('fcmToken username');
+          const tokens = recipients.map(r => r.fcmToken).filter(Boolean);
+          if (tokens.length > 0) {
+            // Log FCM tokens being notified
+            console.log('🔔 Sending FCM push to tokens:', tokens);
             // Get sender's name
             const sender = await Player.findById(senderId).select('username');
             const senderName = sender ? sender.username : 'Someone';
             try {
-              await admin.messaging().send({
+              // Use sendEachForMulticast for better compatibility with firebase-admin v13+
+              const response = await admin.messaging().sendEachForMulticast({
                 notification: {
                   title: 'New Chat Message',
                   body: `${senderName}: ${message}`
                 },
-                token: recipient.fcmToken
+                data: {
+                  type: 'chat_message',
+                  chatId: chatId.toString(),
+                  senderId: senderId.toString(),
+                  senderName: senderName,
+                  message: message,
+                  timestamp: new Date().toISOString()
+                },
+                android: {
+                  priority: 'high',
+                  notification: {
+                    channelId: 'high_importance_channel',
+                    priority: 'high',
+                    sound: 'default',
+                    defaultVibrateTimings: true
+                  }
+                },
+                apns: {
+                  payload: {
+                    aps: {
+                      contentAvailable: true,
+                      sound: 'default'
+                    }
+                  },
+                  headers: {
+                    'apns-priority': '10'
+                  }
+                },
+                tokens
               });
+
+              // DETAILED LOGGING - THIS IS IMPORTANT!
+              console.log('✅ FCM send completed');
+              console.log(`📊 Success: ${response.successCount}/${tokens.length}`);
+              console.log(`❌ Failures: ${response.failureCount}`);
+
+              // Log individual failures
+              if (response.failureCount > 0) {
+                response.responses.forEach((resp, idx) => {
+                  if (!resp.success) {
+                    console.error(`❌ Token ${idx} (${tokens[idx].substring(0, 20)}...) failed:`);
+                    console.error(`   Error code: ${resp.error?.code}`);
+                    console.error(`   Error message: ${resp.error?.message}`);
+
+                    // Handle specific error cases
+                    if (resp.error?.code === 'messaging/invalid-registration-token' ||
+                      resp.error?.code === 'messaging/registration-token-not-registered') {
+                      console.log(`   ⚠️ Token is invalid/expired. Should remove from database.`);
+                    }
+                  } else {
+                    console.log(`✅ Token ${idx} sent successfully`);
+                  }
+                });
+              } else {
+                console.log('✅ All notifications sent successfully!');
+              }
+
             } catch (err) {
-              console.error('FCM send error:', err);
+              console.error('❌ FCM sendEachForMulticast error:', err);
+              console.error('Error code:', err.code);
+              console.error('Error message:', err.message);
+              if (err.stack) {
+                console.error('Stack trace:', err.stack);
+              }
             }
           }
         }
