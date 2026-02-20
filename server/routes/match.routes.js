@@ -6,6 +6,7 @@ import Tournament from '../models/tournament.model.js';
 import Team from '../models/team.model.js';
 import Player from '../models/player.model.js';
 import Registration from '../models/registration.model.js';
+import ChatMessage from '../models/chat.model.js';
 import mongoose from 'mongoose';
 
 const router = express.Router();
@@ -281,34 +282,40 @@ router.post('/schedule', verifyOrgToken, verifyTournamentOwnership, async (req, 
     await scheduledMatch.populate('tournament', 'tournamentName');
 
     // Send notification to all participating teams' players
-    const teams = await Team.find({ _id: { $in: uniqueTeamIds } }).populate('players', 'username');
+    const teams = await Team.find({ _id: { $in: uniqueTeamIds } }).populate('players', '_id username');
     const allPlayers = teams.flatMap(team => team.players);
 
-    for (const player of allPlayers) {
-      const ChatMessage = (await import('../models/chat.model.js')).default;
-      const notificationMessage = new ChatMessage({
+    if (allPlayers.length > 0) {
+      const messageContent = `Match scheduled: ${matchData.matchName} in ${tournament.tournamentName} - ${matchData.tournamentPhase} at ${new Date(matchData.scheduledStartTime).toLocaleString()}`;
+
+      // Build all message documents at once — no loop saves
+      const messageDocs = allPlayers.map(player => ({
         senderId: 'system',
-        receiverId: player._id.toString(),
-        message: `Match scheduled: ${matchData.matchName} in ${tournament.tournamentName} - ${matchData.tournamentPhase} at ${new Date(matchData.scheduledStartTime).toLocaleString()}`,
+        receiverId: player._id,
+        message: messageContent,
         messageType: 'match_scheduled',
         tournamentId: matchData.tournament,
         matchId: scheduledMatch._id,
         timestamp: new Date()
-      });
+      }));
 
-      await notificationMessage.save();
+      // Single batch insert instead of N sequential saves
+      const savedMessages = await ChatMessage.insertMany(messageDocs, { ordered: false });
 
-      // Emit to player via socket
-      if (global.io) {
-        global.io.to(player._id.toString()).emit('receiveMessage', {
-          _id: notificationMessage._id,
-          senderId: 'system',
-          receiverId: player._id.toString(),
-          message: notificationMessage.message,
-          messageType: 'match_scheduled',
-          tournamentId: matchData.tournament,
-          matchId: scheduledMatch._id,
-          timestamp: new Date()
+      // Emit socket notifications in one synchronous pass
+      const io = req.app.get('io');
+      if (io) {
+        savedMessages.forEach((msg, index) => {
+          io.to(allPlayers[index]._id.toString()).emit('receiveMessage', {
+            _id: msg._id,
+            senderId: 'system',
+            receiverId: allPlayers[index]._id.toString(),
+            message: msg.message,
+            messageType: 'match_scheduled',
+            tournamentId: matchData.tournament,
+            matchId: scheduledMatch._id,
+            timestamp: msg.timestamp
+          });
         });
       }
     }
@@ -448,7 +455,8 @@ router.post('/:matchId/share-credentials', verifyOrgToken, verifyMatchOwnership,
     const savedMessages = await ChatMessage.insertMany(messages, { ordered: false });
 
     // Emit socket notifications in batch
-    if (global.io) {
+    const io = req.app.get('io');
+    if (io) {
       const notifications = savedMessages.map((msg, index) => ({
         player: eligiblePlayers[index],
         message: {
@@ -466,11 +474,11 @@ router.post('/:matchId/share-credentials', verifyOrgToken, verifyMatchOwnership,
 
       // Emit all notifications
       notifications.forEach(({ player, message }) => {
-        global.io.to(player._id.toString()).emit('receiveMessage', message);
+        io.to(player._id.toString()).emit('receiveMessage', message);
       });
 
       // Also emit a broadcast to the match room if you have rooms
-      global.io.to(`match_${matchId}`).emit('credentialsShared', {
+      io.to(`match_${matchId}`).emit('credentialsShared', {
         matchId: match._id,
         roomId: roomId.trim(),
         sharedAt: new Date()

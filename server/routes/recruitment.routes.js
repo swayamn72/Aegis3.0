@@ -195,8 +195,9 @@ router.post('/approach-player/:playerId', auth, async (req, res) => {
     }
 
     // Emit socket message (if connected)
-    if (global.io) {
-      global.io.to(String(targetPlayer._id)).emit('receiveMessage', {
+    const io = req.app.get('io');
+    if (io) {
+      io.to(String(targetPlayer._id)).emit('receiveMessage', {
         _id: `sys_${Date.now()}`,
         senderId: 'system',
         receiverId: String(targetPlayer._id),

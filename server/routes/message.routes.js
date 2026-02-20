@@ -297,8 +297,9 @@ router.post("/send-notification", auth, async (req, res) => {
     await notificationMessage.save();
 
     // Emit to receiver
-    if (global.io) {
-      global.io.to(receiverId).emit('receiveMessage', {
+    const io = req.app.get('io');
+    if (io) {
+      io.to(receiverId).emit('receiveMessage', {
         _id: notificationMessage._id,
         senderId: actualSenderId,
         receiverId: receiverId,

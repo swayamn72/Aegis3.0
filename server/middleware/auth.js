@@ -1,17 +1,9 @@
 import jwt from "jsonwebtoken";
+import extractToken from '../utils/extractToken.js';
 
 // Middleware to protect routes
 export default function auth(req, res, next) {
-  let token = req.cookies.token; // read cookie
-
-  // If no cookie token, check Authorization header
-  if (!token) {
-    const authHeader = req.header("Authorization");
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      token = authHeader.replace("Bearer ", "");
-    }
-  }
-
+  const token = extractToken(req);
   if (!token) {
     return res.status(401).json({ message: "No token provided" });
   }

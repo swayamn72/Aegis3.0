@@ -122,8 +122,9 @@ router.post('/:chatId/end-tryout', auth, async (req, res) => {
 
     await chat.save();
 
-    if (global.io) {
-      global.io.to(`tryout_${chatId}`).emit('tryoutEnded', {
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`tryout_${chatId}`).emit('tryoutEnded', {
         chatId,
         tryoutStatus: chat.tryoutStatus,
         endedBy: isTeamCaptain ? 'team' : 'player',
@@ -209,8 +210,9 @@ router.post('/:chatId/send-offer', auth, async (req, res) => {
 
     await chat.save();
 
-    if (global.io) {
-      global.io.to(`tryout_${chatId}`).emit('teamOfferSent', {
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`tryout_${chatId}`).emit('teamOfferSent', {
         chatId,
         offer: chat.teamOffer,
         message: systemMessage
@@ -327,8 +329,9 @@ router.post('/:chatId/accept-offer', auth, async (req, res) => {
       await application.save();
     }
 
-    if (global.io) {
-      global.io.to(`tryout_${chatId}`).emit('teamOfferAccepted', {
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`tryout_${chatId}`).emit('teamOfferAccepted', {
         chatId,
         message: systemMessage
       });
@@ -406,8 +409,9 @@ router.post('/:chatId/reject-offer', auth, async (req, res) => {
 
     await chat.save();
 
-    if (global.io) {
-      global.io.to(`tryout_${chatId}`).emit('teamOfferRejected', {
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`tryout_${chatId}`).emit('teamOfferRejected', {
         chatId,
         reason: reason || null,
         message: systemMessage

@@ -1,45 +1,19 @@
 import express from 'express';
-import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import Tournament from '../models/tournament.model.js';
 import Team from '../models/team.model.js';
 import Player from '../models/player.model.js';
-import Organization from '../models/organization.model.js';
 import Match from '../models/match.model.js';
 import Registration from '../models/registration.model.js';
 import PhaseStanding from '../models/phaseStanding.model.js';
 import cloudinary from '../config/cloudinary.js';
 import upload from '../config/multer.js';
+import { verifyApprovedOrgToken } from '../middleware/orgAuth.js';
 
 const router = express.Router();
 
-const verifyOrgAuth = async (req, res, next) => {
-  try {
-    const token = req.cookies.token;
-    if (!token) {
-      return res.status(401).json({ message: 'Not authenticated' });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    if (decoded.role !== 'organization') {
-      return res.status(403).json({ message: 'Not authorized' });
-    }
-
-    const organization = await Organization.findById(decoded.id);
-    if (!organization || organization.approvalStatus !== 'approved') {
-      return res.status(403).json({ message: 'Organization not approved' });
-    }
-
-    req.organization = organization;
-    next();
-  } catch (error) {
-    console.error('Auth error:', error);
-    res.status(401).json({ message: 'Invalid token' });
-  }
-};
-
 // Get tournaments for organization dashboard (optimized for OrgDashboard component)
-router.get('/my-tournaments', verifyOrgAuth, async (req, res) => {
+router.get('/my-tournaments', verifyApprovedOrgToken, async (req, res) => {
   try {
     const { status, page = 1, limit = 20 } = req.query;
 
@@ -136,7 +110,7 @@ router.get('/my-tournaments', verifyOrgAuth, async (req, res) => {
 });
 
 // **ADVANCE PHASE ROUTE** - Calculates standings from completed matches
-router.post('/:tournamentId/advance-phase', verifyOrgAuth, async (req, res) => {
+router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, res) => {
   try {
     const { tournamentId } = req.params;
     const { phaseName } = req.body;
@@ -184,23 +158,25 @@ router.post('/:tournamentId/advance-phase', verifyOrgAuth, async (req, res) => {
     // Get teams in this phase
     const phaseTeamIds = currentPhase.teams?.map(t => t._id?.toString() || t.toString()) || [];
 
-    // Initialize standings for all teams in phase
-    for (const teamId of phaseTeamIds) {
-      const team = await Team.findById(teamId).select('teamName teamTag logo').lean();
-      if (team) {
-        teamStandings[teamId] = {
-          team: team,
-          teamId: teamId,
-          points: 0,
-          positionPoints: 0,
-          killPoints: 0,
-          kills: 0,
-          chickenDinners: 0,
-          matchesPlayed: 0,
-          placements: [],
-          group: null
-        };
-      }
+    // Initialize standings for all teams in phase — single batch query instead of N queries
+    const phaseTeams = await Team.find({ _id: { $in: phaseTeamIds } })
+      .select('teamName teamTag logo')
+      .lean();
+
+    for (const team of phaseTeams) {
+      const teamId = team._id.toString();
+      teamStandings[teamId] = {
+        team: team,
+        teamId: teamId,
+        points: 0,
+        positionPoints: 0,
+        killPoints: 0,
+        kills: 0,
+        chickenDinners: 0,
+        matchesPlayed: 0,
+        placements: [],
+        group: null
+      };
     }
 
     // Process matches and calculate points
@@ -380,25 +356,24 @@ router.post('/:tournamentId/advance-phase', verifyOrgAuth, async (req, res) => {
             }
           }
 
-          // Update each team individually
-          const updatePromises = teamsAdvanced.map(async (teamId) => {
-            const nextPhaseName = teamToNextPhaseMap[teamId];
-            return Registration.findOneAndUpdate(
-              {
+          // Batch-update all advanced teams in a single bulkWrite instead of N queries
+          const bulkOps = teamsAdvanced.map((teamId) => ({
+            updateOne: {
+              filter: {
                 tournament: tournamentId,
                 team: teamId,
                 status: { $in: ['approved', 'checked_in'] }
               },
-              {
+              update: {
                 $set: {
-                  phase: nextPhaseName,
-                  currentStage: nextPhaseName
+                  phase: teamToNextPhaseMap[teamId],
+                  currentStage: teamToNextPhaseMap[teamId]
                 }
               }
-            );
-          });
+            }
+          }));
 
-          await Promise.all(updatePromises);
+          await Registration.bulkWrite(bulkOps, { ordered: false });
           console.log(`✅ Updated ${teamsAdvanced.length} registrations`);
         }
 
@@ -479,22 +454,24 @@ router.post('/:tournamentId/advance-phase', verifyOrgAuth, async (req, res) => {
         }
       );
 
-      // Set final positions in registrations
-      for (let i = 0; i < overallStandings.length; i++) {
-        await Registration.findOneAndUpdate(
-          {
+      // Set final positions in registrations — single bulkWrite instead of N sequential queries
+      const finalPosBulkOps = overallStandings.map((standing, i) => ({
+        updateOne: {
+          filter: {
             tournament: tournamentId,
-            team: overallStandings[i].teamId
+            team: standing.teamId
           },
-          {
+          update: {
             $set: {
               finalPosition: i + 1,
-              totalTournamentPoints: overallStandings[i].points,
-              totalTournamentKills: overallStandings[i].kills
+              totalTournamentPoints: standing.points,
+              totalTournamentKills: standing.kills
             }
           }
-        );
-      }
+        }
+      }));
+
+      await Registration.bulkWrite(finalPosBulkOps, { ordered: false });
 
       console.log('✅ Updated final standings and registrations');
     }
@@ -618,7 +595,7 @@ function getPlacementPoints(position) {
 // GET SPECIFIC TOURNAMENT (OPTIMIZED FOR NEW SCHEMA)
 // ============================================================================
 
-router.get('/:tournamentId', verifyOrgAuth, async (req, res) => {
+router.get('/:tournamentId', verifyApprovedOrgToken, async (req, res) => {
   try {
     const { tournamentId } = req.params;
 
@@ -765,7 +742,7 @@ router.get('/:tournamentId', verifyOrgAuth, async (req, res) => {
 // UPDATE TOURNAMENT (OPTIMIZED FOR NEW SCHEMA)
 // ============================================================================
 
-router.put('/:tournamentId', verifyOrgAuth, upload.fields([
+router.put('/:tournamentId', verifyApprovedOrgToken, upload.fields([
   { name: 'logo', maxCount: 1 },
   { name: 'banner', maxCount: 1 },
   { name: 'coverImage', maxCount: 1 }
@@ -888,7 +865,7 @@ router.put('/:tournamentId', verifyOrgAuth, upload.fields([
 // ADD TEAM TO PHASE (UPDATED FOR NEW SCHEMA)
 // ============================================================================
 
-router.post('/:tournamentId/phases/:phase/teams', verifyOrgAuth, async (req, res) => {
+router.post('/:tournamentId/phases/:phase/teams', verifyApprovedOrgToken, async (req, res) => {
   try {
     const { tournamentId, phase } = req.params;
     const { teamId, group } = req.body; // Added group parameter
@@ -974,7 +951,7 @@ router.post('/:tournamentId/phases/:phase/teams', verifyOrgAuth, async (req, res
 // REMOVE TEAM FROM PHASE (UPDATED FOR NEW SCHEMA)
 // ============================================================================
 
-router.delete('/:tournamentId/phases/:phase/teams/:teamId', verifyOrgAuth, async (req, res) => {
+router.delete('/:tournamentId/phases/:phase/teams/:teamId', verifyApprovedOrgToken, async (req, res) => {
   try {
     const { tournamentId, phase, teamId } = req.params;
 

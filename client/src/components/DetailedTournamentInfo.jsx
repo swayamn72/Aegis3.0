@@ -7,6 +7,7 @@ import {
   ChevronRight, ExternalLink, Copy, Play, Pause, Volume2,
   Medal, Crown, Shield, Zap, Activity, BarChart3, Globe,
   CheckCircle, XCircle, AlertCircle, ArrowRight, Download,
+  
   Twitch, Youtube, Twitter, Instagram, Hash, X, ChevronDown,
   ChevronUp, UserPlus, Send
 } from 'lucide-react';

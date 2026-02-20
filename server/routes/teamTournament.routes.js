@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import extractToken from '../utils/extractToken.js';
 import Tournament from '../models/tournament.model.js';
 import Registration from '../models/registration.model.js';
 import PhaseStanding from '../models/phaseStanding.model.js';
@@ -12,12 +13,12 @@ const router = express.Router();
 // Middleware to verify team captain
 const verifyTeamCaptain = async (req, res, next) => {
   try {
-    const token = req.cookies.token;
+    const token = extractToken(req);
     if (!token) {
       return res.status(401).json({ message: 'Not authenticated' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const player = await Player.findById(decoded.id).populate('team');
     if (!player || !player.team) {

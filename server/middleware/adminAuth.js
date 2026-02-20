@@ -1,8 +1,9 @@
 import jwt from "jsonwebtoken";
+import extractToken from '../utils/extractToken.js';
 
-export const adminAuth = (req,res,next) => {
+export const adminAuth = (req, res, next) => {
 
-  const token = req.headers.authorization?.split(" ")[1];
+  const token = extractToken(req);
 
   if (!token) {
     return res.status(401).json({ message: "No token, not authorized" });
@@ -27,7 +28,7 @@ export const generateAdminToken = (adminId) => {
 
 // Verify admin token middleware
 export const verifyAdminToken = (req, res, next) => {
-  const token = req.cookies.token || req.headers.authorization?.split(" ")[1];
+  const token = extractToken(req);
 
   if (!token) {
     return res.status(401).json({ message: "No token, not authorized" });
