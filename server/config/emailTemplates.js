@@ -359,3 +359,74 @@ Need help? Contact us at support@aegis.com
 © ${new Date().getFullYear()} Aegis Gaming Platform. All rights reserved.
   `;
 };
+
+/**
+ * HTML Email Template for Tournament Registration
+ */
+export const tournamentRegistrationEmailTemplate = (username, teamName, tournamentName) => {
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tournament Registration Successful</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0a0a0a; font-family: 'Arial', sans-serif;">
+  <table role="presentation" style="width: 100%; border-collapse: collapse;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+        <table role="presentation" style="max-width: 600px; width: 100%; background-color: #1a1a1a; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);">
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #FF4500 0%, #FF6B35 100%); padding: 40px 30px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 32px; font-weight: bold;">🎯 Registration Accepted!</h1>
+            </td>
+          </tr>
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px 30px; color: #e0e0e0;">
+              <h2 style="margin: 0 0 20px; color: #ffffff;">Hi ${username},</h2>
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6; color: #b0b0b0;">
+                Your team <strong style="color: #FF4500;">${teamName}</strong> has been successfully registered for the tournament:
+              </p>
+              <div style="background-color: #2a2a2a; border-left: 4px solid #FF4500; border-radius: 8px; padding: 20px; margin: 30px 0;">
+                <p style="margin: 0; font-size: 20px; font-weight: bold; color: #ffffff;">
+                   🏆 ${tournamentName}
+                </p>
+              </div>
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6; color: #b0b0b0;">
+                Get ready and gather your team! Good luck in the competition!
+              </p>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #0f0f0f; padding: 30px; text-align: center;">
+              <p style="margin: 0; font-size: 12px; color: #555;">© ${new Date().getFullYear()} Aegis Gaming Platform</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `;
+};
+
+export const tournamentRegistrationEmailPlainText = (username, teamName, tournamentName) => {
+  return `
+Registration Accepted!
+
+Hi ${username},
+
+Your team ${teamName} has been successfully registered for the tournament:
+🏆 ${tournamentName}
+
+Get ready and gather your team! Good luck!
+
+© ${new Date().getFullYear()} Aegis Gaming Platform
+  `;
+};
+

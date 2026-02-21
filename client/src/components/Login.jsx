@@ -138,20 +138,29 @@ const AegisLogin = () => {
       if (response.data.token) {
         // Store authentication data
         localStorage.setItem('token', response.data.token);
-        localStorage.setItem('user', JSON.stringify(response.data.player));
-        localStorage.setItem('userRole', 'player'); // Critical: Set the user role
+        const userObj = response.data.player || response.data.organization;
+        localStorage.setItem('user', JSON.stringify(userObj));
+        localStorage.setItem('userRole', formData.role);
 
         toast.success('Google login successful!');
 
         // Navigate with full page reload
         setTimeout(() => {
-          // Check if username needs to be customized
-          if (response.data.player.usernameCustomized === false) {
-            window.location.href = '/setup-username';
-          } else if (response.data.player.primaryGame) {
-            window.location.href = '/my-profile';
+          if (formData.role === 'organization') {
+            if (userObj.profileCustomized === false) {
+              window.location.href = '/org-profile-setup';
+            } else {
+              window.location.href = '/org/pending-approval';
+            }
           } else {
-            window.location.href = '/settings';
+            // Check if username needs to be customized
+            if (userObj.usernameCustomized === false) {
+              window.location.href = '/setup-username';
+            } else if (userObj.primaryGame) {
+              window.location.href = '/my-profile';
+            } else {
+              window.location.href = '/settings';
+            }
           }
         }, 100);
       }
@@ -184,7 +193,8 @@ const AegisLogin = () => {
           `${import.meta.env.VITE_BACKEND_URL}/api/auth/google`,
           {
             credential: tokenResponse.access_token,
-            userInfo: userInfo.data
+            userInfo: userInfo.data,
+            role: formData.role
           },
           { withCredentials: true }
         );
@@ -192,20 +202,29 @@ const AegisLogin = () => {
         if (response.data.token) {
           // Store authentication data
           localStorage.setItem('token', response.data.token);
-          localStorage.setItem('user', JSON.stringify(response.data.player));
-          localStorage.setItem('userRole', 'player'); // Critical: Set the user role
+          const userObj = response.data.player || response.data.organization;
+          localStorage.setItem('user', JSON.stringify(userObj));
+          localStorage.setItem('userRole', formData.role);
 
           toast.success('Google login successful!');
 
           // Small delay to ensure storage is complete
           setTimeout(() => {
-            // Check if username needs to be customized
-            if (response.data.player.usernameCustomized === false) {
-              window.location.href = '/setup-username';
-            } else if (response.data.player.primaryGame) {
-              window.location.href = '/my-profile';
+            if (formData.role === 'organization') {
+              if (userObj.profileCustomized === false) {
+                window.location.href = '/org-profile-setup';
+              } else {
+                window.location.href = '/org/pending-approval';
+              }
             } else {
-              window.location.href = '/settings';
+              // Check if username needs to be customized
+              if (userObj.usernameCustomized === false) {
+                window.location.href = '/setup-username';
+              } else if (userObj.primaryGame) {
+                window.location.href = '/my-profile';
+              } else {
+                window.location.href = '/settings';
+              }
             }
           }, 100);
         }
@@ -409,8 +428,8 @@ const AegisLogin = () => {
                 )}
               </button>
 
-              {/* Google login only for players */}
-              {formData.role === 'player' && (
+              {/* Google login for both roles */}
+              {(formData.role === 'player' || formData.role === 'organization') && (
                 <>
                   <div className="relative">
                     <div className="absolute inset-0 flex items-center">

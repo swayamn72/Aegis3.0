@@ -55,7 +55,7 @@ router.get('/my-approaches', auth, async (req, res) => {
   }
 });
 
-const MAX_MESSAGE_LEN = 800;
+const MAX_MESSAGE_LEN = 500; // Updated to match recruitmentApproach.model.js
 const MAX_TEAM_PLAYERS = 5;
 
 router.post('/approach-player/:playerId', auth, async (req, res) => {
@@ -321,10 +321,11 @@ router.get('/lft-posts', async (req, res) => {
 });
 
 
-const MAX_DESC_LEN = 1200;
+const MAX_DESC_LEN = 1000; // Updated to match lftPost.model.js
 const MAX_ROLES = 5;
-const ALLOWED_GAMES = ['BGMI', 'Valorant', 'CODM', 'Dota2']; // extend as needed
-const ALLOWED_REGIONS = ['India', 'Asia', 'EU', 'NA']; // extend
+const ALLOWED_GAMES = ['VALO', 'CS2', 'BGMI']; // Strictly matching model enums
+const ALLOWED_REGIONS = ['India', 'Asia', 'Europe', 'North America', 'Global']; // Strictly matching model enums
+const ALLOWED_ROLES = ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger']; // Matching model enums
 
 router.post('/lft-posts', auth, async (req, res) => {
   const session = await mongoose.startSession().catch(() => null);
@@ -347,13 +348,23 @@ router.post('/lft-posts', auth, async (req, res) => {
     if (Array.isArray(roles)) {
       cleanRoles = roles
         .map(r => String(r).trim())
-        .filter(Boolean)
+        .filter(r => ALLOWED_ROLES.includes(r))
         .slice(0, MAX_ROLES);
     }
 
-    // Lightweight anti-spam: require either a description or at least one role/game
-    if (!desc && cleanRoles.length === 0 && !game) {
-      return res.status(400).json({ error: 'Provide a description, role or game' });
+    if (Array.isArray(roles) && roles.length > 0 && cleanRoles.length === 0) {
+      return res.status(400).json({ error: 'No valid roles provided' });
+    }
+
+    // Validation matching model requirements
+    if (!game) {
+      return res.status(400).json({ error: 'Preferred game is required' });
+    }
+    if (cleanRoles.length === 0) {
+      return res.status(400).json({ error: 'At least one role is required' });
+    }
+    if (!desc) {
+      return res.status(400).json({ error: 'Description is required' });
     }
 
     // Optional: check player exists (should always, but defensive)
@@ -496,7 +507,7 @@ router.post('/approach/:approachId/accept', auth, async (req, res) => {
     await approach.save();
 
     await ChatMessage.updateOne(
-      { 'metadata.approachId': approachId },
+      { 'metadata.approachId': new mongoose.Types.ObjectId(approachId) },
       { $set: { 'metadata.approachStatus': 'accepted' } }
     );
 
@@ -656,24 +667,6 @@ router.post('/lfp-posts', auth, async (req, res) => {
     // Sanitize input
     const desc = String(description).trim().slice(0, MAX_LFP_DESC_LEN);
 
-    // Validate required fields
-    if (!desc) {
-      return res.status(400).json({ error: 'Description is required' });
-    }
-
-    // Validate roles
-    let cleanRoles = [];
-    if (Array.isArray(openRoles)) {
-      cleanRoles = openRoles
-        .map(r => String(r).trim())
-        .filter(Boolean)
-        .slice(0, MAX_OPEN_ROLES);
-    }
-
-    if (cleanRoles.length === 0) {
-      return res.status(400).json({ error: 'At least one open role is required' });
-    }
-
     // Get player and team
     const player = await Player.findById(req.user.id).populate('team');
     if (!player) {
@@ -689,9 +682,40 @@ router.post('/lfp-posts', auth, async (req, res) => {
       return res.status(403).json({ error: 'Only team captains can post LFP' });
     }
 
-    // Use team's game and region if not provided
+    // Determine game and region
     const postGame = game || player.team.primaryGame;
     const postRegion = region || player.team.region;
+
+    // Validate inputs
+    if (!desc) {
+      return res.status(400).json({ error: 'Description is required' });
+    }
+    if (!postGame) {
+      return res.status(400).json({ error: 'Game is required' });
+    }
+    if (!ALLOWED_GAMES.includes(postGame)) {
+      return res.status(400).json({ error: 'Invalid game' });
+    }
+    if (postRegion && !ALLOWED_REGIONS.includes(postRegion)) {
+      return res.status(400).json({ error: 'Invalid region' });
+    }
+
+    // Validate roles
+    let cleanRoles = [];
+    if (Array.isArray(openRoles)) {
+      cleanRoles = openRoles
+        .map(r => String(r).trim())
+        .filter(r => ALLOWED_ROLES.includes(r))
+        .slice(0, MAX_OPEN_ROLES);
+    }
+
+    if (Array.isArray(openRoles) && openRoles.length > 0 && cleanRoles.length === 0) {
+      return res.status(400).json({ error: 'No valid roles provided' });
+    }
+
+    if (cleanRoles.length === 0) {
+      return res.status(400).json({ error: 'At least one open role is required' });
+    }
 
     // Check for existing active LFP post
     let createdPost;

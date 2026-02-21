@@ -39,7 +39,16 @@ export const AuthProvider = ({ children }) => {
           setLoading(false);
           return;
         }
-        const response = await fetch(endpoint, { credentials: "include" });
+        const token = localStorage.getItem('token');
+        const headers = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const response = await fetch(endpoint, {
+          credentials: "include",
+          headers: headers
+        });
         if (response.ok) {
           const data = await response.json();
           setUser(data);

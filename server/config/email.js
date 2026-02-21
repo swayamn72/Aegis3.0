@@ -101,9 +101,41 @@ export const testEmailConfig = async () => {
     }
 };
 
+/**
+ * Send tournament registration email
+ * @param {string} email - Recipient email address
+ * @param {string} username - User's username
+ * @param {string} teamName - User's team name
+ * @param {string} tournamentName - Name of the registered tournament
+ * @returns {Promise<Object>} - Email send result
+ */
+export const sendTournamentRegistrationEmail = async (email, username, teamName, tournamentName) => {
+    try {
+        const transporter = createTransporter();
+
+        const { tournamentRegistrationEmailTemplate, tournamentRegistrationEmailPlainText } = await import('./emailTemplates.js');
+
+        const mailOptions = {
+            from: `"${process.env.APP_NAME || 'Aegis'}" <${process.env.EMAIL_USER}>`,
+            to: email,
+            subject: `Registration Accepted - ${tournamentName}`,
+            html: tournamentRegistrationEmailTemplate(username, teamName, tournamentName),
+            text: tournamentRegistrationEmailPlainText(username, teamName, tournamentName),
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('✅ Tournament registration email sent:', info.messageId);
+        return { success: true, messageId: info.messageId };
+    } catch (error) {
+        console.error('❌ Error sending tournament registration email:', error);
+        throw new Error('Failed to send tournament registration email.');
+    }
+};
+
 export default {
     sendVerificationEmail,
     sendPasswordResetEmail,
+    sendTournamentRegistrationEmail,
     generateVerificationCode,
     testEmailConfig,
 };

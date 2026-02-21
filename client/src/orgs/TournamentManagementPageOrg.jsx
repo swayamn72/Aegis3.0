@@ -64,11 +64,11 @@ const TournamentManagementPageOrg = () => {
 
     const handleOrgAddTeamToPhase = async (team, phase) => {
         try {
-            const { data } = await axiosInstance.post(
+            await axiosInstance.post(
                 `/api/org-tournaments/${id}/phases/${phase}/teams`,
                 { teamId: team._id }
             );
-            setTournament(data.tournament);
+            await fetchTournament(); // re-sync phase teamCounts from Registration
             toast.success(`Team added to ${phase}`);
         } catch (error) {
             console.error('Error adding team:', error);
@@ -78,10 +78,10 @@ const TournamentManagementPageOrg = () => {
 
     const handleOrgRemoveTeamFromPhase = async (team, phase) => {
         try {
-            const { data } = await axiosInstance.delete(
+            await axiosInstance.delete(
                 `/api/org-tournaments/${id}/phases/${phase}/teams/${team._id}`
             );
-            setTournament(data.tournament);
+            await fetchTournament(); // re-sync phase teamCounts from Registration
             toast.success(`Team removed from ${phase}`);
         } catch (error) {
             console.error('Error removing team:', error);
@@ -243,7 +243,7 @@ const TournamentManagementPageOrg = () => {
                                 <div>
                                     <h3 className="text-white font-semibold">{currentPhase.name}</h3>
                                     <p className="text-gray-400 text-sm">
-                                        {currentPhase.teams?.length || 0} teams • {currentPhase.matches?.length || 0} matches
+                                        {currentPhase.teamCount ?? 0} teams • {currentPhase.matches?.length || 0} matches
                                     </p>
                                 </div>
                             </div>
@@ -391,7 +391,7 @@ const TournamentManagementPageOrg = () => {
                                             <div className="grid grid-cols-3 gap-4">
                                                 <div>
                                                     <p className="text-gray-400 text-sm">Teams</p>
-                                                    <p className="text-white font-medium">{phase.teams?.length || 0}</p>
+                                                    <p className="text-white font-medium">{phase.teamCount ?? 0}</p>
                                                 </div>
                                                 <div>
                                                     <p className="text-gray-400 text-sm">Matches</p>

@@ -715,7 +715,7 @@ const RecruitmentPage = () => {
                                     />
                                 </div>
                                 <FilterDropdown options={['VALO', 'CS2', 'BGMI']} selected={playerFilters.game} onSelect={(v) => handlePlayerFilterChange('game', v)} placeholder="All Games" icon={Gamepad2} />
-                                <FilterDropdown options={['India', 'Asia', 'Europe', 'North America']} selected={playerFilters.region} onSelect={(v) => handlePlayerFilterChange('region', v)} placeholder="All Regions" icon={MapPin} />
+                                <FilterDropdown options={['India', 'Asia', 'Europe', 'North America', 'Global']} selected={playerFilters.region} onSelect={(v) => handlePlayerFilterChange('region', v)} placeholder="All Regions" icon={MapPin} />
                                 <FilterDropdown options={['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger']} selected={playerFilters.role} onSelect={(v) => handlePlayerFilterChange('role', v)} placeholder="All Roles" icon={User} />
                             </div>
                         </div>

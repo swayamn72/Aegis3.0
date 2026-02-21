@@ -2,11 +2,14 @@ import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from "../context/AuthContext";
 import { useLocation, useNavigate } from 'react-router-dom';
+import botLogo from '../assets/bot_logo.png';
+import groupChatIcon from '../assets/group_chat.png';
 import {
   Send, Search, MoreVertical, Settings, Users, Hash, Activity, Crown, Shield, Gamepad2, Bell, Check, X, UserPlus,
-  AlertCircle, Ban, CheckCircle, XCircle, ArrowLeft
+  AlertCircle, Ban, CheckCircle, XCircle, ArrowLeft, LogOut
 } from 'lucide-react';
 import ChatMessage from '../components/ChatMessage';
+import ChatAvatar from '../components/ChatAvatar';
 import { useOptimizedChat } from '../hooks/useOptimizedChat';
 import { useChatMessages } from '../hooks/useChatMessages';
 import { useChatData } from '../hooks/useChatData';
@@ -291,10 +294,11 @@ export default function ChatPage() {
             teamApplications.map(app => (
               <div key={app._id} className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-3 md:p-4">
                 <div className="flex items-start gap-3 md:gap-4">
-                  <img
-                    src={app.player.profilePicture || `https://api.dicebear.com/7.x/avatars/svg?seed=${app.player.username || 'unknown'}`}
+                  <ChatAvatar
+                    src={app.player.profilePicture}
+                    fallbackSeed={app.player.username || 'unknown'}
                     alt={app.player.username || 'Unknown'}
-                    className="w-12 h-12 md:w-16 md:h-16 rounded-xl object-cover flex-shrink-0"
+                    className="w-12 h-12 md:w-16 md:h-16 rounded-xl flex-shrink-0"
                   />
 
                   <div className="flex-1 min-w-0">
@@ -431,7 +435,7 @@ export default function ChatPage() {
                   <div className="flex items-center gap-3">
                     <div className="relative">
                       <img
-                        src={chat.team.logo}
+                        src={chat.team?.logo || groupChatIcon}
                         alt={chat.team.teamName}
                         className="w-10 h-10 md:w-10 md:h-10 rounded-lg object-cover"
                       />
@@ -474,10 +478,11 @@ export default function ChatPage() {
               >
                 <div className="flex items-center gap-3">
                   <div className="relative">
-                    <img
-                      src={conn.profilePicture || `https://api.dicebear.com/7.x/avatars/svg?seed=${conn.username}`}
+                    <ChatAvatar
+                      src={conn._id === 'system' ? botLogo : conn.profilePicture}
+                      fallbackSeed={conn.username}
                       alt={conn.username}
-                      className="w-10 h-10 md:w-12 md:h-12 rounded-xl object-cover border-2 border-zinc-700 group-hover:border-orange-400/50 transition-colors"
+                      className="w-10 h-10 md:w-12 md:h-12 rounded-xl border-2 border-zinc-700 group-hover:border-orange-400/50 transition-colors"
                     />
                     {conn._id !== 'system' && (
                       <div className={`absolute -bottom-1 -right-1 w-3 h-3 md:w-4 md:h-4 ${getStatusColor(getUserStatus(conn._id))} rounded-full border-2 border-zinc-900`} />
@@ -527,14 +532,15 @@ export default function ChatPage() {
                   </button>
 
                   <div className="relative">
-                    <img
+                    <ChatAvatar
                       src={
                         chatType === 'tryout'
-                          ? selectedChat.team?.logo
-                          : (selectedChat.profilePicture || `https://api.dicebear.com/7.x/avatars/svg?seed=${selectedChat.username}`)
+                          ? (selectedChat.team?.logo || groupChatIcon)
+                          : selectedChat._id === 'system' ? botLogo : selectedChat.profilePicture
                       }
+                      fallbackSeed={chatType === 'tryout' ? selectedChat.team?.teamName : selectedChat.username}
                       alt={chatType === 'tryout' ? selectedChat.team?.teamName : selectedChat.username}
-                      className="w-8 h-8 md:w-10 md:h-10 rounded-lg object-cover border border-zinc-700"
+                      className="w-8 h-8 md:w-10 md:h-10 rounded-lg border border-zinc-700"
                     />
                     {chatType === 'direct' && (
                       <div className={`absolute -bottom-1 -right-1 w-2.5 h-2.5 md:w-3 md:h-3 ${getStatusColor(getUserStatus(selectedChat._id))} rounded-full border border-zinc-900`} />
@@ -604,6 +610,16 @@ export default function ChatPage() {
                         <span className="sm:hidden">End</span>
                       </button>
                     </>
+                  )}
+                  {chatType === 'tryout' && selectedChat.tryoutStatus === 'active' && selectedChat.applicant?._id === userId && (
+                    <button
+                      onClick={() => actions.setShowEndTryoutModal(true)}
+                      className="px-3 md:px-4 py-2 bg-red-500/80 hover:bg-red-600 text-white rounded-lg font-medium transition-all text-xs md:text-sm flex items-center gap-1 md:gap-2"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      <span className="hidden sm:inline">Exit Tryout</span>
+                      <span className="sm:hidden">Exit</span>
+                    </button>
                   )}
                   {chatType === 'tryout' && selectedChat.tryoutStatus === 'offer_sent' && selectedChat.applicant?._id === userId && (
                     <>
@@ -893,4 +909,4 @@ export default function ChatPage() {
       {showApplications && <ApplicationsPanel />}
     </div>
   );
-}``
+} ``

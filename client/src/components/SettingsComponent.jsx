@@ -105,12 +105,12 @@ const SettingsComponent = () => {
         realName: user.realName || '',
         age: user.age || '',
         location: user.location || '',
-        country: 'India',
+        country: user.country || 'India',
         bio: user.bio || '',
         languages: user.languages || [],
         profilePicture: user.profilePicture || '',
         inGameName: user.inGameName || '',
-        primaryGame: 'BGMI',
+        primaryGame: user.primaryGame || 'BGMI',
         earnings: user.earnings || '',
         inGameRole: user.inGameRole || [],
         teamStatus: user.teamStatus || '',
@@ -143,7 +143,16 @@ const SettingsComponent = () => {
       }
 
       // Now update the profile with other settings
-      const response = await axiosInstance.put('/api/players/update-profile', profileSettings);
+      const updateData = { ...profileSettings };
+
+      // Clean up empty strings that might cause validation issues on the backend
+      ['teamStatus', 'availability', 'age', 'location', 'realName'].forEach(field => {
+        if (updateData[field] === '') {
+          delete updateData[field];
+        }
+      });
+
+      const response = await axiosInstance.put('/api/players/update-profile', updateData);
       showSaveMessage('Profile settings saved successfully!');
       toast.success('Your profile was updated successfully'); // <-- updated toast message
       setProfileSettings(prev => ({ ...prev, ...response.data.player }));
@@ -386,9 +395,10 @@ const SettingsComponent = () => {
                         <label className="block text-zinc-300 font-medium mb-2">Country *</label>
                         <input
                           type="text"
-                          value="India"
-                          disabled
-                          className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-2 text-white opacity-60 cursor-not-allowed"
+                          value={profileSettings.country}
+                          onChange={(e) => setProfileSettings({ ...profileSettings, country: e.target.value })}
+                          placeholder="e.g. India"
+                          className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-2 text-white focus:border-orange-500 focus:outline-none"
                         />
                       </div>
                     </div>
@@ -457,10 +467,14 @@ const SettingsComponent = () => {
                             </button>
                           </div>
                         )}
-                        {profileSettings.profilePicture && !selectedFile && (
+                        {!selectedFile && (
                           <img
-                            src={profileSettings.profilePicture}
+                            src={profileSettings.profilePicture || "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"}
                             alt="Current profile"
+                            onError={(e) => {
+                              e.target.onerror = null;
+                              e.target.src = "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png";
+                            }}
                             className="w-20 h-20 rounded-full object-cover border-2 border-zinc-600"
                           />
                         )}
@@ -487,12 +501,15 @@ const SettingsComponent = () => {
 
                       <div>
                         <label className="block text-zinc-300 font-medium mb-2">Primary Game *</label>
-                        <input
-                          type="text"
-                          value="BGMI"
-                          disabled
-                          className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-2 text-white opacity-60 cursor-not-allowed"
-                        />
+                        <select
+                          value={profileSettings.primaryGame}
+                          onChange={(e) => setProfileSettings({ ...profileSettings, primaryGame: e.target.value })}
+                          className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-2 text-white focus:border-orange-500 focus:outline-none"
+                        >
+                          <option value="BGMI">BGMI</option>
+                          <option value="VALO">VALO</option>
+                          <option value="CS2">CS2</option>
+                        </select>
                       </div>
                     </div>
 

@@ -155,10 +155,24 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
     // Calculate standings from matches
     const teamStandings = {};
 
-    // Get teams in this phase
-    const phaseTeamIds = currentPhase.teams?.map(t => t._id?.toString() || t.toString()) || [];
+    // Get teams in this phase from Registration (single source of truth)
+    const phaseRegistrations = await Registration.find({
+      tournament: tournamentId,
+      phase: phaseName,
+      status: { $in: ['approved', 'checked_in'] }
+    })
+      .select('team group')
+      .lean();
 
-    // Initialize standings for all teams in phase — single batch query instead of N queries
+    const phaseTeamIds = phaseRegistrations.map(r => r.team.toString());
+
+    // Build a group map from registrations for later group assignment
+    const registrationGroupMap = {};
+    phaseRegistrations.forEach(r => {
+      if (r.group) registrationGroupMap[r.team.toString()] = r.group;
+    });
+
+    // Initialize standings for all teams in phase — single batch query
     const phaseTeams = await Team.find({ _id: { $in: phaseTeamIds } })
       .select('teamName teamTag logo')
       .lean();
@@ -204,20 +218,10 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
       });
     });
 
-    // Get group assignments from tournament phase groups
-    const teamGroupMap = {};
-    if (currentPhase.groups && currentPhase.groups.length > 0) {
-      currentPhase.groups.forEach(group => {
-        const groupName = group.name;
-        group.teams?.forEach(teamId => {
-          teamGroupMap[teamId.toString()] = groupName;
-        });
-      });
-    }
-
-    // Assign groups to standings
+    // Assign groups to standings using registrationGroupMap (built from Registration.group above)
+    // currentPhase.groups[].teams[] is no longer used — Registration is the source of truth
     Object.keys(teamStandings).forEach(teamId => {
-      teamStandings[teamId].group = teamGroupMap[teamId] || null;
+      teamStandings[teamId].group = registrationGroupMap[teamId] || null;
     });
 
     // Convert to array and sort by: totalPoints → positionPoints → chickenDinners → kills
@@ -599,9 +603,8 @@ router.get('/:tournamentId', verifyApprovedOrgToken, async (req, res) => {
   try {
     const { tournamentId } = req.params;
 
-    // Fetch tournament with minimal data
+    // Fetch tournament — no longer populate phases.teams; Registration is the source of truth
     const tournament = await Tournament.findById(tournamentId)
-      .populate('phases.teams', 'teamName teamTag logo')
       .lean();
 
     if (!tournament) {
@@ -698,18 +701,33 @@ router.get('/:tournamentId', verifyApprovedOrgToken, async (req, res) => {
         registeredAt: reg.registeredAt
       })),
 
-      // Add standings organized by phase/group
-      phases: tournament.phases?.map(phase => ({
-        ...phase,
-        teams: phase.teams || [],
-        // Add standings for this phase
-        standings: standingsByPhase[phase.name] || {},
-        // Add groups with their standings
-        groups: phase.groups?.map(group => ({
-          ...group,
-          standings: standingsByPhase[phase.name]?.[group.name] || []
-        })) || []
-      })) || [],
+      // phases: metadata + standings only. Team lists are served via GET /phase-teams.
+      phases: (() => {
+        // Count registrations per phase for the overview teamCount field
+        const phaseCountMap = {};
+        registrations.forEach(r => {
+          if (r.phase) phaseCountMap[r.phase] = (phaseCountMap[r.phase] || 0) + 1;
+        });
+
+        return (tournament.phases || []).map(phase => ({
+          _id: phase._id,
+          name: phase.name,
+          type: phase.type,
+          startDate: phase.startDate,
+          endDate: phase.endDate,
+          status: phase.status,
+          matches: phase.matches,
+          rulesetSpecifics: phase.rulesetSpecifics,
+          details: phase.details,
+          qualificationRules: phase.qualificationRules,
+          // Group names only (no team ObjectId lists — use GET /phase-teams?phase=X)
+          groups: (phase.groups || []).map(g => ({ _id: g._id, name: g.name })),
+          // Computed from Registration so it's always accurate
+          teamCount: phaseCountMap[phase.name] || 0,
+          // Standings for this phase from PhaseStanding collection
+          standings: standingsByPhase[phase.name] || {}
+        }));
+      })(),
 
       // Add summary stats
       stats: {
@@ -862,6 +880,151 @@ router.put('/:tournamentId', verifyApprovedOrgToken, upload.fields([
 });
 
 // ============================================================================
+// GET TEAMS IN A PHASE (from Registration — single source of truth)
+// ============================================================================
+
+router.get('/:tournamentId/phase-teams', verifyApprovedOrgToken, async (req, res) => {
+  try {
+    const { tournamentId } = req.params;
+    const { phase } = req.query;
+
+    if (!phase) {
+      return res.status(400).json({ error: '"phase" query param is required' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(tournamentId)) {
+      return res.status(400).json({ error: 'Invalid tournament ID' });
+    }
+
+    // Auth check (minimal select)
+    const tournament = await Tournament.findById(tournamentId)
+      .select('organizer.organizationRef phases')
+      .lean();
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+    if (tournament.organizer.organizationRef?.toString() !== req.organization._id.toString()) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    // Verify phase exists
+    if (!tournament.phases?.some(p => p.name === phase)) {
+      return res.status(404).json({ error: `Phase "${phase}" not found` });
+    }
+
+    // Registration is the authority — one query, no stale data
+    const registrations = await Registration.find({
+      tournament: tournamentId,
+      phase,
+      status: { $nin: ['rejected', 'withdrawn'] }
+    })
+      .populate('team', 'teamName teamTag logo')
+      .select('team group status registeredAt')
+      .lean();
+
+    res.json({
+      phase,
+      total: registrations.length,
+      teams: registrations.map(r => ({
+        _id: r.team._id,
+        teamName: r.team.teamName,
+        teamTag: r.team.teamTag,
+        logo: r.team.logo,
+        group: r.group || null,
+        status: r.status,
+        registrationId: r._id
+      }))
+    });
+  } catch (err) {
+    console.error('Error fetching phase teams:', err);
+    res.status(500).json({ error: 'Failed to fetch phase teams' });
+  }
+});
+
+// ============================================================================
+// ASSIGN GROUPS (writes to Registration.group — single source of truth)
+// ============================================================================
+
+router.put('/:tournamentId/assign-groups', verifyApprovedOrgToken, async (req, res) => {
+  try {
+    const { tournamentId } = req.params;
+    const { phase, groups } = req.body;
+
+    if (!phase || !Array.isArray(groups)) {
+      return res.status(400).json({ error: '"phase" and "groups" array are required' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(tournamentId)) {
+      return res.status(400).json({ error: 'Invalid tournament ID' });
+    }
+
+    // Auth check
+    const tournament = await Tournament.findById(tournamentId)
+      .select('organizer.organizationRef phases')
+      .lean();
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+    if (tournament.organizer.organizationRef?.toString() !== req.organization._id.toString()) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    const phaseDoc = tournament.phases?.find(p => p.name === phase);
+    if (!phaseDoc) return res.status(404).json({ error: `Phase "${phase}" not found` });
+
+    // Build bulkWrite — one updateOne per team, all in a single round-trip
+    const bulkOps = [];
+    for (const group of groups) {
+      if (!group.name || !Array.isArray(group.teams)) continue;
+      for (const teamId of group.teams) {
+        if (!mongoose.Types.ObjectId.isValid(teamId)) continue;
+        bulkOps.push({
+          updateOne: {
+            filter: { tournament: tournamentId, team: teamId, phase },
+            update: { $set: { group: group.name } }
+          }
+        });
+      }
+    }
+
+    // Clear group on any team in this phase that wasn't included in the payload
+    // (handles teams removed from a group via the UI)
+    const allIncludedTeamIds = groups.flatMap(g => g.teams);
+    bulkOps.push({
+      updateMany: {
+        filter: {
+          tournament: tournamentId,
+          phase,
+          team: { $nin: allIncludedTeamIds.filter(id => mongoose.Types.ObjectId.isValid(id)) }
+        },
+        update: { $set: { group: '' } }
+      }
+    });
+
+    if (bulkOps.length > 0) {
+      await Registration.bulkWrite(bulkOps, { ordered: false });
+    }
+
+    // Persist group names (not team lists) into tournament.phases[x].groups
+    // so PointsTable / MatchScheduler know which groups exist for this phase
+    const groupMetadata = groups
+      .filter(g => g.name)
+      .map(g => ({ name: g.name, teams: [] })); // no team IDs stored here
+
+    await Tournament.updateOne(
+      { _id: tournamentId, 'phases._id': phaseDoc._id },
+      { $set: { 'phases.$.groups': groupMetadata } }
+    );
+
+    res.json({
+      success: true,
+      message: `Groups saved for phase "${phase}"`,
+      groupsCreated: groups.length,
+      teamsAssigned: allIncludedTeamIds.length
+    });
+  } catch (err) {
+    console.error('Error assigning groups:', err);
+    res.status(500).json({ error: 'Failed to assign groups' });
+  }
+});
+
+// ============================================================================
 // ADD TEAM TO PHASE (UPDATED FOR NEW SCHEMA)
 // ============================================================================
 
@@ -903,40 +1066,18 @@ router.post('/:tournamentId/phases/:phase/teams', verifyApprovedOrgToken, async 
       });
     }
 
-    // Update the tournament's phase teams array
-    await Tournament.updateOne(
-      {
-        _id: tournamentId,
-        'phases.name': phase
-      },
-      {
-        $addToSet: { 'phases.$.teams': teamId }
-      }
-    );
-
-    // Update registration with phase and group info
-    registration.phase = phase;
-    registration.currentStage = phase;
-    if (group) registration.group = group;
+    // Registration is the single source of truth — update phase & optional group
     await Registration.findByIdAndUpdate(registration._id, {
-      phase: phase,
-      currentStage: phase,
-      ...(group && { group: group })
+      $set: {
+        phase,
+        currentStage: phase,
+        ...(group && { group })
+      }
     });
-
-    // Note: PhaseStanding is updated automatically via recalculation
-    // Individual team standings are managed through the PhaseStanding.recalculate() method
-
-
-    // Fetch updated tournament
-    const updatedTournament = await Tournament.findById(tournamentId)
-      .populate('phases.teams', 'teamName teamTag logo')
-      .lean();
 
     res.json({
       success: true,
-      message: 'Team added to phase successfully',
-      tournament: updatedTournament
+      message: 'Team added to phase successfully'
     });
   } catch (error) {
     console.error('Error adding team to phase:', error);
@@ -975,51 +1116,26 @@ router.delete('/:tournamentId/phases/:phase/teams/:teamId', verifyApprovedOrgTok
       return res.status(404).json({ error: 'Phase not found' });
     }
 
-    // Check if team is in phase
-    const teamInPhase = phaseData.teams?.some(t => t.toString() === teamId);
-    if (!teamInPhase) {
-      return res.status(400).json({ error: 'Team not in this phase' });
+    // Check if team is actually assigned to this phase (Registration is the authority)
+    const teamRegistration = await Registration.findOne({
+      tournament: tournamentId,
+      team: teamId,
+      phase
+    }).select('_id').lean();
+
+    if (!teamRegistration) {
+      return res.status(400).json({ error: 'Team is not in this phase' });
     }
 
-    // Remove team from phase teams array
-    await Tournament.updateOne(
-      {
-        _id: tournamentId,
-        'phases.name': phase
-      },
-      {
-        $pull: { 'phases.$.teams': teamId }
-      }
-    );
-
-    // Update registration - clear phase info
+    // Registration is the single source of truth — clear phase & group
     await Registration.updateOne(
-      {
-        tournament: tournamentId,
-        team: teamId
-      },
-      {
-        $set: {
-          phase: null,
-          currentStage: 'Registered',
-          group: null
-        }
-      }
+      { tournament: tournamentId, team: teamId },
+      { $set: { phase: '', currentStage: 'Registered', group: '' } }
     );
-
-    // Note: PhaseStanding will be recalculated automatically
-    // Individual team standings are managed through the PhaseStanding.recalculate() method
-
-
-    // Fetch updated tournament
-    const updatedTournament = await Tournament.findById(tournamentId)
-      .populate('phases.teams', 'teamName teamTag logo')
-      .lean();
 
     res.json({
       success: true,
-      message: 'Team removed from phase successfully',
-      tournament: updatedTournament
+      message: 'Team removed from phase successfully'
     });
   } catch (error) {
     console.error('Error removing team from phase:', error);
@@ -1033,7 +1149,7 @@ router.delete('/:tournamentId/phases/:phase/teams/:teamId', verifyApprovedOrgTok
 
 router.post(
   '/create-tournament',
-  verifyOrgAuth,
+  verifyApprovedOrgToken,
   upload.fields([
     { name: 'logo', maxCount: 1 },
     { name: 'banner', maxCount: 1 },

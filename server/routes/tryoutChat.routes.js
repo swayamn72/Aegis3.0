@@ -329,7 +329,49 @@ router.post('/:chatId/accept-offer', auth, async (req, res) => {
       await application.save();
     }
 
+    // Auto-end all other active tryout chats for this player
+    const otherActiveTryouts = await TryoutChat.find({
+      _id: { $ne: chatId },
+      applicant: userId,
+      tryoutStatus: 'active'
+    }).populate('team', 'teamName');
+
     const io = req.app.get('io');
+
+    for (const otherChat of otherActiveTryouts) {
+      otherChat.tryoutStatus = 'ended_by_player';
+      otherChat.endedAt = new Date();
+      otherChat.endedBy = userId;
+      otherChat.endedByModel = 'Player';
+      otherChat.endReason = 'Player joined another team';
+
+      const endMessage = {
+        sender: 'system',
+        message: `Tryout ended — ${chat.applicant.username} has joined another team.`,
+        messageType: 'system',
+        timestamp: new Date()
+      };
+      otherChat.messages.push(endMessage);
+      await otherChat.save();
+
+      // Notify participants in each ended tryout room
+      if (io) {
+        io.to(`tryout_${otherChat._id}`).emit('tryoutEnded', {
+          chatId: otherChat._id,
+          tryoutStatus: 'ended_by_player',
+          endedBy: 'player',
+          reason: 'Player joined another team',
+          message: endMessage
+        });
+      }
+    }
+
+    // Also withdraw any other pending/in_tryout applications for this player
+    await TeamApplication.updateMany(
+      { player: userId, status: 'in_tryout', team: { $ne: team._id } },
+      { $set: { status: 'withdrawn', tryoutEndedAt: new Date() } }
+    );
+
     if (io) {
       io.to(`tryout_${chatId}`).emit('teamOfferAccepted', {
         chatId,

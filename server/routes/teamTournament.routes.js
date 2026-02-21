@@ -7,6 +7,7 @@ import Registration from '../models/registration.model.js';
 import PhaseStanding from '../models/phaseStanding.model.js';
 import Team from '../models/team.model.js';
 import Player from '../models/player.model.js';
+import { sendTournamentRegistrationEmail } from '../config/email.js';
 
 const router = express.Router();
 
@@ -309,12 +310,12 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
 
       for (const player of players) {
         if (player.email) {
-          const { subject, html } = emailTemplates.tournamentRegistration(
+          await sendTournamentRegistrationEmail(
+            player.email,
             player.username,
             req.team.teamName,
             tournament.tournamentName
           );
-          await sendEmail(player.email, subject, html);
         }
       }
     } catch (emailError) {

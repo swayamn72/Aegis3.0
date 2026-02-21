@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Mail, Lock, User, Gamepad2, Shield, CheckCircle, AlertCircle, ArrowRight, Building2, Phone, MapPin, Calendar, Instagram } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
+import { useGoogleLogin } from '@react-oauth/google';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL;
 
@@ -240,13 +241,75 @@ const AegisSignup = () => {
     }
   };
 
+  const googleSignup = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      try {
+        setIsLoading(true);
+
+        // Get user info from Google
+        const userInfo = await axios.get(
+          'https://www.googleapis.com/oauth2/v3/userinfo',
+          { headers: { Authorization: `Bearer ${tokenResponse.access_token}` } }
+        );
+
+        // Send to backend with the access token to verify
+        const response = await axios.post(
+          `${API_URL}/api/auth/google`,
+          {
+            credential: tokenResponse.access_token,
+            userInfo: userInfo.data,
+            role: formData.role
+          },
+          { withCredentials: true }
+        );
+
+        if (response.data.token) {
+          // Store authentication data
+          localStorage.setItem('token', response.data.token);
+          // The backend returns 'player' object even for organizations if it's the same shared route, 
+          // or we handle based on role.
+          const userObj = response.data.player || response.data.organization;
+          localStorage.setItem('user', JSON.stringify(userObj));
+          localStorage.setItem('userRole', formData.role);
+
+          toast.success('Google registration successful!');
+
+          // Redirect based on role and status
+          setTimeout(() => {
+            if (formData.role === 'organization') {
+              if (userObj.profileCustomized === false) {
+                window.location.href = '/org-profile-setup';
+              } else {
+                window.location.href = '/org/pending-approval';
+              }
+            } else if (userObj.usernameCustomized === false) {
+              window.location.href = '/setup-username';
+            } else if (userObj.primaryGame) {
+              window.location.href = '/my-profile';
+            } else {
+              window.location.href = '/settings';
+            }
+          }, 100);
+        }
+      } catch (error) {
+        console.error('Google signup error:', error);
+        toast.error(error.response?.data?.message || 'Google registration failed');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    onError: () => {
+      toast.error('Google registration failed. Please try again.');
+    }
+  });
+
   const handleSocialLogin = (provider) => {
     if (provider === 'Google') {
       if (!formData.role) {
         toast.error('Please select your role (Player or Organization) before signing up with Google.');
         return;
       }
-      handleGoogleSignup();
+      googleSignup();
     } else {
       alert(`${provider} login clicked`);
     }

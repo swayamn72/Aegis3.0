@@ -78,7 +78,15 @@ router.get("/check-username/:username", async (req, res) => {
 router.put("/update-profile", auth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const updateData = req.body;
+    const updateData = { ...req.body };
+
+    // Sanitize empty strings to avoid validation errors with enums or numbers
+    const fieldsToSanitize = ['teamStatus', 'availability', 'age', 'location', 'realName'];
+    fieldsToSanitize.forEach(field => {
+      if (updateData[field] === '') {
+        delete updateData[field];
+      }
+    });
 
     // Validate required fields if provided
     if (updateData.age && (updateData.age < 13 || updateData.age > 99)) {

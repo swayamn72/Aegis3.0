@@ -50,6 +50,11 @@ const DetailedTeamInfo = () => {
   const [searching, setSearching] = useState(false);
   const [showKickConfirm, setShowKickConfirm] = useState(false);
   const [kickPlayerData, setKickPlayerData] = useState(null);
+  const [brokenImages, setBrokenImages] = useState({});
+
+  const handleImageError = (id) => {
+    setBrokenImages(prev => ({ ...prev, [id]: true }));
+  };
 
   // TanStack Query: Fetch team data with caching
   const {
@@ -235,11 +240,12 @@ const DetailedTeamInfo = () => {
     <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4 hover:border-cyan-500/30 transition-colors">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
-          {player.profilePicture ? (
+          {player.profilePicture && !brokenImages[player._id] ? (
             <img
               src={player.profilePicture}
               alt={player.username}
               className="w-12 h-12 rounded-full object-cover ring-2 ring-zinc-700"
+              onError={() => handleImageError(player._id)}
             />
           ) : (
             <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-purple-600 rounded-full flex items-center justify-center">
@@ -431,11 +437,12 @@ const DetailedTeamInfo = () => {
               <div className="flex-1">
                 <div className="flex items-start gap-6 mb-6">
                   <div className="relative">
-                    {teamData.logo ? (
+                    {teamData.logo && !brokenImages['team-logo'] ? (
                       <img
                         src={teamData.logo}
                         alt={teamData.teamName}
                         className="w-24 h-24 rounded-xl object-cover border border-zinc-700"
+                        onError={() => handleImageError('team-logo')}
                       />
                     ) : (
                       <div className="w-24 h-24 bg-gradient-to-br from-cyan-500 to-purple-600 rounded-xl flex items-center justify-center">
@@ -830,8 +837,8 @@ const DetailedTeamInfo = () => {
                           {tournament.date}
                         </div>
                         <div className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded ${tournament.eliminated === 'Champions'
-                            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                            : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                          : 'bg-red-500/20 text-red-400 border border-red-500/30'
                           }`}>
                           {tournament.eliminated === 'Champions' ? '🏆 Champions' : `❌ Eliminated: ${tournament.eliminated}`}
                         </div>
@@ -1070,11 +1077,12 @@ const DetailedTeamInfo = () => {
                           }`}
                       >
                         <div className="flex items-center gap-3">
-                          {player.profilePicture ? (
+                          {player.profilePicture && !brokenImages[`search-${player._id}`] ? (
                             <img
                               src={player.profilePicture}
                               alt={player.username}
                               className="w-10 h-10 rounded-full object-cover"
+                              onError={() => handleImageError(`search-${player._id}`)}
                             />
                           ) : (
                             <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-purple-600 rounded-full flex items-center justify-center">

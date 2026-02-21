@@ -164,19 +164,39 @@ export const useChatActions = ({ userId, selectedChat, chatType }) => {
         },
     });
 
+    // Helper to update approachStatus across all message caches
+    const updateApproachStatusInCache = (approachId, newStatus) => {
+        const idStr = String(approachId);
+        // Update across ALL chat query caches (system messages, direct messages, etc.)
+        queryClient.setQueriesData({ queryKey: chatKeys.all }, (old) => {
+            if (!Array.isArray(old)) return old;
+            return old.map(m =>
+                m.metadata?.approachId && String(m.metadata.approachId) === idStr
+                    ? { ...m, metadata: { ...m.metadata, approachStatus: newStatus } }
+                    : m
+            );
+        });
+    };
+
     // Accept approach mutation
     const acceptApproachMutation = useMutation({
         mutationFn: async (approachId) => {
             const { data } = await axios.post(`/api/recruitment/approach/${approachId}/accept`);
             return data;
         },
+        onMutate: (approachId) => {
+            updateApproachStatusInCache(approachId, 'accepted');
+        },
         onSuccess: (data) => {
             toast.success('Approach accepted! Tryout chat created.');
             queryClient.invalidateQueries({ queryKey: chatKeys.myApproaches() });
             queryClient.invalidateQueries({ queryKey: chatKeys.myTryouts() });
+            queryClient.invalidateQueries({ queryKey: chatKeys.systemMessages() });
             return data;
         },
-        onError: (error) => {
+        onError: (error, approachId) => {
+            // Revert optimistic update on failure
+            updateApproachStatusInCache(approachId, 'pending');
             toast.error(error.error || 'Failed to accept approach');
         },
     });
@@ -188,11 +208,17 @@ export const useChatActions = ({ userId, selectedChat, chatType }) => {
                 reason: 'Not interested at this time'
             });
         },
+        onMutate: (approachId) => {
+            updateApproachStatusInCache(approachId, 'rejected');
+        },
         onSuccess: () => {
             toast.success('Approach rejected');
             queryClient.invalidateQueries({ queryKey: chatKeys.myApproaches() });
+            queryClient.invalidateQueries({ queryKey: chatKeys.systemMessages() });
         },
-        onError: () => {
+        onError: (error, approachId) => {
+            // Revert optimistic update on failure
+            updateApproachStatusInCache(approachId, 'pending');
             toast.error('Failed to reject approach');
         },
     });

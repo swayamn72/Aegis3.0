@@ -47,7 +47,7 @@ const organizationSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: true,
+      required: false, // Not required for Google OAuth users
       select: false,
     },
     country: {
@@ -157,6 +157,11 @@ const organizationSchema = new mongoose.Schema(
     lockUntil: {
       type: Date,
       select: false,
+    },
+    // Progress flags
+    profileCustomized: {
+      type: Boolean,
+      default: true, // Existing organizations are assumed complete; Google ones will set it to false
     },
   },
   {

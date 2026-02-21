@@ -1,6 +1,8 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ExternalLink, Trophy, Sparkles } from 'lucide-react';
+import botLogo from '../assets/bot_logo.png';
+import ChatAvatar from './ChatAvatar';
 
 const ChatMessage = ({ msg, userId, chatType, selectedChat, index, messages }) => {
     const navigate = useNavigate();
@@ -26,6 +28,12 @@ const ChatMessage = ({ msg, userId, chatType, selectedChat, index, messages }) =
         if (chatType !== 'tryout' || isMine) return null;
 
         const senderId = msg.sender?._id || msg.sender;
+
+        // Handle system messages with bot logo
+        if (senderId === 'system' || msg.messageType === 'system') {
+            return { username: 'Aegis Bot', profilePicture: botLogo };
+        }
+
         const senderData = selectedChat?.participants?.find(p =>
             (p._id || p).toString() === senderId?.toString()
         );
@@ -86,10 +94,11 @@ const ChatMessage = ({ msg, userId, chatType, selectedChat, index, messages }) =
             {chatType === 'tryout' && !isMine && (
                 <div className="flex-shrink-0 mb-1">
                     {showSenderName ? (
-                        <img
-                            src={senderInfo?.profilePicture || `https://api.dicebear.com/7.x/avatars/svg?seed=${senderInfo?.username || 'unknown'}`}
+                        <ChatAvatar
+                            src={senderInfo?.profilePicture}
+                            fallbackSeed={senderInfo?.username || 'unknown'}
                             alt={senderInfo?.username || 'Unknown'}
-                            className="w-8 h-8 rounded-full object-cover ring-2 ring-zinc-700"
+                            className="w-8 h-8 rounded-full ring-2 ring-zinc-700"
                         />
                     ) : (
                         <div className="w-8 h-8" />

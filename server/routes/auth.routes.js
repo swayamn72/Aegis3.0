@@ -175,7 +175,7 @@ router.post('/login', authLimiter, validateLogin, asyncHandler(async (req, res) 
 // ==========================
 router.post('/google', authLimiter, async (req, res) => {
   try {
-    const { credential, userInfo } = req.body;
+    const { credential, userInfo, role = 'player' } = req.body;
 
     if (!credential && !userInfo) {
       return res.status(400).json({ message: "Google credential or user info is required" });
@@ -183,19 +183,17 @@ router.post('/google', authLimiter, async (req, res) => {
 
     let googleId, email, name, picture;
 
-    // If userInfo is provided directly (from useGoogleLogin hook)
+    // Logic to verify Google credential...
     if (userInfo) {
       googleId = userInfo.sub;
       email = userInfo.email;
       name = userInfo.name;
       picture = userInfo.picture;
     } else {
-      // Verify the Google ID token (from GoogleLogin component)
       const ticket = await client.verifyIdToken({
         idToken: credential,
         audience: process.env.GOOGLE_CLIENT_ID,
       });
-
       const payload = ticket.getPayload();
       googleId = payload.sub;
       email = payload.email;
@@ -203,76 +201,111 @@ router.post('/google', authLimiter, async (req, res) => {
       picture = payload.picture;
     }
 
-    // Check if user exists with this Google ID
-    let user = await Player.findOne({ googleId });
+    const Model = role === 'organization' ? Organization : Player;
+    const roleType = role === 'organization' ? 'organization' : 'player';
+
+    // Check if user exists with this Google ID in the specified role
+    let user = await Model.findOne({ googleId });
 
     if (!user) {
-      // Check if user exists with this email (from regular signup)
-      user = await Player.findOne({ email });
+      // Check if user exists with this email in the specified role
+      user = await Model.findOne({ email });
 
       if (user) {
         // User exists with email but not Google ID - link accounts
         user.googleId = googleId;
 
-        // Add 'google' to authProvider array if not already present
-        if (!user.authProvider.includes('google')) {
-          user.authProvider.push('google');
-        }
-
-        if (picture && !user.profilePicture) {
-          user.profilePicture = picture;
+        // Add authProvider logic
+        if (roleType === 'player') {
+          if (!user.authProvider.includes('google')) {
+            user.authProvider.push('google');
+          }
+          if (picture && !user.profilePicture) {
+            user.profilePicture = picture;
+          }
+        } else {
+          // Organizations might not have authProvider array yet, but they have googleId
+          if (picture && !user.logo) {
+            user.logo = picture;
+          }
         }
         await user.save();
       } else {
-        // Create new user
-        const username = email.split('@')[0] + '_' + Date.now();
-
-        user = await Player.create({
-          email,
-          googleId,
-          username,
-          realName: name || '',
-          profilePicture: picture || '',
-          authProvider: ['google'],
-          verified: true, // Google users are pre-verified
-          isEmailVerified: true, // Google emails are verified
-          usernameCustomized: false, // Flag to prompt username selection
-        });
+        // Create new user based on role
+        if (roleType === 'player') {
+          const username = email.split('@')[0] + '_' + Date.now();
+          user = await Player.create({
+            email,
+            googleId,
+            username,
+            realName: name || '',
+            profilePicture: picture || '',
+            authProvider: ['google'],
+            verified: true,
+            isEmailVerified: true,
+            usernameCustomized: false,
+          });
+        } else {
+          // Organization registration via Google
+          user = await Organization.create({
+            email,
+            googleId,
+            orgName: name ? `${name}'s Org` : email.split('@')[0],
+            ownerName: name || 'Google User',
+            country: 'TBD', // Placeholder, needs setup
+            isEmailVerified: true,
+            approvalStatus: 'pending',
+            profileCustomized: false,
+            logo: picture || '',
+          });
+        }
       }
     }
 
     // Generate JWT token
     const token = jwt.sign(
-      { id: user._id, role: 'player' },
+      { id: user._id, role: roleType },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
 
-    res.cookie("token", token, {
+    const cookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? 'strict' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    };
 
-    res.status(200).json({
+    res.cookie("token", token, cookieOptions);
+
+    const responseData = {
       message: "Google login successful",
       token,
-      player: {
+    };
+
+    if (roleType === 'player') {
+      responseData.player = {
         _id: user._id,
         id: user._id,
         email: user.email,
         username: user.username,
         realName: user.realName,
-        age: user.age,
-        location: user.location,
-        country: user.country,
-        primaryGame: user.primaryGame,
-        teamStatus: user.teamStatus,
-        availability: user.availability,
         profilePicture: user.profilePicture,
         usernameCustomized: user.usernameCustomized,
-      },
-    });
+        primaryGame: user.primaryGame,
+      };
+    } else {
+      responseData.organization = {
+        id: user._id,
+        orgName: user.orgName,
+        ownerName: user.ownerName,
+        email: user.email,
+        approvalStatus: user.approvalStatus,
+        profileCustomized: user.profileCustomized,
+      };
+    }
+
+    res.status(200).json(responseData);
 
   } catch (error) {
     console.error("Google login error:", error);
@@ -866,6 +899,70 @@ router.post('/set-username', auth, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+// ==========================
+// COMPLETE ORG PROFILE ROUTE
+// ==========================
+router.post('/complete-org-profile', verifyOrgToken, asyncHandler(async (req, res) => {
+  try {
+    const {
+      orgName,
+      ownerName,
+      country,
+      headquarters,
+      description,
+      contactPhone,
+      website,
+      orgInstagram,
+      ownerInstagram
+    } = req.body;
+
+    const org = req.organization;
+
+    if (!orgName || !ownerName || !country) {
+      return res.status(400).json({ message: "Organization name, owner name and country are required" });
+    }
+
+    // Check if new orgName is already taken (if changed)
+    if (orgName !== org.orgName) {
+      const nameExists = await Organization.findOne({ orgName });
+      if (nameExists) {
+        return res.status(400).json({ message: "Organization name is already taken" });
+      }
+    }
+
+    // Update fields
+    org.orgName = orgName;
+    org.ownerName = ownerName;
+    org.country = country;
+    org.headquarters = headquarters || '';
+    org.description = description || '';
+    org.contactPhone = contactPhone || '';
+    org.orgSocial.website = website || '';
+    org.orgSocial.instagram = orgInstagram || '';
+    org.ownerSocial.instagram = ownerInstagram || '';
+
+    // Mark as customized
+    org.profileCustomized = true;
+
+    await org.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Organization profile completed successfully!",
+      organization: {
+        id: org._id,
+        orgName: org.orgName,
+        approvalStatus: org.approvalStatus,
+        profileCustomized: org.profileCustomized
+      },
+    });
+
+  } catch (error) {
+    console.error("Complete org profile error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+}));
 
 // --- Logout Route (Same for all users) ---
 router.post("/logout", (req, res) => {

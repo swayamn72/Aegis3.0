@@ -584,6 +584,7 @@ router.patch('/tournaments/:id/approve', verifyAdminToken, tournamentActionLimit
     tournament._approvalStatus = 'approved';
     tournament._approvedBy = adminId;
     tournament._approvedAt = new Date();
+    tournament.visibility = 'public'; // Automatically make public upon approval
     // Clear rejection data if it was previously rejected
     tournament._rejectedBy = undefined;
     tournament._rejectedAt = undefined;

@@ -12,6 +12,7 @@ import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import EmailVerification from "./pages/EmailVerification";
 import UsernameSetup from "./pages/UsernameSetup";
+import OrgProfileSetup from "./pages/OrgProfileSetup";
 import HomePage from "./pages/HomePage";
 import MyTeamsPage from "./pages/MyTeamsPage";
 import DetailedTeamInfoPage from "./pages/DetailedTeamInfoPage";
@@ -53,6 +54,7 @@ function AppContent() {
           <Route path="/organization/reset-password/:token" element={<PublicRoute><ResetPasswordPage /></PublicRoute>} />
           <Route path="/verify-email" element={<EmailVerification />} />
           <Route path="/setup-username" element={<UsernameSetup />} />
+          <Route path="/org-profile-setup" element={<OrgProfileSetup />} />
           <Route path="/detailed/:id" element={<DetailedPlayerProfilePage />} />
 
           {/* Organization Routes */}

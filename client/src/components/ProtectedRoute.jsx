@@ -3,7 +3,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const ProtectedRoute = ({ children, allowedUserTypes, requireRole = null }) => {
-  const { isAuthenticated, loading, userType, userRole } = useAuth();
+  const { isAuthenticated, loading, userType, userRole, user } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -19,6 +19,15 @@ const ProtectedRoute = ({ children, allowedUserTypes, requireRole = null }) => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
+  // Mandatory setup redirects
+  if (userRole === 'player' && user?.usernameCustomized === false && location.pathname !== '/setup-username') {
+    return <Navigate to="/setup-username" replace />;
+  }
+
+  if (userRole === 'organization' && user?.profileCustomized === false && location.pathname !== '/org-profile-setup') {
+    return <Navigate to="/org-profile-setup" replace />;
+  }
+
   if (allowedUserTypes && !allowedUserTypes.includes(userType)) {
     // Redirect unauthorized users to login or home page
     return <Navigate to="/login" state={{ from: location }} replace />;
@@ -26,8 +35,11 @@ const ProtectedRoute = ({ children, allowedUserTypes, requireRole = null }) => {
 
   // Role-based access control
   if (requireRole && userRole !== requireRole) {
-    // If organization tries to access player routes, redirect to pending approval
+    // If organization tries to access player routes, redirect to pending approval or setup
     if (userRole === 'organization' && requireRole === 'player') {
+      if (user?.profileCustomized === false && location.pathname !== '/org-profile-setup') {
+        return <Navigate to="/org-profile-setup" replace />;
+      }
       return <Navigate to="/org/pending-approval" replace />;
     }
 
