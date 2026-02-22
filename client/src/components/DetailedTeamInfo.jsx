@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
@@ -196,6 +196,22 @@ const DetailedTeamInfo = () => {
       setSearching(false);
     }
   };
+
+  // Handle player search with debounce
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+
+    setSearching(true);
+    const timer = setTimeout(() => {
+      handlePlayerSearch(searchQuery);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Handle sending invitation
   const handleSendInvitation = async () => {
@@ -1055,7 +1071,6 @@ const DetailedTeamInfo = () => {
                       value={searchQuery}
                       onChange={(e) => {
                         setSearchQuery(e.target.value);
-                        handlePlayerSearch(e.target.value);
                       }}
                       className="w-full pl-10 pr-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-white placeholder-zinc-400 focus:border-cyan-500 focus:outline-none"
                     />
@@ -1071,32 +1086,49 @@ const DetailedTeamInfo = () => {
                       <div
                         key={player._id}
                         onClick={() => setSelectedPlayer(player)}
-                        className={`p-3 rounded-lg cursor-pointer transition-colors ${selectedPlayer?._id === player._id
-                          ? 'bg-cyan-500/20 border border-cyan-500/30'
-                          : 'bg-zinc-800/50 hover:bg-zinc-700/50 border border-zinc-700'
+                        className={`p-3 rounded-lg cursor-pointer transition-all duration-300 transform hover:scale-[1.02] ${selectedPlayer?._id === player._id
+                          ? 'bg-cyan-500/20 border border-cyan-500/50 ring-1 ring-cyan-500/30'
+                          : 'bg-zinc-800/40 hover:bg-zinc-800 border border-zinc-700/50 hover:border-zinc-500'
                           }`}
                       >
-                        <div className="flex items-center gap-3">
-                          {player.profilePicture && !brokenImages[`search-${player._id}`] ? (
-                            <img
-                              src={player.profilePicture}
-                              alt={player.username}
-                              className="w-10 h-10 rounded-full object-cover"
-                              onError={() => handleImageError(`search-${player._id}`)}
-                            />
-                          ) : (
-                            <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-purple-600 rounded-full flex items-center justify-center">
-                              <User className="w-5 h-5 text-white" />
-                            </div>
-                          )}
-                          <div className="flex-1">
-                            <div className="text-white font-medium">{player.inGameName || player.username}</div>
-                            <div className="text-zinc-400 text-sm">{player.realName}</div>
+                        <div className="flex items-center gap-4">
+                          <div className="relative">
+                            {player.profilePicture && !brokenImages[`search-${player._id}`] ? (
+                              <img
+                                src={player.profilePicture}
+                                alt={player.username}
+                                className="w-12 h-12 rounded-full object-cover border-2 border-zinc-700"
+                                onError={() => handleImageError(`search-${player._id}`)}
+                              />
+                            ) : (
+                              <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-purple-600 rounded-full flex items-center justify-center border-2 border-zinc-700">
+                                <User className="w-6 h-6 text-white" />
+                              </div>
+                            )}
+                            {player.verified && (
+                              <div className="absolute -bottom-1 -right-1 bg-zinc-900 rounded-full p-0.5">
+                                <Shield className="w-3.5 h-3.5 text-cyan-400 fill-cyan-400/20" />
+                              </div>
+                            )}
                           </div>
-                          <div className="text-right">
-                            <div className="text-cyan-400 text-sm font-medium">
-                              Rating: {player.aegisRating || 0}
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <div className="text-white font-semibold truncate">{player.inGameName || player.username}</div>
+                              {player.aegisRating >= 1500 && (
+                                <span className="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded border border-amber-500/30 font-bold">
+                                  PRO
+                                </span>
+                              )}
                             </div>
+                            <div className="text-zinc-500 text-sm truncate">{player.realName || `@${player.username}`}</div>
+                          </div>
+
+                          <div className="text-right flex flex-col items-end">
+                            <div className="text-cyan-400 text-sm font-bold">
+                              {player.aegisRating || 0}
+                            </div>
+                            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Rating</div>
                           </div>
                         </div>
                       </div>

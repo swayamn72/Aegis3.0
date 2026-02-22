@@ -110,31 +110,7 @@ router.get('/scheduled/:tournamentId', async (req, res) => {
       status: 'scheduled'
     })
       .populate({
-        path: 'participatingTeams.team',
-        select: 'teamName teamTag logo'
-      })
-      .populate('tournament', 'tournamentName shortName')
-      .sort({ scheduledStartTime: 1 })
-      .lean();
-
-    res.json({ matches });
-  } catch (error) {
-    console.error('Error fetching scheduled matches:', error);
-    res.status(500).json({ error: 'Failed to fetch scheduled matches' });
-  }
-});
-
-// Get scheduled matches for a tournament
-router.get('/scheduled/:tournamentId', async (req, res) => {
-  try {
-    const { tournamentId } = req.params;
-
-    const matches = await Match.find({
-      tournament: tournamentId,
-      status: 'scheduled'
-    })
-      .populate({
-        path: 'participatingTeams.team',
+        path: 'results.team',
         select: 'teamName teamTag logo'
       })
       .populate('tournament', 'tournamentName shortName')
@@ -172,27 +148,58 @@ router.get('/tournament/:tournamentId', async (req, res) => {
       .skip(parseInt(offset))
       .limit(parseInt(limit));
 
-    // Conditional population based on mobile
+    // Conditional population based on mobile  
     if (mobile === 'true') {
       matchQuery = matchQuery
         .populate({
-          path: 'participatingTeams.team',
+          path: 'results.team',
           select: 'teamName teamTag logo' // Only essential fields
         })
-        .populate('tournament', 'tournamentName shortName');
+        .populate('tournament', 'tournamentName shortName phases');
     } else {
       matchQuery = matchQuery
         .populate({
-          path: 'participatingTeams.team',
+          path: 'results.team',
           select: 'teamName teamTag logo'
         })
-        .populate('tournament', 'tournamentName shortName');
+        .populate('tournament', 'tournamentName shortName phases');
     }
 
     const matches = await matchQuery.lean();
 
+    // For each match, if results is empty (scheduled match), fetch teams from participatingGroups
+    const enhancedMatches = await Promise.all(matches.map(async (match) => {
+      if (!match.results || match.results.length === 0) {
+        // Fetch teams from participatingGroups via Registration
+        const phase = match.tournament?.phases?.find(p => p.name === match.tournamentPhase);
+        if (phase && match.participatingGroups?.length > 0) {
+          const groupNames = match.participatingGroups.map(groupId => {
+            const group = phase.groups?.find(g =>
+              g?._id?.toString() === groupId ||
+              g?.id?.toString?.() === groupId ||
+              g?.name === groupId
+            );
+            return group?.name;
+          }).filter(Boolean);
+
+          if (groupNames.length > 0) {
+            const registrations = await Registration.find({
+              tournament: match.tournament._id,
+              phase: match.tournamentPhase,
+              group: { $in: groupNames },
+              status: { $in: ['approved', 'checked_in'] }
+            }).populate('team', 'teamName teamTag logo').lean();
+
+            // Add teams to match object
+            match.teams = registrations.map(reg => reg.team);
+          }
+        }
+      }
+      return match;
+    }));
+
     res.json({
-      matches,
+      matches: enhancedMatches,
       pagination: {
         total: totalMatches,
         limit: parseInt(limit),
@@ -228,27 +235,28 @@ router.post('/schedule', verifyOrgToken, verifyTournamentOwnership, async (req, 
     // Normalize incoming group ids to strings
     const selectedGroupIds = (matchData.participatingGroups || []).map(g => g?.toString());
 
-    // Collect teams from selected groups (match by _id or name)
-    const teamsFromGroups = selectedGroupIds.flatMap(groupId => {
+    // Get teams from Registration records based on selected groups
+    const groupNames = selectedGroupIds.map(groupId => {
       const group = phase.groups?.find(g =>
         g?._id?.toString() === groupId ||
         g?.id?.toString?.() === groupId ||
         g?.name === groupId
       );
-      return group?.teams || [];
-    });
+      return group?.name;
+    }).filter(Boolean);
 
-    // Remove duplicates and normalize team ids to strings
-    const uniqueTeamIds = [...new Set(teamsFromGroups.map(t => t?.toString()))];
+    console.log('Selected group names:', groupNames);
 
-    // Create participatingTeams array with just team references
-    const participatingTeams = uniqueTeamIds.map(teamId => ({
-      team: teamId,
-      finalPosition: null,
-      points: { placementPoints: 0, killPoints: 0, totalPoints: 0 },
-      kills: { total: 0, breakdown: [] },
-      chickenDinner: false
-    }));
+    // Query teams from Registrations (single source of truth)
+    const registrations = await Registration.find({
+      tournament: matchData.tournament,
+      phase: matchData.tournamentPhase,
+      group: { $in: groupNames },
+      status: { $in: ['approved', 'checked_in'] }
+    }).select('team');
+
+    const uniqueTeamIds = registrations.map(reg => reg.team.toString());
+    console.log('Teams found from registrations:', uniqueTeamIds.length);
 
     // Get the next match number for this tournament
     const lastMatch = await Match.findOne({ tournament: matchData.tournament })
@@ -257,13 +265,14 @@ router.post('/schedule', verifyOrgToken, verifyTournamentOwnership, async (req, 
     const nextMatchNumber = lastMatch ? lastMatch.matchNumber + 1 : 1;
 
     // Create the match with scheduled status and persist participatingGroups
+    // Teams will be fetched dynamically from participatingGroups when needed
     const scheduledMatch = new Match({
       ...matchData,
-      participatingTeams,
       participatingGroups: selectedGroupIds,
       matchNumber: nextMatchNumber,
       status: 'scheduled',
-      matchType: 'scheduled'
+      matchType: 'scheduled',
+      results: [] // Empty results initially
     });
 
     await scheduledMatch.save();
@@ -278,12 +287,22 @@ router.post('/schedule', verifyOrgToken, verifyTournamentOwnership, async (req, 
     }
 
     // Populate the saved match for response
-    await scheduledMatch.populate('participatingTeams.team', 'teamName teamTag logo');
     await scheduledMatch.populate('tournament', 'tournamentName');
 
+    // Fetch teams dynamically from participatingGroups for the response
+    const teamDetails = await Team.find({ _id: { $in: uniqueTeamIds } })
+      .select('teamName teamTag logo')
+      .lean();
+
     // Send notification to all participating teams' players
+    console.log('🔔 Sending match notifications to players...');
+    console.log('   Unique team IDs:', uniqueTeamIds);
+
     const teams = await Team.find({ _id: { $in: uniqueTeamIds } }).populate('players', '_id username');
+    console.log('   Teams found:', teams.length);
+
     const allPlayers = teams.flatMap(team => team.players);
+    console.log('   Total players:', allPlayers.length);
 
     if (allPlayers.length > 0) {
       const messageContent = `Match scheduled: ${matchData.matchName} in ${tournament.tournamentName} - ${matchData.tournamentPhase} at ${new Date(matchData.scheduledStartTime).toLocaleString()}`;
@@ -301,6 +320,7 @@ router.post('/schedule', verifyOrgToken, verifyTournamentOwnership, async (req, 
 
       // Single batch insert instead of N sequential saves
       const savedMessages = await ChatMessage.insertMany(messageDocs, { ordered: false });
+      console.log('   ✅ Messages sent:', savedMessages.length);
 
       // Emit socket notifications in one synchronous pass
       const io = req.app.get('io');
@@ -318,9 +338,17 @@ router.post('/schedule', verifyOrgToken, verifyTournamentOwnership, async (req, 
           });
         });
       }
+    } else {
+      console.log('   ⚠️  No players found for notification');
     }
 
-    res.status(201).json(scheduledMatch);
+    // Include teams in response
+    const matchResponse = {
+      ...scheduledMatch.toObject(),
+      teams: teamDetails // Add teams dynamically fetched from groups
+    };
+
+    res.status(201).json(matchResponse);
 
   } catch (error) {
     console.error('Error scheduling match:', error);
@@ -352,7 +380,7 @@ router.post('/:matchId/share-credentials', verifyOrgToken, verifyMatchOwnership,
 
     // Fetch match with minimal data
     const match = await Match.findById(matchId)
-      .select('roomCredentials participatingTeams tournament tournamentPhase matchNumber')
+      .select('roomCredentials results tournament tournamentPhase matchNumber')
       .populate('tournament', 'tournamentName logo')
       .lean();
 
@@ -370,7 +398,7 @@ router.post('/:matchId/share-credentials', verifyOrgToken, verifyMatchOwnership,
 
     // NEW: Get all registered teams for this match from Registration collection
     // This ensures we only notify teams that are actually registered
-    const teamIds = match.participatingTeams.map(pt => pt.team);
+    const teamIds = match.results.map(pt => pt.team);
 
     const [registrations, players] = await Promise.all([
       // Get registrations to verify teams are active
@@ -561,7 +589,7 @@ router.put('/:matchId/results', verifyOrgToken, verifyMatchOwnership, async (req
     // Update participating teams with results
     if (results && results.length > 0) {
       for (const result of results) {
-        const teamIndex = match.participatingTeams.findIndex(
+        const teamIndex = match.results.findIndex(
           team => team.team.toString() === result.teamId
         );
 
@@ -569,11 +597,19 @@ router.put('/:matchId/results', verifyOrgToken, verifyMatchOwnership, async (req
           // Calculate placement points based on position
           const placementPoints = getPlacementPoints(result.position);
 
-          match.participatingTeams[teamIndex].finalPosition = result.position;
-          match.participatingTeams[teamIndex].kills.total = result.kills || 0;
-          match.participatingTeams[teamIndex].points.placementPoints = placementPoints;
-          match.participatingTeams[teamIndex].points.killPoints = result.kills || 0;
-          match.participatingTeams[teamIndex].points.totalPoints = placementPoints + (result.kills || 0);
+          match.results[teamIndex].finalPosition = result.position;
+          match.results[teamIndex].kills.total = result.kills || 0;
+          match.results[teamIndex].points.placementPoints = placementPoints;
+          match.results[teamIndex].points.killPoints = result.kills || 0;
+          match.results[teamIndex].points.totalPoints = placementPoints + (result.kills || 0);
+
+          // Update player-level kills breakdown if provided
+          if (result.playerKills && Array.isArray(result.playerKills)) {
+            match.results[teamIndex].kills.breakdown = result.playerKills.map((kills, index) => ({
+              player: match.results[teamIndex].kills.breakdown[index]?.player || null,
+              kills: kills || 0
+            }));
+          }
 
           // Mark as chicken dinner if position 1
           if (result.position === 1) {
@@ -589,7 +625,8 @@ router.put('/:matchId/results', verifyOrgToken, verifyMatchOwnership, async (req
     match.status = 'in_progress';
 
     await match.save();
-    await match.populate('participatingTeams.team', 'teamName teamTag logo');
+    await match.populate('results.team', 'teamName teamTag logo');
+    await match.populate('results.kills.breakdown.player', 'username');
 
     console.log('Updated match:', match._id);
     res.json(match);

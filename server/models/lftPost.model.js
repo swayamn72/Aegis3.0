@@ -14,8 +14,8 @@ const lftPostSchema = new mongoose.Schema({
     },
     game: {
         type: String,
-        required: true,
         enum: ['VALO', 'CS2', 'BGMI'],
+        default: 'BGMI',
     },
     roles: [{
         type: String,

@@ -66,7 +66,7 @@ router.get("/users/with-chats", auth, async (req, res) => {
     const users = await Player.find({
       _id: { $in: userIds },
     })
-      .select("username inGameName profilePicture aegisRating")
+      .select("username profilePicture aegisRating")
       .lean();
 
     // If system messages exist, add a pseudo-user for 'system'
@@ -74,7 +74,6 @@ router.get("/users/with-chats", auth, async (req, res) => {
       users.unshift({
         _id: 'system',
         username: 'System',
-        inGameName: 'System',
         profilePicture: '',
         aegisRating: null
       });

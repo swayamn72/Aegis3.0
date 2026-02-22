@@ -461,9 +461,11 @@ router.get('/tournaments', verifyAdminToken, async (req, res) => {
           available: Math.max(0, totalSlots - filledSlots),
           fillPercentage: totalSlots > 0 ? Math.round((filledSlots / totalSlots) * 100) : 0
         },
-        prizePoolDisplay: tournament.prizePool?.total
+        prizePoolDisplay: (tournament.prizePool && (tournament.prizePool.total !== undefined && tournament.prizePool.total !== null))
           ? `${tournament.prizePool.currency || '₹'}${tournament.prizePool.total.toLocaleString()}`
           : 'TBD',
+        prizePoolTotal: tournament.prizePool?.total || 0, // Sending raw total too for detail usage if needed
+        prizePoolCurrency: tournament.prizePool?.currency || '₹',
         isPending: tournament._approvalStatus === 'pending',
         isApproved: tournament._approvalStatus === 'approved',
         isRejected: tournament._approvalStatus === 'rejected',
@@ -591,6 +593,30 @@ router.patch('/tournaments/:id/approve', verifyAdminToken, tournamentActionLimit
     tournament._rejectionReason = undefined;
 
     await tournament.save();
+
+    // Send tournament approval email to organization
+    try {
+      const Organization = (await import('../models/organization.model.js')).default;
+      const { sendTournamentApprovalEmail } = await import('../config/email.js');
+      // Find org email and name
+      let orgEmail = null;
+      let orgName = null;
+      if (tournament.organizer && tournament.organizer.organizationRef) {
+        const org = await Organization.findById(tournament.organizer.organizationRef);
+        if (org) {
+          orgEmail = org.email;
+          orgName = org.orgName;
+        }
+      }
+      if (orgEmail && orgName) {
+        await sendTournamentApprovalEmail(orgEmail, orgName, tournament.tournamentName);
+        console.log(`Tournament approval email sent to ${orgEmail}`);
+      } else {
+        console.warn('Could not send tournament approval email: org info missing');
+      }
+    } catch (emailErr) {
+      console.error('Error sending tournament approval email:', emailErr);
+    }
 
     // Log the action for audit trail
     console.log(`Admin ${adminId} approved tournament ${id} at ${new Date().toISOString()}`);
@@ -796,6 +822,18 @@ router.patch('/organizations/:id/approve', verifyAdminToken, orgActionLimiter, a
     organization.rejectionReason = undefined; // Clear any previous rejection reason
 
     await organization.save();
+
+    // Send approval email to organization
+    try {
+      const { sendApprovalEmail } = await import('../config/email.js');
+      await sendApprovalEmail(
+        organization.email,
+        organization.orgName
+      );
+      console.log(`Approval email sent to ${organization.email}`);
+    } catch (emailErr) {
+      console.error('Error sending approval email:', emailErr);
+    }
 
     // Log the action for audit trail
     console.log(`Admin ${adminId} approved organization ${id} at ${new Date().toISOString()}`);

@@ -96,7 +96,7 @@ const initChat = (server) => {
 
 
         // Populate sender info for response
-        await chat.populate('messages.sender', 'username profilePicture inGameName');
+        await chat.populate('messages.sender', 'username profilePicture');
         const populatedMessage = chat.messages[chat.messages.length - 1];
 
         // Broadcast to all in room

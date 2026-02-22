@@ -120,10 +120,6 @@ const registrationSchema = new mongoose.Schema(
           type: mongoose.Schema.Types.ObjectId,
           ref: 'Player',
         },
-        role: {
-          type: String,
-          enum: ['IGL', 'Fragger', 'Support', 'Sniper', 'Substitute'],
-        },
         inGameName: String,
       },
     ],

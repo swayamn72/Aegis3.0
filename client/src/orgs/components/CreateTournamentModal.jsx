@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import axiosInstance from '../../utils/axiosConfig';
@@ -50,7 +50,23 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
         },
         onError: (error) => {
             console.error('Error creating tournament:', error);
-            toast.error('Error creating tournament: ' + (error.message || error.error));
+
+            // Handle different error response formats (axios config returns data directly)
+            let serverError = 'Unknown error occurred';
+            let validationErrors = null;
+
+            if (typeof error === 'string') {
+                serverError = error;
+            } else if (error && typeof error === 'object') {
+                serverError = error.error || error.message || serverError;
+                validationErrors = error.errors;
+            }
+
+            if (validationErrors && Array.isArray(validationErrors)) {
+                toast.error(`Validation Failed: ${validationErrors.join('. ')}`);
+            } else {
+                toast.error(`Error: ${serverError}`);
+            }
         },
     });
 
@@ -77,12 +93,46 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
             endDate: '',
             status: 'upcoming',
             details: '',
-            groups: []
+            rulesetSpecifics: '',
+            groups: [],
+            qualificationRules: []
         };
         setFormData(prev => ({
             ...prev,
             phases: [...prev.phases, newPhase]
         }));
+    };
+
+    const addQualificationRule = (phaseIndex) => {
+        const updatedPhases = [...formData.phases];
+        const nextPhaseName = phaseIndex + 1 < formData.phases.length
+            ? formData.phases[phaseIndex + 1].name
+            : '';
+        updatedPhases[phaseIndex] = {
+            ...updatedPhases[phaseIndex],
+            qualificationRules: [
+                ...(updatedPhases[phaseIndex].qualificationRules || []),
+                { numberOfTeams: 8, source: 'overall', nextPhase: nextPhaseName }
+            ]
+        };
+        setFormData(prev => ({ ...prev, phases: updatedPhases }));
+    };
+
+    const removeQualificationRule = (phaseIndex, ruleIndex) => {
+        const updatedPhases = [...formData.phases];
+        updatedPhases[phaseIndex] = {
+            ...updatedPhases[phaseIndex],
+            qualificationRules: updatedPhases[phaseIndex].qualificationRules.filter((_, i) => i !== ruleIndex)
+        };
+        setFormData(prev => ({ ...prev, phases: updatedPhases }));
+    };
+
+    const updateQualificationRule = (phaseIndex, ruleIndex, field, value) => {
+        const updatedPhases = [...formData.phases];
+        const rules = [...updatedPhases[phaseIndex].qualificationRules];
+        rules[ruleIndex] = { ...rules[ruleIndex], [field]: value };
+        updatedPhases[phaseIndex] = { ...updatedPhases[phaseIndex], qualificationRules: rules };
+        setFormData(prev => ({ ...prev, phases: updatedPhases }));
     };
 
     const updatePhase = (index, field, value) => {
@@ -105,7 +155,9 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                 return;
             }
             const formDataToSend = new FormData();
+            console.log('Sending tournament data:', formData);
             formDataToSend.append('tournamentData', JSON.stringify(formData));
+
 
             if (files.logo) formDataToSend.append('logo', files.logo);
             if (files.banner) formDataToSend.append('banner', files.banner);
@@ -286,7 +338,7 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                                 <input
                                     type="number"
                                     value={formData.prizePool.total}
-                                    onChange={(e) => handleNestedChange('prizePool', 'total', parseInt(e.target.value))}
+                                    onChange={(e) => handleNestedChange('prizePool', 'total', parseInt(e.target.value) || 0)}
                                     className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
                                     min="0"
                                 />
@@ -314,34 +366,42 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                             ) : (
                                 <div className="space-y-4">
                                     {formData.phases.map((phase, index) => (
-                                        <div key={index} className="bg-gray-700 rounded-lg p-4">
-                                            <div className="flex justify-between items-start mb-3">
-                                                <h4 className="font-semibold">Phase {index + 1}</h4>
+                                        <div key={index} className="bg-gray-700 rounded-lg p-4 border border-gray-600">
+                                            {/* Phase header */}
+                                            <div className="flex justify-between items-center mb-4">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-7 h-7 bg-orange-500/20 rounded-lg flex items-center justify-center">
+                                                        <span className="text-orange-400 text-xs font-bold">{index + 1}</span>
+                                                    </div>
+                                                    <h4 className="font-semibold text-white">{phase.name || `Phase ${index + 1}`}</h4>
+                                                </div>
                                                 <button
                                                     onClick={() => removePhase(index)}
-                                                    className="text-red-400 hover:text-red-300 text-sm"
+                                                    className="text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded hover:bg-red-500/10 transition-colors"
                                                 >
                                                     Remove
                                                 </button>
                                             </div>
 
-                                            <div className="grid grid-cols-2 gap-3">
+                                            {/* Core fields */}
+                                            <div className="grid grid-cols-2 gap-3 mb-4">
                                                 <div>
-                                                    <label className="block text-sm mb-1">Phase Name</label>
+                                                    <label className="block text-xs text-gray-400 mb-1">Phase Name *</label>
                                                     <input
                                                         type="text"
                                                         value={phase.name}
                                                         onChange={(e) => updatePhase(index, 'name', e.target.value)}
-                                                        className="w-full bg-gray-600 border border-gray-500 rounded px-2 py-1 text-sm"
+                                                        className="w-full bg-gray-600 border border-gray-500 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-orange-500"
+                                                        placeholder="e.g. Qualifiers"
                                                     />
                                                 </div>
 
                                                 <div>
-                                                    <label className="block text-sm mb-1">Type</label>
+                                                    <label className="block text-xs text-gray-400 mb-1">Type</label>
                                                     <select
                                                         value={phase.type}
                                                         onChange={(e) => updatePhase(index, 'type', e.target.value)}
-                                                        className="w-full bg-gray-600 border border-gray-500 rounded px-2 py-1 text-sm"
+                                                        className="w-full bg-gray-600 border border-gray-500 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-orange-500"
                                                     >
                                                         <option value="qualifiers">Qualifiers</option>
                                                         <option value="final_stage">Final Stage</option>
@@ -349,35 +409,124 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                                                 </div>
 
                                                 <div>
-                                                    <label className="block text-sm mb-1">Start Date</label>
+                                                    <label className="block text-xs text-gray-400 mb-1">Start Date</label>
                                                     <input
                                                         type="date"
                                                         value={phase.startDate}
                                                         onChange={(e) => updatePhase(index, 'startDate', e.target.value)}
-                                                        className="w-full bg-gray-600 border border-gray-500 rounded px-2 py-1 text-sm"
+                                                        className="w-full bg-gray-600 border border-gray-500 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-orange-500"
                                                     />
                                                 </div>
 
                                                 <div>
-                                                    <label className="block text-sm mb-1">End Date</label>
+                                                    <label className="block text-xs text-gray-400 mb-1">End Date</label>
                                                     <input
                                                         type="date"
                                                         value={phase.endDate}
                                                         onChange={(e) => updatePhase(index, 'endDate', e.target.value)}
-                                                        className="w-full bg-gray-600 border border-gray-500 rounded px-2 py-1 text-sm"
+                                                        className="w-full bg-gray-600 border border-gray-500 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-orange-500"
                                                     />
                                                 </div>
 
                                                 <div className="col-span-2">
-                                                    <label className="block text-sm mb-1">Details (e.g., "Top 8 teams qualify")</label>
+                                                    <label className="block text-xs text-gray-400 mb-1">Phase Details</label>
                                                     <input
                                                         type="text"
                                                         value={phase.details}
                                                         onChange={(e) => updatePhase(index, 'details', e.target.value)}
-                                                        className="w-full bg-gray-600 border border-gray-500 rounded px-2 py-1 text-sm"
-                                                        placeholder="Top 8 teams advance to next round"
+                                                        className="w-full bg-gray-600 border border-gray-500 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-orange-500"
+                                                        placeholder="e.g. Top 16 teams advance to Final Stage"
                                                     />
                                                 </div>
+
+                                                <div className="col-span-2">
+                                                    <label className="block text-xs text-gray-400 mb-1">Ruleset Specifics</label>
+                                                    <textarea
+                                                        value={phase.rulesetSpecifics || ''}
+                                                        onChange={(e) => updatePhase(index, 'rulesetSpecifics', e.target.value)}
+                                                        className="w-full bg-gray-600 border border-gray-500 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-orange-500 resize-none"
+                                                        rows={2}
+                                                        placeholder="e.g. Best of 12 matches, all maps, ERMMM format"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {/* Team Advancement Rules */}
+                                            <div className="border-t border-gray-600 pt-4">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <span className="text-sm font-medium text-gray-300">Team Advancement Rules</span>
+                                                    <button
+                                                        onClick={() => addQualificationRule(index)}
+                                                        className="text-orange-400 hover:text-orange-300 text-xs flex items-center gap-1 px-2 py-1 rounded hover:bg-orange-500/10 transition-colors"
+                                                    >
+                                                        <Plus className="w-3 h-3" /> Add Rule
+                                                    </button>
+                                                </div>
+
+                                                {(phase.qualificationRules || []).length === 0 ? (
+                                                    <p className="text-xs text-gray-500 text-center py-3 border border-dashed border-gray-600 rounded">
+                                                        No advancement rules — all teams stay in this phase.
+                                                    </p>
+                                                ) : (
+                                                    <div className="space-y-2">
+                                                        {(phase.qualificationRules || []).map((rule, ruleIdx) => (
+                                                            <div key={ruleIdx} className="bg-gray-600/60 rounded-lg p-3 border border-gray-500">
+                                                                <div className="grid grid-cols-3 gap-2 mb-2">
+                                                                    <div>
+                                                                        <label className="block text-xs text-gray-400 mb-1">No. of Teams</label>
+                                                                        <input
+                                                                            type="number"
+                                                                            min="1"
+                                                                            value={rule.numberOfTeams}
+                                                                            onChange={(e) => updateQualificationRule(index, ruleIdx, 'numberOfTeams', parseInt(e.target.value) || 1)}
+                                                                            className="w-full bg-gray-700 border border-gray-500 rounded px-2 py-1 text-white text-xs focus:outline-none focus:ring-1 focus:ring-orange-500"
+                                                                        />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-xs text-gray-400 mb-1">Source</label>
+                                                                        <select
+                                                                            value={rule.source}
+                                                                            onChange={(e) => updateQualificationRule(index, ruleIdx, 'source', e.target.value)}
+                                                                            className="w-full bg-gray-700 border border-gray-500 rounded px-2 py-1 text-white text-xs focus:outline-none focus:ring-1 focus:ring-orange-500"
+                                                                        >
+                                                                            <option value="overall">Overall Standings</option>
+                                                                            <option value="from_each_group">From Each Group</option>
+                                                                        </select>
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-xs text-gray-400 mb-1">Next Phase</label>
+                                                                        <select
+                                                                            value={rule.nextPhase}
+                                                                            onChange={(e) => updateQualificationRule(index, ruleIdx, 'nextPhase', e.target.value)}
+                                                                            className="w-full bg-gray-700 border border-gray-500 rounded px-2 py-1 text-white text-xs focus:outline-none focus:ring-1 focus:ring-orange-500"
+                                                                        >
+                                                                            <option value="">Select…</option>
+                                                                            {formData.phases.map((p, pIdx) => pIdx > index ? (
+                                                                                <option key={pIdx} value={p.name}>{p.name || `Phase ${pIdx + 1}`}</option>
+                                                                            ) : null)}
+                                                                        </select>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center justify-between">
+                                                                    <p className="text-xs text-gray-400">
+                                                                        Top <strong className="text-white">{rule.numberOfTeams}</strong> teams from{' '}
+                                                                        <strong className="text-white">
+                                                                            {rule.source === 'overall' ? 'overall standings' : 'each group'}
+                                                                        </strong>{' '}advance to{' '}
+                                                                        <strong className="text-orange-400">{rule.nextPhase || '—'}</strong>
+                                                                    </p>
+                                                                    <button
+                                                                        onClick={() => removeQualificationRule(index, ruleIdx)}
+                                                                        className="text-red-400 hover:text-red-300 transition-colors ml-2 flex-shrink-0"
+                                                                        title="Remove rule"
+                                                                    >
+                                                                        <X className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     ))}

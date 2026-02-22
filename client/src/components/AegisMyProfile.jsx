@@ -74,7 +74,7 @@ const AegisMyProfile = () => {
   const userData = {
     realName: user.realName || 'Not provided',
     username: user.username || '',
-    inGameName: user.inGameName || 'Not set',
+    primaryGameId: user.gameIds?.find(g => g.isPrimary)?.inGameName || null,
     age: user.age || 'N/A',
     location: user.location || 'Not provided',
     country: user.country || 'Not provided',
@@ -264,8 +264,8 @@ const AegisMyProfile = () => {
                 <div className="mb-2">
                   <h1 className="text-3xl font-bold text-white mb-1">{userData.username}</h1>
                   <p className="text-zinc-400">{userData.realName}</p>
-                  {userData.inGameName !== 'Not set' && (
-                    <p className="text-cyan-400 text-sm">@{userData.inGameName}</p>
+                  {userData.primaryGameId && (
+                    <p className="text-cyan-400 text-sm">@{userData.primaryGameId}</p>
                   )}
                 </div>
               </div>

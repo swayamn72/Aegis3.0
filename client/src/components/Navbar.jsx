@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, MessageCircle, Coins, User, Users, Settings, LogOut, Trophy, Star, Bell } from 'lucide-react';
+import { Menu, X, MessageCircle, Coins, User, Users, Settings, LogOut, Trophy, Star, Bell, Gamepad2 } from 'lucide-react';
 import logo from '../assets/newlogo.png';
 import { useAuth } from '../context/AuthContext';
 import ProfileDropdown from './ProfileDropdown';
@@ -199,6 +199,17 @@ const Navbar = () => {
                     >
                       <User size={18} />
                       <span className="font-medium">My Profile</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        navigate('/my-game-ids');
+                        setIsOpen(false);
+                      }}
+                      className="flex items-center gap-3 px-4 py-3 rounded-lg text-zinc-300 hover:text-orange-400 hover:bg-gray-800 transition-all duration-200"
+                    >
+                      <Gamepad2 size={18} />
+                      <span className="font-medium">My Game IDs</span>
                     </button>
 
                     <button

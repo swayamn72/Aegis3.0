@@ -272,6 +272,32 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
       });
     }
 
+    // Check if all players have at least one game ID
+    const playersWithGameIds = await Player.find({
+      _id: { $in: req.team.players },
+      'gameIds.0': { $exists: true }
+    }).select('_id username').lean();
+
+    const playersWithoutGameIds = await Player.find({
+      _id: { $in: req.team.players },
+      $or: [
+        { gameIds: { $exists: false } },
+        { gameIds: { $size: 0 } }
+      ]
+    }).select('_id username').lean();
+
+    if (playersWithoutGameIds.length > 0) {
+      const playerNames = playersWithoutGameIds.map(p => p.username).join(', ');
+      return res.status(400).json({
+        error: `The following players don't have a game ID registered: ${playerNames}`,
+        message: 'All team members must register at least one game ID before tournament registration',
+        playersWithoutGameIds: playersWithoutGameIds.map(p => ({
+          id: p._id,
+          username: p.username
+        }))
+      });
+    }
+
     // Check game compatibility
     if (tournament.gameTitle !== req.team.primaryGame) {
       return res.status(400).json({
@@ -283,6 +309,13 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
     const firstPhase = tournament.phases && tournament.phases.length > 0 ?
       tournament.phases[0] : null;
 
+    // Fetch players with their game IDs for roster
+
+    // Fetch players with full game ID info for roster
+    const playersWithGameIdsFull = await Player.find({
+      _id: { $in: req.team.players }
+    }).select('_id gameIds inGameRole').lean();
+
     const registration = await Registration.create({
       tournament: tournamentId,
       team: req.team._id,
@@ -291,10 +324,14 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
       currentStage: firstPhase?.name || 'Registered',
       phase: firstPhase?.name,
       approvedAt: tournament.isOpenForAll ? new Date() : undefined, // Set approval timestamp for open tournaments
-      roster: req.team.players.map(playerId => ({
-        player: playerId,
-        // You can add role info if available in team model
-      }))
+      roster: playersWithGameIdsFull.map(player => {
+        // Get primary game ID or first game ID
+        const primaryGameId = player.gameIds?.find(gid => gid.isPrimary) || player.gameIds?.[0];
+        return {
+          player: player._id,
+          inGameName: primaryGameId?.inGameName || 'Unknown'
+        };
+      })
     });
 
     // Send registration confirmation emails

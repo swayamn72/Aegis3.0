@@ -9,7 +9,7 @@ const ChatSchema = new Schema(
     message: { type: String, required: true },
     messageType: {
       type: String,
-      enum: ['text', 'invitation', 'tournament_reference', 'tournament_invite', 'match_scheduled', 'system'],
+      enum: ['text', 'invitation', 'tournament_reference', 'tournament_invite', 'match_scheduled', 'system', 'announcement'],
       default: 'text'
     },
     metadata: {

@@ -4,6 +4,9 @@ import Tournament from '../models/tournament.model.js';
 import Registration from '../models/registration.model.js';
 import PhaseStanding from '../models/phaseStanding.model.js';
 import Match from '../models/match.model.js';
+import Team from '../models/team.model.js';
+import TournamentAnnouncement from '../models/tournamentAnnouncement.model.js';
+import auth from '../middleware/auth.js';
 
 const router = express.Router();
 // ============================================================================
@@ -176,6 +179,11 @@ router.get('/:id', async (req, res) => {
         select: 'teamName logo teamTag',
         options: { limit: mobile === 'true' ? 20 : 100 }
       })
+      .populate({
+        path: 'phases.groups.teams',
+        select: 'teamName logo teamTag',
+        options: { limit: mobile === 'true' ? 20 : 100 }
+      })
       .lean();
 
     if (!tournament) {
@@ -214,10 +222,10 @@ router.get('/:id', async (req, res) => {
         Match.find({ tournament: id })
           .sort({ scheduledStartTime: -1 })
           .limit(mobile === 'true' ? 10 : 20)
-          .populate('participatingTeams.team', 'teamName teamTag')
+          .populate('results.team', 'teamName teamTag')
           .select(`
             matchNumber matchType tournamentPhase scheduledStartTime actualStartTime 
-            actualEndTime status map participatingTeams matchStats
+            actualEndTime status map results matchStats participatingGroups
           `)
           .lean() :
         Promise.resolve([]),
@@ -381,8 +389,19 @@ router.get('/:id', async (req, res) => {
           for (const group of phase.groups) {
             const groupKey = group.name?.replace('Group ', '') || 'A';
 
+            // Fetch teams from Registration records (single source of truth)
+            const teamsInGroup = await Registration.find({
+              tournament: id,
+              phase: phase.name,
+              group: group.name,
+              status: { $in: ['approved', 'checked_in'] }
+            })
+              .populate('team', 'teamName teamTag logo')
+              .select('team')
+              .lean();
+
             // Fetch standings for this group
-            const standings = await Standing.find({
+            const standings = await PhaseStanding.find({
               tournament: id,
               phase: phase.name,
               group: group.name
@@ -393,12 +412,12 @@ router.get('/:id', async (req, res) => {
               .lean();
 
             groupsData[phase.name][groupKey] = {
-              teams: group.teams?.map(team => ({
-                _id: team._id,
-                name: team.teamName || 'Unknown Team',
-                tag: team.teamTag,
-                logo: team.logo || null
-              })) || [],
+              teams: teamsInGroup.map(reg => ({
+                _id: reg.team._id,
+                name: reg.team.teamName || 'Unknown Team',
+                tag: reg.team.teamTag || '',
+                logo: reg.team.logo || null
+              })),
               standings: standings.map(standing => ({
                 team: {
                   _id: standing.team._id,
@@ -501,7 +520,7 @@ router.put('/:id/groups', async (req, res) => {
     console.error('Error updating groups:', error);
     res.status(500).json({ error: 'Failed to update groups', details: error.message });
   }
-}); 
+});
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -549,5 +568,97 @@ function isLive(tournament) {
     ['in_progress', 'qualifiers_in_progress', 'group_stage', 'playoffs', 'finals']
       .includes(tournament.status));
 }
+
+// ============================================================================
+// GET /api/tournaments/:id/announcements
+// Players: returns general announcements + announcements targeted at the
+// requesting player's team(s) in this tournament.
+// Unauthenticated requests only receive general announcements.
+// ============================================================================
+router.get('/:id/announcements', async (req, res) => {
+  try {
+    const { id: tournamentId } = req.params;
+    const { page = 1, limit = 30 } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(tournamentId)) {
+      return res.status(400).json({ error: 'Invalid tournament ID' });
+    }
+
+    // Attempt to resolve the authenticated user (optional auth)
+    let userId = null;
+    try {
+      await new Promise((resolve, reject) => {
+        auth(req, res, (err) => (err ? reject(err) : resolve()));
+      });
+      userId = req.user?.id || req.user?._id;
+    } catch (_) {
+      // Not authenticated — only general announcements will be shown
+    }
+
+    // Fetch ALL announcements for this tournament (we'll filter in JS)
+    const all = await TournamentAnnouncement.find({ tournamentId })
+      .sort({ createdAt: -1 })
+      .populate('targetTeams', 'teamName teamTag logo')
+      .lean();
+
+    if (!userId) {
+      // Unauthenticated: only general announcements
+      const general = all.filter((a) => a.targetType === 'general');
+      return res.json({ announcements: general });
+    }
+
+    // Find all teams this player belongs to
+    const playerTeams = await Team.find({ players: userId }).select('_id').lean();
+    const playerTeamIds = playerTeams.map((t) => t._id.toString());
+
+    // Find active registrations those teams have in this tournament
+    const registrations = await Registration.find({
+      tournament: tournamentId,
+      team: { $in: playerTeams.map((t) => t._id) },
+      status: { $in: ['approved', 'checked_in'] },
+    })
+      .select('team phase group')
+      .lean();
+
+    const registeredTeamIds = new Set(registrations.map((r) => r.team.toString()));
+
+    // Build a set of phase+group combos the player participates in
+    const playerPhases = new Set(registrations.map((r) => r.phase).filter(Boolean));
+    const playerGroupKeys = new Set(
+      registrations
+        .filter((r) => r.phase && r.group)
+        .map((r) => `${r.phase}__${r.group}`)
+    );
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const visible = all.filter((ann) => {
+      if (ann.targetType === 'general') return true;
+
+      if (ann.targetType === 'specific_teams') {
+        return ann.targetTeams.some((t) =>
+          registeredTeamIds.has((t._id || t).toString())
+        );
+      }
+
+      if (ann.targetType === 'phase') {
+        return playerPhases.has(ann.targetPhase);
+      }
+
+      if (ann.targetType === 'group') {
+        return playerGroupKeys.has(`${ann.targetPhase}__${ann.targetGroup}`);
+      }
+
+      return false;
+    });
+
+    const paginated = visible.slice(skip, skip + parseInt(limit));
+
+    res.json({ announcements: paginated, total: visible.length });
+  } catch (error) {
+    console.error('Error fetching tournament announcements:', error);
+    res.status(500).json({ error: 'Failed to fetch announcements' });
+  }
+});
 
 export default router;

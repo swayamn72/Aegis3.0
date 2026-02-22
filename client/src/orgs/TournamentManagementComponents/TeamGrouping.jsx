@@ -1,37 +1,71 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Users, Shuffle, Save, AlertCircle, Grid3x3, Loader2 } from 'lucide-react';
+import { Users, Shuffle, Save, AlertCircle, Grid3x3, Loader2, Plus, Trash2, ArrowRightLeft } from 'lucide-react';
 import { toast } from 'react-toastify';
 import axiosInstance from '../../utils/axiosConfig';
 
 // ─── TeamCard ────────────────────────────────────────────────────────────────
-const TeamCard = ({ team, groupName, onRemove }) => (
-    <div className="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-all">
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-            {team.logo ? (
-                <img src={team.logo} alt={team.teamName} className="w-8 h-8 rounded-lg object-cover flex-shrink-0" />
-            ) : (
-                <div className="w-8 h-8 bg-gray-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <Users className="w-4 h-4 text-gray-400" />
+const TeamCard = ({ team, groupName, allGroups, onRemove, onMove }) => {
+    const [showMove, setShowMove] = useState(false);
+    const otherGroups = allGroups.filter(g => g.name !== groupName);
+
+    return (
+        <div className="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-all group">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+                {team.logo ? (
+                    <img src={team.logo} alt={team.teamName} className="w-8 h-8 rounded-lg object-cover flex-shrink-0" />
+                ) : (
+                    <div className="w-8 h-8 bg-gray-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Users className="w-4 h-4 text-gray-400" />
+                    </div>
+                )}
+                <div className="min-w-0">
+                    <p className="text-white text-sm truncate">{team.teamName}</p>
+                    {team.teamTag && <p className="text-gray-500 text-xs">[{team.teamTag}]</p>}
                 </div>
-            )}
-            <div className="min-w-0">
-                <p className="text-white text-sm truncate">{team.teamName}</p>
-                {team.teamTag && <p className="text-gray-500 text-xs">[{team.teamTag}]</p>}
+            </div>
+            <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+                {otherGroups.length > 0 && (
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowMove(v => !v)}
+                            className="p-1 text-gray-500 hover:text-blue-400 transition-colors"
+                            title="Move to group"
+                        >
+                            <ArrowRightLeft className="w-3.5 h-3.5" />
+                        </button>
+                        {showMove && (
+                            <div className="absolute right-0 top-7 z-20 bg-gray-800 border border-gray-600 rounded-lg shadow-xl min-w-[130px] py-1">
+                                <p className="text-gray-500 text-xs px-3 py-1">Move to…</p>
+                                {otherGroups.map(g => (
+                                    <button
+                                        key={g.name}
+                                        onClick={() => { onMove(groupName, team._id, g.name); setShowMove(false); }}
+                                        className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-gray-700 transition-colors"
+                                    >
+                                        {g.name}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+                <button
+                    onClick={() => onRemove(groupName, team._id)}
+                    className="p-1 text-gray-500 hover:text-red-400 transition-colors text-lg leading-none"
+                    title="Remove from group"
+                >
+                    ×
+                </button>
             </div>
         </div>
-        <button
-            onClick={() => onRemove(groupName, team._id)}
-            className="text-gray-500 hover:text-red-400 transition-colors ml-2 flex-shrink-0 text-lg leading-none"
-            title="Remove from group"
-        >
-            ×
-        </button>
-    </div>
-);
+    );
+};
 
 // ─── GroupCard ────────────────────────────────────────────────────────────────
-const GroupCard = ({ group, phaseTeamMap, onRemove, index }) => {
+const GroupCard = ({ group, phaseTeamMap, allGroups, unassignedTeams, onRemove, onMove, onAddTeam, onDeleteGroup, index }) => {
+    const [addingTeam, setAddingTeam] = useState(false);
     const letter = String.fromCharCode(65 + index);
+
     return (
         <div className="bg-gray-800/50 rounded-xl border border-gray-700 p-5">
             <div className="flex items-center justify-between mb-4">
@@ -41,7 +75,16 @@ const GroupCard = ({ group, phaseTeamMap, onRemove, index }) => {
                     </div>
                     {group.name}
                 </h3>
-                <span className="text-gray-400 text-sm">{group.teams.length} teams</span>
+                <div className="flex items-center gap-2">
+                    <span className="text-gray-400 text-sm">{group.teams.length} teams</span>
+                    <button
+                        onClick={() => onDeleteGroup(group.name)}
+                        className="p-1 text-gray-600 hover:text-red-400 transition-colors"
+                        title="Delete group"
+                    >
+                        <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                </div>
             </div>
 
             <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
@@ -53,7 +96,9 @@ const GroupCard = ({ group, phaseTeamMap, onRemove, index }) => {
                             key={teamId}
                             team={team}
                             groupName={group.name}
+                            allGroups={allGroups}
                             onRemove={onRemove}
+                            onMove={onMove}
                         />
                     );
                 })}
@@ -61,6 +106,44 @@ const GroupCard = ({ group, phaseTeamMap, onRemove, index }) => {
                     <p className="text-gray-500 text-sm text-center py-4">No teams in this group</p>
                 )}
             </div>
+
+            {/* Add team to group */}
+            {unassignedTeams.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-gray-700">
+                    {addingTeam ? (
+                        <div className="flex gap-2">
+                            <select
+                                autoFocus
+                                defaultValue=""
+                                onChange={e => {
+                                    if (e.target.value) {
+                                        onAddTeam(group.name, e.target.value);
+                                        setAddingTeam(false);
+                                    }
+                                }}
+                                className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-2 py-1.5 text-white text-sm focus:outline-none focus:ring-1 focus:ring-orange-500"
+                            >
+                                <option value="" disabled>Pick a team…</option>
+                                {unassignedTeams.map(t => (
+                                    <option key={t._id} value={t._id}>{t.teamName}{t.teamTag ? ` [${t.teamTag}]` : ''}</option>
+                                ))}
+                            </select>
+                            <button
+                                onClick={() => setAddingTeam(false)}
+                                className="px-2 py-1 text-gray-400 hover:text-white text-sm"
+                            >Cancel</button>
+                        </div>
+                    ) : (
+                        <button
+                            onClick={() => setAddingTeam(true)}
+                            className="w-full flex items-center justify-center gap-1.5 py-1.5 text-sm text-gray-400 hover:text-orange-400 hover:bg-orange-500/10 rounded-lg transition-all"
+                        >
+                            <Plus className="w-3.5 h-3.5" />
+                            Add team
+                        </button>
+                    )}
+                </div>
+            )}
         </div>
     );
 };
@@ -147,7 +230,7 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
         toast.success('Teams shuffled');
     };
 
-    // ── Remove from group (local state only — persisted on Save)
+    // ── Remove from group → goes back to unassigned
     const handleRemoveFromGroup = (groupName, teamId) => {
         setGroups(prev =>
             prev.map(g =>
@@ -156,6 +239,46 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
                     : g
             )
         );
+    };
+
+    // ── Move a team from one group to another
+    const handleMoveTeam = (fromGroup, teamId, toGroup) => {
+        setGroups(prev =>
+            prev.map(g => {
+                if (g.name === fromGroup) return { ...g, teams: g.teams.filter(id => id !== teamId) };
+                if (g.name === toGroup) return { ...g, teams: [...g.teams, teamId] };
+                return g;
+            })
+        );
+    };
+
+    // ── Add an unassigned team into a specific group
+    const handleAddTeamToGroup = (groupName, teamId) => {
+        setGroups(prev =>
+            prev.map(g =>
+                g.name === groupName
+                    ? { ...g, teams: [...g.teams, teamId] }
+                    : g
+            )
+        );
+    };
+
+    // ── Add a new empty group
+    const handleAddGroup = () => {
+        const nextLetter = String.fromCharCode(65 + groups.length);
+        const newName = `Group ${nextLetter}`;
+        if (groups.find(g => g.name === newName)) {
+            toast.error(`${newName} already exists`);
+            return;
+        }
+        setGroups(prev => [...prev, { name: newName, teams: [] }]);
+        toast.success(`Added ${newName}`);
+    };
+
+    // ── Delete a group (teams return to unassigned pool)
+    const handleDeleteGroup = (groupName) => {
+        setGroups(prev => prev.filter(g => g.name !== groupName));
+        toast.info(`Removed ${groupName} — teams are now unassigned`);
     };
 
     // ── Save: write to Registration.group via PUT /assign-groups
@@ -267,6 +390,15 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
                                 Shuffle
                             </button>
 
+                            <button
+                                onClick={handleAddGroup}
+                                disabled={phaseTeams.length === 0}
+                                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all disabled:opacity-50 flex items-center gap-2"
+                            >
+                                <Plus className="w-4 h-4" />
+                                Add Group
+                            </button>
+
                             <div className="ml-auto flex items-center gap-4 text-sm text-gray-400">
                                 <span>{phaseTeams.length} total</span>
                                 {unassignedTeams.length > 0 && (
@@ -286,7 +418,12 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
                                     key={group.name}
                                     group={group}
                                     phaseTeamMap={phaseTeamMap}
+                                    allGroups={groups}
+                                    unassignedTeams={unassignedTeams}
                                     onRemove={handleRemoveFromGroup}
+                                    onMove={handleMoveTeam}
+                                    onAddTeam={handleAddTeamToGroup}
+                                    onDeleteGroup={handleDeleteGroup}
                                     index={idx}
                                 />
                             ))}

@@ -7,9 +7,9 @@ import {
   ChevronRight, ExternalLink, Copy, Play, Pause, Volume2,
   Medal, Crown, Shield, Zap, Activity, BarChart3, Globe,
   CheckCircle, XCircle, AlertCircle, ArrowRight, Download,
-  
+
   Twitch, Youtube, Twitter, Instagram, Hash, X, ChevronDown,
-  ChevronUp, UserPlus, Send
+  ChevronUp, UserPlus, Send, Bell, Megaphone
 } from 'lucide-react';
 import ErangelMap from '../assets/mapImages/erangel.jpg';
 import MiramarMap from '../assets/mapImages/miramar.webp';
@@ -43,6 +43,11 @@ const fetchTeamRegistrationStatus = async (tournamentId, teamId) => {
     if (error.response?.status === 404) return null;
     throw error;
   }
+};
+
+const fetchTournamentAnnouncements = async (tournamentId) => {
+  const { data } = await axiosInstance.get(`/api/tournaments/${tournamentId}/announcements`);
+  return data.announcements || [];
 };
 
 const DetailedTournamentInfo = () => {
@@ -107,6 +112,18 @@ const DetailedTournamentInfo = () => {
     queryKey: ['teamRegistrationStatus', id, userTeam?._id],
     queryFn: () => fetchTeamRegistrationStatus(id, userTeam?._id),
     enabled: !!id && !!userTeam?._id,
+  });
+
+  // Announcements query (server filters based on auth'd player's teams)
+  const {
+    data: announcementsData = [],
+    isLoading: announcementsLoading,
+  } = useQuery({
+    queryKey: ['tournamentAnnouncements', id],
+    queryFn: () => fetchTournamentAnnouncements(id),
+    enabled: !!id,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   // Derived data
@@ -227,7 +244,8 @@ const DetailedTournamentInfo = () => {
       await refetchRegistrationStatus();
       await refetchTournament();
     } catch (error) {
-      setRegistrationError(error.message || (error.error ?? 'Registration failed'));
+      // Prioritize error.error which contains specific details like player names
+      setRegistrationError(error.error || error.message || 'Registration failed');
     } finally {
       setRegistrationLoading(false);
     }
@@ -638,6 +656,7 @@ const DetailedTournamentInfo = () => {
           <TabButton id="matches" label="All Matches" isActive={activeTab === 'matches'} onClick={setActiveTab} />
           <TabButton id="statistics" label="Statistics" isActive={activeTab === 'statistics'} onClick={setActiveTab} />
           <TabButton id="streams" label="Live Streams" isActive={activeTab === 'streams'} onClick={setActiveTab} />
+          <TabButton id="announcements" label="Announcements" isActive={activeTab === 'announcements'} onClick={setActiveTab} />
         </div>
 
         {/* Tab Content */}
@@ -1259,6 +1278,68 @@ const DetailedTournamentInfo = () => {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ── Announcements Tab ───────────────────────────────────────── */}
+          {activeTab === 'announcements' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-9 h-9 bg-orange-500/20 rounded-xl flex items-center justify-center">
+                  <Megaphone className="w-5 h-5 text-orange-400" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">Announcements</h2>
+                  <p className="text-zinc-400 text-sm">Official updates from the organizer</p>
+                </div>
+              </div>
+
+              {announcementsLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 animate-pulse">
+                      <div className="h-3 w-24 bg-zinc-700 rounded mb-2" />
+                      <div className="h-4 w-48 bg-zinc-700 rounded mb-2" />
+                      <div className="h-3 w-full bg-zinc-700 rounded" />
+                    </div>
+                  ))}
+                </div>
+              ) : announcementsData.length === 0 ? (
+                <div className="text-center py-20 bg-zinc-900/40 border border-zinc-800 rounded-xl">
+                  <Bell className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
+                  <p className="text-zinc-400 font-medium">No announcements yet</p>
+                  <p className="text-zinc-500 text-sm mt-1">Check back later for updates from the organizer</p>
+                </div>
+              ) : (
+                announcementsData.map((ann) => {
+                  const targetBadge = (() => {
+                    if (ann.targetType === 'general') return { text: '🌐 General', cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30' };
+                    if (ann.targetType === 'specific_teams') return { text: '👥 Your Team', cls: 'bg-purple-500/20 text-purple-400 border-purple-500/30' };
+                    if (ann.targetType === 'phase') return { text: `🏁 ${ann.targetPhase}`, cls: 'bg-orange-500/20 text-orange-400 border-orange-500/30' };
+                    if (ann.targetType === 'group') return { text: `📦 ${ann.targetPhase} › ${ann.targetGroup}`, cls: 'bg-green-500/20 text-green-400 border-green-500/30' };
+                    return { text: ann.targetType, cls: 'bg-zinc-700 text-zinc-400 border-zinc-600' };
+                  })();
+
+                  return (
+                    <div key={ann._id} className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5 hover:border-zinc-700 transition-all">
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${targetBadge.cls}`}>
+                            {targetBadge.text}
+                          </span>
+                        </div>
+                        <span className="text-xs text-zinc-500 whitespace-nowrap shrink-0">
+                          {new Date(ann.createdAt).toLocaleDateString('en-IN', {
+                            day: 'numeric', month: 'short', year: 'numeric',
+                          })}
+                        </span>
+                      </div>
+                      <h3 className="text-white font-semibold mb-2">{ann.title}</h3>
+                      <p className="text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap">{ann.message}</p>
+                    </div>
+                  );
+                })
+              )}
             </div>
           )}
         </div>

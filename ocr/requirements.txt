@@ -3,3 +3,5 @@ pytesseract
 numpy
 rapidfuzz
 flask
+python-dotenv
+boto3

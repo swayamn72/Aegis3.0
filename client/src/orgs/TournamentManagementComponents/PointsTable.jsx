@@ -234,7 +234,7 @@ const PointsTable = ({ tournament, onUpdate }) => {
         }
 
         filteredMatches.forEach(match => {
-            match.participatingTeams?.forEach(teamResult => {
+            match.results?.forEach(teamResult => {
                 const teamId = teamResult.team?._id || teamResult.team || teamResult._id;
                 const teamIdStr = teamId ? teamId.toString() : null;
 

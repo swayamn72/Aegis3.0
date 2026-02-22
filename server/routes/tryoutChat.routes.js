@@ -21,7 +21,7 @@ router.get('/my-chats', auth, async (req, res) => {
       status: 'active',
     })
       .populate('team', 'teamName teamTag logo')
-      .populate('applicant', 'username inGameName profilePicture')
+      .populate('applicant', 'username profilePicture')
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean();
@@ -48,8 +48,8 @@ router.get('/:chatId', auth, async (req, res) => {
       participants: req.user.id,
     })
       .populate('team', 'teamName teamTag logo captain')
-      .populate('applicant', 'username inGameName profilePicture')
-      .populate('participants', 'username profilePicture inGameName')
+      .populate('applicant', 'username profilePicture')
+      .populate('participants', 'username profilePicture')
       .populate({
         path: 'messages.sender',
         select: 'username profilePicture',

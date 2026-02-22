@@ -177,7 +177,6 @@ const phaseStandingSchema = new mongoose.Schema(
 // --- Compound Indexes ---
 phaseStandingSchema.index({ tournament: 1, phase: 1 }, { unique: true });
 phaseStandingSchema.index({ tournament: 1, status: 1 });
-phaseStandingSchema.index({ lastCalculated: 1 }); // For finding stale data
 
 // --- Virtuals ---
 

@@ -3,17 +3,16 @@ import { verificationEmailTemplate, verificationEmailPlainText } from './emailTe
 
 // Create reusable transporter
 const createTransporter = () => {
-    // Using port 587 with STARTTLS (more reliable than port 465)
     return nodemailer.createTransport({
         host: 'smtp.gmail.com',
         port: 587,
-        secure: false, // true for 465, false for 587 (uses STARTTLS)
+        secure: false,
         auth: {
             user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASSWORD, // Use App Password, not your regular password
+            pass: process.env.EMAIL_PASSWORD,
         },
         tls: {
-            rejectUnauthorized: false // Accept self-signed certificates
+            rejectUnauthorized: false
         }
     });
 };
@@ -45,7 +44,6 @@ export const sendVerificationEmail = async (email, username, code) => {
         };
 
         const info = await transporter.sendMail(mailOptions);
-
         console.log('✅ Verification email sent:', info.messageId);
         return { success: true, messageId: info.messageId };
     } catch (error) {
@@ -65,7 +63,6 @@ export const sendPasswordResetEmail = async (email, username, resetLink) => {
     try {
         const transporter = createTransporter();
 
-        // Import templates dynamically to avoid circular dependencies
         const { passwordResetEmailTemplate, passwordResetEmailPlainText } = await import('./emailTemplates.js');
 
         const mailOptions = {
@@ -112,7 +109,6 @@ export const testEmailConfig = async () => {
 export const sendTournamentRegistrationEmail = async (email, username, teamName, tournamentName) => {
     try {
         const transporter = createTransporter();
-
         const { tournamentRegistrationEmailTemplate, tournamentRegistrationEmailPlainText } = await import('./emailTemplates.js');
 
         const mailOptions = {
@@ -132,10 +128,77 @@ export const sendTournamentRegistrationEmail = async (email, username, teamName,
     }
 };
 
+/**
+ * Send approval email for tournament
+ * @param {string} email - Recipient email address
+ * @param {string} orgName - Name of the organization
+ * @param {string} tournamentName - Name of the tournament
+ * @returns {Promise<Object>} - Email send result
+ */
+export const sendTournamentApprovalEmail = async (email, orgName, tournamentName) => {
+    const transporter = createTransporter();
+
+    const mailOptions = {
+        from: `"${process.env.APP_NAME || 'Aegis'}" <${process.env.EMAIL_USER}>`,
+        to: email,
+        subject: `Tournament Approved - ${tournamentName} | Aegis Gaming Platform`,
+        html: `
+            <h2>Congratulations, ${orgName}!</h2>
+            <p>Your tournament <b>${tournamentName}</b> has been <b>approved</b> by the Aegis admin team.</p>
+            <p>You can now manage your tournament and invite teams/players.</p>
+            <p>If you have any questions, contact us at <a href="mailto:support@aegis.com">support@aegis.com</a>.</p>
+            <p>Best of luck for your event!</p>
+        `,
+        text: `Congratulations, ${orgName}!
+Your tournament ${tournamentName} has been approved by the Aegis admin team.
+You can now manage your tournament and invite teams/players.
+If you have any questions, contact us at support@aegis.com.
+Best of luck for your event!`
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Tournament approval email sent:', info.messageId);
+    return { success: true, messageId: info.messageId };
+};
+
+/**
+ * Send approval email for organization application
+ * @param {string} email - Recipient email address
+ * @param {string} orgName - Name of the organization
+ * @returns {Promise<Object>} - Email send result
+ */
+export const sendApprovalEmail = async (email, orgName) => {
+    const transporter = createTransporter();
+
+    const mailOptions = {
+        from: `"${process.env.APP_NAME || 'Aegis'}" <${process.env.EMAIL_USER}>`,
+        to: email,
+        subject: 'Organization Application Approved - Aegis Gaming Platform',
+        html: `
+            <h2>Congratulations, ${orgName}!</h2>
+            <p>Your organization application has been <b>approved</b> by the Aegis admin team.</p>
+            <p>You can now access your organization dashboard and start conducting tournaments and events.</p>
+            <p>If you have any questions, contact us at <a href="mailto:support@aegis.com">support@aegis.com</a>.</p>
+            <p>Welcome to Aegis Gaming Platform!</p>
+        `,
+        text: `Congratulations, ${orgName}!
+Your organization application has been approved by the Aegis admin team.
+You can now access your organization dashboard and start participating in tournaments and events.
+If you have any questions, contact us at support@aegis.com.
+Welcome to Aegis Gaming Platform!`
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Approval email sent:', info.messageId);
+    return { success: true, messageId: info.messageId };
+};
+
 export default {
     sendVerificationEmail,
     sendPasswordResetEmail,
     sendTournamentRegistrationEmail,
+    sendTournamentApprovalEmail,
+    sendApprovalEmail,
     generateVerificationCode,
     testEmailConfig,
 };

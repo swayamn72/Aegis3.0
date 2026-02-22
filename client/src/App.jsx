@@ -20,6 +20,7 @@ import ChatPage from "./pages/ChatPage";
 import RecruitmentActualPage from "./pages/RecruitmentActualPage";
 import SettingsPage from "./pages/SettingsPage";
 import MyProfilePage from "./pages/MyProfilePage";
+import MyGameIdsPage from "./pages/MyGameIdsPage";
 import RewardsPage from "./pages/RewardsPage";
 
 import TournamentsPage from "./pages/TournamentsPage";
@@ -129,6 +130,14 @@ function AppContent() {
             element={
               <ProtectedRoute requireRole="player">
                 <MyProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/my-game-ids"
+            element={
+              <ProtectedRoute requireRole="player">
+                <MyGameIdsPage />
               </ProtectedRoute>
             }
           />

@@ -38,6 +38,7 @@ const AdminTournaments = () => {
     const [selectedTournament, setSelectedTournament] = useState(null);
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [showRejectModal, setShowRejectModal] = useState(false);
+    const [showApproveModal, setShowApproveModal] = useState(false);
     const [rejectionReason, setRejectionReason] = useState('');
     const [actionLoading, setActionLoading] = useState(false);
 
@@ -117,23 +118,32 @@ const AdminTournaments = () => {
         }
     };
 
-    // Approve tournament
-    const handleApprove = async (tournamentId) => {
-        // SECURITY: Confirm action
-        if (!window.confirm('Are you sure you want to approve this tournament?')) {
-            return;
+    // Open approve modal
+    const handleApprove = (tournament) => {
+        if (tournament._id) {
+            setSelectedTournament(tournament);
         }
+        setShowApproveModal(true);
+    };
+
+    // Approve tournament confirmation
+    const handleApproveConfirm = async () => {
+        if (!selectedTournament?._id) return;
 
         setActionLoading(true);
         try {
-            await approveTournamentAPI(tournamentId);
+            console.log('Attempting to approve tournament:', selectedTournament._id);
+            await approveTournamentAPI(selectedTournament._id);
+            console.log('Tournament approved successfully API response received');
             toast.success('Tournament approved successfully!');
             fetchTournaments();
+            setShowApproveModal(false);
             setShowDetailModal(false);
             setSelectedTournament(null);
         } catch (error) {
-            console.error('Error approving tournament:', error);
-            toast.error(error.error || 'Failed to approve tournament');
+            console.error('Detailed error approving tournament:', error);
+            const serverError = error.error || error.message || 'Failed to approve tournament';
+            toast.error(`Error: ${serverError}`);
         } finally {
             setActionLoading(false);
         }
@@ -534,7 +544,7 @@ const AdminTournaments = () => {
                                                         {tournament._approvalStatus === 'pending' && (
                                                             <>
                                                                 <button
-                                                                    onClick={() => handleApprove(tournament._id)}
+                                                                    onClick={() => handleApprove(tournament)}
                                                                     disabled={actionLoading}
                                                                     className="p-2 text-green-400 hover:bg-green-500/20 rounded-lg transition-colors disabled:opacity-50"
                                                                     title="Approve"
@@ -685,7 +695,12 @@ const AdminTournaments = () => {
                                     </div>
                                     <div className="bg-zinc-800 rounded-lg p-4">
                                         <label className="text-xs text-zinc-500 block mb-1">Prize Pool</label>
-                                        <p className="text-green-400 font-medium">{selectedTournament.prizePoolDisplay || 'TBD'}</p>
+                                        <p className="text-green-400 font-medium">
+                                            {selectedTournament.prizePoolDisplay ||
+                                                ((selectedTournament.prizePool?.total !== undefined && selectedTournament.prizePool?.total !== null) ?
+                                                    `${selectedTournament.prizePool.currency || '₹'}${Number(selectedTournament.prizePool.total).toLocaleString()}` :
+                                                    'TBD')}
+                                        </p>
                                     </div>
                                 </div>
 
@@ -779,7 +794,7 @@ const AdminTournaments = () => {
                                     {selectedTournament._approvalStatus === 'pending' && (
                                         <>
                                             <button
-                                                onClick={() => handleApprove(selectedTournament._id)}
+                                                onClick={() => handleApprove(selectedTournament)}
                                                 disabled={actionLoading}
                                                 className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2 disabled:opacity-50"
                                             >
@@ -905,6 +920,85 @@ const AdminTournaments = () => {
                                             <>
                                                 <XCircle className="w-5 h-5" />
                                                 <span>Confirm Rejection</span>
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Approve Confirmation Modal */}
+                {showApproveModal && selectedTournament && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4">
+                        <div className="bg-zinc-900 rounded-lg max-w-md w-full border border-zinc-800">
+                            {/* Modal Header */}
+                            <div className="border-b border-zinc-800 p-6">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center space-x-3">
+                                        <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center">
+                                            <CheckCircle className="w-6 h-6 text-green-400" />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-xl font-bold text-white">Approve Tournament</h2>
+                                            <p className="text-sm text-zinc-400">Confirm approval</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => setShowApproveModal(false)}
+                                        className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                                    >
+                                        <X className="w-5 h-5" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Modal Content */}
+                            <div className="p-6 space-y-4">
+                                <div className="bg-zinc-800/50 rounded-lg p-4 border border-zinc-700">
+                                    <p className="text-white font-medium mb-2">{selectedTournament.tournamentName || selectedTournament._tournamentName}</p>
+                                    <div className="space-y-1 text-sm">
+                                        <p className="text-zinc-400">
+                                            <span className="text-zinc-500">Game:</span> {selectedTournament.gameTitle || selectedTournament._gameTitle}
+                                        </p>
+                                        {selectedTournament._organizationId && (
+                                            <p className="text-zinc-400">
+                                                <span className="text-zinc-500">Organizer:</span> {selectedTournament._organizationId.organizationName || selectedTournament._organizationId.name || 'N/A'}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="bg-green-500/10 rounded-lg p-4 border border-green-500/30">
+                                    <p className="text-green-400 text-sm">
+                                        Are you sure you want to approve this tournament? This action will make the tournament visible and accessible to users.
+                                    </p>
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div className="flex items-center justify-end space-x-3 pt-4">
+                                    <button
+                                        onClick={() => setShowApproveModal(false)}
+                                        disabled={actionLoading}
+                                        className="px-6 py-2 bg-zinc-700 text-white rounded-lg hover:bg-zinc-600 transition-colors disabled:opacity-50"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleApproveConfirm}
+                                        disabled={actionLoading}
+                                        className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {actionLoading ? (
+                                            <>
+                                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                <span>Approving...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <CheckCircle className="w-5 h-5" />
+                                                <span>Confirm Approval</span>
                                             </>
                                         )}
                                     </button>

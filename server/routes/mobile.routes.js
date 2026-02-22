@@ -14,11 +14,11 @@ router.get("/me", auth, async (req, res) => {
       .select(
         [
           // core identity
-          "username","email","profilePicture","bio","age","country","location","realName","inGameName","primaryGame","inGameRole","languages",
+          "username", "email", "profilePicture", "bio", "age", "country", "location", "realName", "primaryGame", "inGameRole", "languages",
           // status / meta
-          "aegisRating","teamStatus","profileVisibility","cardTheme","coins","statistics","createdAt",
+          "aegisRating", "teamStatus", "profileVisibility", "cardTheme", "coins", "statistics", "createdAt",
           // socials
-          "discordTag","twitch","youtube","twitter",
+          "discordTag", "twitch", "youtube", "twitter",
           // team ref
           "team",
         ].join(" ")
@@ -26,14 +26,14 @@ router.get("/me", auth, async (req, res) => {
       .populate({
         path: "team",
         select: [
-          "teamName","teamTag","logo","primaryGame","region","bio",
-          "status","profileVisibility","aegisRating","totalEarnings",
-          "lookingForPlayers","openRoles","establishedDate","statistics","winRatePercentage",
-          "averageKillsPerMatch","players","captain",
+          "teamName", "teamTag", "logo", "primaryGame", "region", "bio",
+          "status", "profileVisibility", "aegisRating", "totalEarnings",
+          "lookingForPlayers", "openRoles", "establishedDate", "statistics", "winRatePercentage",
+          "averageKillsPerMatch", "players", "captain",
         ].join(" "),
         populate: {
           path: "captain",
-          select: "username profilePicture primaryGame aegisRating inGameName", 
+          select: "username profilePicture primaryGame aegisRating",
         },
       })
       .lean(); // return plain object, not Mongoose doc
@@ -71,8 +71,8 @@ router.get('/team/:id', auth, async (req, res) => {
     const teamId = req.params.id.trim();
 
     const team = await Team.findById(teamId)
-      .populate('captain', 'username inGameName')
-      .populate('players', 'username inGameName')
+      .populate('captain', 'username')
+      .populate('players', 'username')
       .select('teamName teamTag logo captain players primaryGame bio establishedDate statistics recentResults socials status');
 
     if (!team) {

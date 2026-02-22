@@ -9,6 +9,8 @@ import PhaseStanding from '../models/phaseStanding.model.js';
 import cloudinary from '../config/cloudinary.js';
 import upload from '../config/multer.js';
 import { verifyApprovedOrgToken } from '../middleware/orgAuth.js';
+import TournamentAnnouncement from '../models/tournamentAnnouncement.model.js';
+import ChatMessage from '../models/chat.model.js';
 
 const router = express.Router();
 
@@ -147,7 +149,7 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
       tournament: tournamentId,
       tournamentPhase: phaseName
     })
-      .populate('participatingTeams.team', 'teamName teamTag logo')
+      .populate('results.team', 'teamName teamTag logo')
       .lean();
 
     console.log(`Total matches: ${matches.length}`);
@@ -195,7 +197,7 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
 
     // Process matches and calculate points
     matches.forEach(match => {
-      match.participatingTeams?.forEach(teamResult => {
+      match.results?.forEach(teamResult => {
         const teamId = (teamResult.team?._id || teamResult.team)?.toString();
 
         if (teamId && teamStandings[teamId]) {
@@ -837,8 +839,11 @@ router.put('/:tournamentId', verifyApprovedOrgToken, upload.fields([
     if (updateData.startDate || updateData.endDate) {
       const startDate = updateData.startDate ?
         new Date(updateData.startDate) : new Date(tournament.startDate);
+      if (updateData.startDate) startDate.setUTCHours(0, 0, 0, 0);
+
       const endDate = updateData.endDate ?
         new Date(updateData.endDate) : new Date(tournament.endDate);
+      if (updateData.endDate) endDate.setUTCHours(23, 59, 59, 999);
 
       if (endDate <= startDate) {
         return res.status(400).json({
@@ -1188,14 +1193,20 @@ router.post(
       // Date validation
       if (tournamentData.startDate && tournamentData.endDate) {
         const startDate = new Date(tournamentData.startDate);
-        const endDate = new Date(tournamentData.endDate);
-        const now = new Date();
+        startDate.setUTCHours(0, 0, 0, 0); // 12 AM UTC
 
-        if (startDate < now) {
+        const endDate = new Date(tournamentData.endDate);
+        endDate.setUTCHours(23, 59, 59, 999); // 11:59 PM UTC
+
+        const now = new Date();
+        const startOfToday = new Date(now);
+        startOfToday.setUTCHours(0, 0, 0, 0);
+
+        if (startDate < startOfToday) {
           validationErrors.push('Start date cannot be in the past');
         }
         if (endDate <= startDate) {
-          validationErrors.push('End date must be after start date');
+          validationErrors.push(`End date must be after start date. (Start: ${startDate.toISOString()}, End: ${endDate.toISOString()})`);
         }
 
         // Registration dates validation
@@ -1203,11 +1214,22 @@ router.post(
           const regStart = new Date(tournamentData.registrationStartDate);
           const regEnd = new Date(tournamentData.registrationEndDate);
 
-          if (regEnd > startDate) {
-            validationErrors.push('Registration must end before tournament starts');
+          // Only normalize if date-only (length <= 10). 
+          // Datetime-local (length > 10) strings keep their specific times.
+          if (tournamentData.registrationStartDate.length <= 10) regStart.setUTCHours(0, 0, 0, 0);
+          if (tournamentData.registrationEndDate.length <= 10) regEnd.setUTCHours(23, 59, 59, 999);
+
+          // Rule: Registration must end on or before the tournament start day.
+          const startDateMidnight = new Date(startDate);
+          startDateMidnight.setUTCHours(0, 0, 0, 0);
+          const regEndMidnight = new Date(regEnd);
+          regEndMidnight.setUTCHours(0, 0, 0, 0);
+
+          if (regEndMidnight > startDateMidnight) {
+            validationErrors.push('Registration must end on or before the tournament start date.');
           }
           if (regStart >= regEnd) {
-            validationErrors.push('Registration end date must be after start date');
+            validationErrors.push('Registration end date must be after registration start date');
           }
         }
       }
@@ -1349,8 +1371,16 @@ router.post(
 
         // Timeline
         announcementDate: tournamentData.announcementDate || new Date(),
-        startDate: new Date(tournamentData.startDate),
-        endDate: new Date(tournamentData.endDate),
+        startDate: (() => {
+          const d = new Date(tournamentData.startDate);
+          d.setUTCHours(0, 0, 0, 0);
+          return d;
+        })(),
+        endDate: (() => {
+          const d = new Date(tournamentData.endDate);
+          d.setUTCHours(23, 59, 59, 999);
+          return d;
+        })(),
         registrationStartDate: tournamentData.registrationStartDate ?
           new Date(tournamentData.registrationStartDate) : null,
         registrationEndDate: tournamentData.registrationEndDate ?
@@ -1375,8 +1405,16 @@ router.post(
           tournamentData.phases.map(phase => ({
             name: phase.name,
             type: phase.type || 'qualifiers',
-            startDate: phase.startDate ? new Date(phase.startDate) : null,
-            endDate: phase.endDate ? new Date(phase.endDate) : null,
+            startDate: phase.startDate ? (() => {
+              const d = new Date(phase.startDate);
+              d.setUTCHours(0, 0, 0, 0);
+              return d;
+            })() : null,
+            endDate: phase.endDate ? (() => {
+              const d = new Date(phase.endDate);
+              d.setUTCHours(23, 59, 59, 999);
+              return d;
+            })() : null,
             status: 'upcoming',
             details: phase.details || '',
             teams: [],
@@ -1387,7 +1425,7 @@ router.post(
 
         // Prize pool
         prizePool: {
-          total: tournamentData.prizePool?.total || 0,
+          total: Number(tournamentData.prizePool?.total) || 0,
           currency: tournamentData.prizePool?.currency || 'INR',
           distribution: Array.isArray(tournamentData.prizePool?.distribution) ?
             tournamentData.prizePool.distribution : [],
@@ -1457,7 +1495,10 @@ router.post(
       await newTournament.save();
 
       // ---------- LOG CREATION ----------
+      console.log(`✅ Tournament creation requested. Prize pool data:`, tournamentData.prizePool);
+      console.log(`✅ Payload prizePool:`, tournamentPayload.prizePool);
       console.log(`✅ Tournament created: ${newTournament.tournamentName} (${newTournament._id}) by ${req.organization.orgName}`);
+
 
       // ---------- SEND RESPONSE ----------
       res.status(201).json({
@@ -1502,5 +1543,393 @@ router.post(
   }
 );
 
+// ============================================================================
+// UPLOAD MATCH RESULT SCREENSHOT (OCR Integration - Currently using random data)
+// ============================================================================
+
+/**
+ * @route   POST /api/org-tournaments/matches/:matchId/upload-result
+ * @desc    Process match result screenshot with OCR (or random data for now)
+ * @access  Organization (must own the tournament)
+ */
+router.post(
+  '/matches/:matchId/upload-result',
+  verifyApprovedOrgToken,
+  upload.single('screenshot'),
+  async (req, res) => {
+    try {
+      const { matchId } = req.params;
+
+      // Validate file upload
+      if (!req.file) {
+        return res.status(400).json({ error: 'No screenshot file uploaded' });
+      }
+
+      // Fetch match with tournament data
+      const match = await Match.findById(matchId)
+        .populate('tournament', 'organizer tournamentName gameSettings phases');
+
+      if (!match) {
+        return res.status(404).json({ error: 'Match not found' });
+      }
+
+      // Verify organization owns this tournament
+      if (match.tournament.organizer.organizationRef?.toString() !== req.organization._id.toString()) {
+        return res.status(403).json({ error: 'Not authorized to update this match' });
+      }
+
+      // Get teams from participatingGroups via Registration collection
+      const phase = match.tournament.phases?.find(p => p.name === match.tournamentPhase);
+      if (!phase) {
+        return res.status(400).json({ error: 'Tournament phase not found' });
+      }
+
+      // Get group names from participatingGroups
+      const groupNames = match.participatingGroups?.map(groupId => {
+        const group = phase.groups?.find(g =>
+          g?._id?.toString() === groupId ||
+          g?.id?.toString?.() === groupId ||
+          g?.name === groupId
+        );
+        return group?.name;
+      }).filter(Boolean) || [];
+
+      // Fetch teams from Registration collection
+      const registrations = await Registration.find({
+        tournament: match.tournament._id,
+        phase: match.tournamentPhase,
+        group: { $in: groupNames },
+        status: { $in: ['approved', 'checked_in'] }
+      }).populate('team', 'teamName teamTag logo').populate('roster.player', 'username');
+
+      if (!registrations || registrations.length === 0) {
+        return res.status(400).json({ error: 'No teams found for this match' });
+      }
+
+      // TODO: Replace this with actual OCR processing
+      // Pass req.file.buffer to your OCR service here
+      // For now, using random data to populate match results
+      const processedResults = generateRandomMatchResults(registrations, match.tournament.gameSettings);
+
+      // Update match with processed results
+      match.results = processedResults.teams;
+      match.status = 'completed';
+      match.matchStats = processedResults.matchStats;
+
+      // Mark as processed (no screenshot storage)
+      if (!match.metadata) {
+        match.metadata = {};
+      }
+      match.metadata.ocrProcessed = true;
+      match.metadata.ocrProcessedAt = new Date();
+
+      await match.save();
+
+      // Fetch updated match with populated teams for response
+      const updatedMatch = await Match.findById(matchId)
+        .populate('results.team', 'teamName teamTag logo')
+        .populate('results.kills.breakdown.player', 'username');
+
+      res.json({
+        success: true,
+        message: 'Match results processed successfully',
+        match: updatedMatch,
+        note: 'Currently using simulated data. OCR integration pending.'
+      });
+
+    } catch (error) {
+      console.error('Error processing match result screenshot:', error);
+      res.status(500).json({
+        error: 'Failed to process match result',
+        message: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+);
+
+/**
+ * Helper function to generate random match results
+ * This will be replaced with actual OCR processing
+ * @param {Array} registrations - Array of registration documents with team and roster info
+ * @param {Object} gameSettings - Tournament game settings with points system
+ */
+function generateRandomMatchResults(registrations, gameSettings) {
+  const numTeams = registrations.length;
+
+  // Generate random positions (1 to numTeams, shuffled)
+  const positions = Array.from({ length: numTeams }, (_, i) => i + 1);
+
+  // Shuffle positions using Fisher-Yates algorithm
+  for (let i = positions.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [positions[i], positions[j]] = [positions[j], positions[i]];
+  }
+
+  // Get points system from gameSettings or use default
+  const placementPointsMap = gameSettings?.pointsSystem?.placementPoints || {
+    1: 10, 2: 6, 3: 5, 4: 4, 5: 3, 6: 2, 7: 1, 8: 1
+  };
+  const killPointsValue = gameSettings?.pointsSystem?.killPoints || 1;
+
+  let totalMatchKills = 0;
+  let mostKillsPlayer = null;
+  let maxKills = 0;
+
+  // Build results array from registrations
+  const teams = registrations.map((registration, index) => {
+    const position = positions[index];
+    const placementPoints = placementPointsMap[position] || 0;
+
+    // Generate random kills for the team (0-20, higher probability for top positions)
+    const baseKills = position <= 5
+      ? Math.floor(Math.random() * 15) + 5  // 5-20 kills for top 5
+      : Math.floor(Math.random() * 12);     // 0-12 kills for others
+
+    const killPoints = baseKills * killPointsValue;
+
+    // Distribute kills among players in the roster
+    const killBreakdown = [];
+    if (baseKills > 0 && registration.roster && registration.roster.length > 0) {
+      const killDistribution = distributeKillsAmongPlayers(baseKills, registration.roster.length);
+
+      registration.roster.forEach((rosterPlayer, playerIndex) => {
+        const playerKills = killDistribution[playerIndex] || 0;
+        if (playerKills > 0) {
+          killBreakdown.push({
+            player: rosterPlayer.player,
+            kills: playerKills
+          });
+
+          // Track most kills player
+          if (playerKills > maxKills) {
+            maxKills = playerKills;
+            mostKillsPlayer = {
+              player: rosterPlayer.player,
+              kills: playerKills
+            };
+          }
+        }
+      });
+    }
+
+    totalMatchKills += baseKills;
+
+    return {
+      team: registration.team._id,
+      finalPosition: position,
+      chickenDinner: position === 1,
+      points: {
+        placementPoints,
+        killPoints,
+        totalPoints: placementPoints + killPoints
+      },
+      kills: {
+        total: baseKills,
+        breakdown: killBreakdown
+      }
+    };
+  });
+
+  return {
+    teams,
+    matchStats: {
+      totalKills: totalMatchKills,
+      mostKillsPlayer: mostKillsPlayer
+    }
+  };
+}
+
+/**
+ * Helper function to distribute kills among players
+ */
+function distributeKillsAmongPlayers(totalKills, numPlayers) {
+  const distribution = Array(numPlayers).fill(0);
+
+  // Randomly distribute kills
+  for (let i = 0; i < totalKills; i++) {
+    const randomPlayer = Math.floor(Math.random() * numPlayers);
+    distribution[randomPlayer]++;
+  }
+
+  return distribution;
+}
+
+// ============================================================================
+// TOURNAMENT ANNOUNCEMENTS (ORG)
+// ============================================================================
+
+// POST /api/org-tournaments/:id/announcements
+// Create an announcement and optionally DM all affected players
+router.post('/:id/announcements', verifyApprovedOrgToken, async (req, res) => {
+  try {
+    const { id: tournamentId } = req.params;
+    const { title, message, targetType, targetTeams, targetPhase, targetGroup } = req.body;
+
+    if (!title?.trim() || !message?.trim()) {
+      return res.status(400).json({ error: 'Title and message are required' });
+    }
+
+    const validTargetTypes = ['general', 'specific_teams', 'phase', 'group'];
+    if (!validTargetTypes.includes(targetType)) {
+      return res.status(400).json({ error: 'Invalid targetType' });
+    }
+
+    // Verify org owns this tournament
+    const tournament = await Tournament.findOne({
+      _id: tournamentId,
+      'organizer.organizationRef': req.organization._id,
+    }).select('tournamentName');
+
+    if (!tournament) {
+      return res.status(404).json({ error: 'Tournament not found or access denied' });
+    }
+
+    // Validate target-specific fields
+    if (targetType === 'specific_teams' && (!targetTeams || targetTeams.length === 0)) {
+      return res.status(400).json({ error: 'Specify at least one team for specific_teams targeting' });
+    }
+    if ((targetType === 'phase' || targetType === 'group') && !targetPhase) {
+      return res.status(400).json({ error: 'targetPhase is required for phase/group targeting' });
+    }
+    if (targetType === 'group' && !targetGroup) {
+      return res.status(400).json({ error: 'targetGroup is required for group targeting' });
+    }
+
+    // Save the announcement
+    const announcement = new TournamentAnnouncement({
+      tournamentId,
+      organizationId: req.organization._id,
+      title: title.trim(),
+      message: message.trim(),
+      targetType,
+      targetTeams: targetType === 'specific_teams' ? targetTeams : [],
+      targetPhase: (targetType === 'phase' || targetType === 'group') ? targetPhase : undefined,
+      targetGroup: targetType === 'group' ? targetGroup : undefined,
+    });
+
+    await announcement.save();
+
+    // For non-general announcements: send system DMs to all affected players
+    if (targetType !== 'general') {
+      let teamIds = [];
+
+      if (targetType === 'specific_teams') {
+        teamIds = targetTeams;
+      } else if (targetType === 'phase') {
+        const regs = await Registration.find({
+          tournament: tournamentId,
+          phase: targetPhase,
+          status: { $in: ['approved', 'checked_in'] },
+        }).select('team');
+        teamIds = regs.map((r) => r.team);
+      } else if (targetType === 'group') {
+        const regs = await Registration.find({
+          tournament: tournamentId,
+          phase: targetPhase,
+          group: targetGroup,
+          status: { $in: ['approved', 'checked_in'] },
+        }).select('team');
+        teamIds = regs.map((r) => r.team);
+      }
+
+      if (teamIds.length > 0) {
+        // Collect all unique player IDs from these teams
+        const teams = await Team.find({ _id: { $in: teamIds } }).select('players captain');
+        const playerIdSet = new Set();
+        teams.forEach((t) => {
+          t.players.forEach((p) => playerIdSet.add(p.toString()));
+          if (t.captain) playerIdSet.add(t.captain.toString());
+        });
+        const playerIds = [...playerIdSet];
+
+        if (playerIds.length > 0) {
+          const dmMessage = `[${tournament.tournamentName}] ${title.trim()}: ${message.trim()}`;
+          const metadata = {
+            type: 'tournament_announcement',
+            announcementId: announcement._id.toString(),
+            title: title.trim(),
+            tournamentId: tournamentId.toString(),
+            tournamentName: tournament.tournamentName,
+            targetType,
+          };
+
+          // Bulk-insert DMs
+          const chatDocs = playerIds.map((pid) => ({
+            senderId: 'system',
+            receiverId: pid,
+            message: dmMessage,
+            messageType: 'announcement',
+            metadata,
+            timestamp: new Date(),
+          }));
+          await ChatMessage.insertMany(chatDocs);
+
+          // Emit via socket to any currently-connected players
+          const io = req.app.get('io');
+          if (io) {
+            chatDocs.forEach((doc) => {
+              io.to(doc.receiverId).emit('receiveMessage', {
+                _id: `ann_${announcement._id}_${doc.receiverId}`,
+                senderId: 'system',
+                receiverId: doc.receiverId,
+                message: doc.message,
+                messageType: 'announcement',
+                metadata: doc.metadata,
+                timestamp: doc.timestamp,
+              });
+            });
+          }
+
+          // Update dmsSent count
+          announcement.dmsSent = playerIds.length;
+          await announcement.save();
+        }
+      }
+    }
+
+    res.status(201).json({
+      message: 'Announcement created successfully',
+      announcement,
+    });
+  } catch (error) {
+    console.error('Error creating announcement:', error);
+    res.status(500).json({ error: 'Failed to create announcement' });
+  }
+});
+
+// GET /api/org-tournaments/:id/announcements
+// Org: list all announcements for their tournament (newest first)
+router.get('/:id/announcements', verifyApprovedOrgToken, async (req, res) => {
+  try {
+    const { id: tournamentId } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+
+    // Verify ownership
+    const tournament = await Tournament.findOne({
+      _id: tournamentId,
+      'organizer.organizationRef': req.organization._id,
+    }).select('_id');
+
+    if (!tournament) {
+      return res.status(404).json({ error: 'Tournament not found or access denied' });
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const [announcements, total] = await Promise.all([
+      TournamentAnnouncement.find({ tournamentId })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .populate('targetTeams', 'teamName teamTag logo')
+        .lean(),
+      TournamentAnnouncement.countDocuments({ tournamentId }),
+    ]);
+
+    res.json({ announcements, total, page: parseInt(page), limit: parseInt(limit) });
+  } catch (error) {
+    console.error('Error fetching announcements:', error);
+    res.status(500).json({ error: 'Failed to fetch announcements' });
+  }
+});
 
 export default router;

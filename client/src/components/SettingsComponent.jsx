@@ -56,7 +56,6 @@ const SettingsComponent = () => {
     profilePicture: '',
 
     // Gaming Info
-    inGameName: '',
     primaryGame: 'BGMI',
     earnings: '',
     inGameRole: [],
@@ -105,11 +104,10 @@ const SettingsComponent = () => {
         realName: user.realName || '',
         age: user.age || '',
         location: user.location || '',
-        country: user.country || 'India',
+        country: 'India', // fixed
         bio: user.bio || '',
         languages: user.languages || [],
         profilePicture: user.profilePicture || '',
-        inGameName: user.inGameName || '',
         primaryGame: user.primaryGame || 'BGMI',
         earnings: user.earnings || '',
         inGameRole: user.inGameRole || [],
@@ -392,14 +390,12 @@ const SettingsComponent = () => {
                       </div>
 
                       <div>
-                        <label className="block text-zinc-300 font-medium mb-2">Country *</label>
-                        <input
-                          type="text"
-                          value={profileSettings.country}
-                          onChange={(e) => setProfileSettings({ ...profileSettings, country: e.target.value })}
-                          placeholder="e.g. India"
-                          className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-2 text-white focus:border-orange-500 focus:outline-none"
-                        />
+                        <label className="block text-zinc-300 font-medium mb-2">Country</label>
+                        <div className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2 text-zinc-400 flex items-center gap-2 cursor-not-allowed select-none">
+                          <Lock className="w-3.5 h-3.5 shrink-0" />
+                          <span className="text-white">India</span>
+                          <span className="ml-auto text-xs text-zinc-500">Fixed</span>
+                        </div>
                       </div>
                     </div>
 
@@ -489,27 +485,38 @@ const SettingsComponent = () => {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
-                        <label className="block text-zinc-300 font-medium mb-2">In-Game Name</label>
-                        <input
-                          type="text"
-                          value={profileSettings.inGameName}
-                          onChange={(e) => setProfileSettings({ ...profileSettings, inGameName: e.target.value })}
-                          placeholder="Your in-game username"
-                          className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-2 text-white focus:border-orange-500 focus:outline-none"
-                        />
+                        <label className="block text-zinc-300 font-medium mb-2">Primary Game ID</label>
+                        {user?.gameIds?.find(g => g.isPrimary) ? (
+                          <div className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2 flex items-center justify-between">
+                            <span className="text-white">{user.gameIds.find(g => g.isPrimary).inGameName}</span>
+                            <a
+                              href="/my-game-ids"
+                              className="text-xs text-orange-400 hover:text-orange-300 underline"
+                            >
+                              Manage
+                            </a>
+                          </div>
+                        ) : (
+                          <div className="w-full bg-zinc-800/50 border border-orange-500/40 rounded-lg px-4 py-2 flex items-center justify-between">
+                            <span className="text-zinc-500 text-sm">No primary game ID set</span>
+                            <a
+                              href="/my-game-ids"
+                              className="text-xs text-orange-400 hover:text-orange-300 underline"
+                            >
+                              Add one
+                            </a>
+                          </div>
+                        )}
+                        <p className="text-xs text-zinc-500 mt-1">Manage your game IDs on the Game IDs page</p>
                       </div>
 
                       <div>
-                        <label className="block text-zinc-300 font-medium mb-2">Primary Game *</label>
-                        <select
-                          value={profileSettings.primaryGame}
-                          onChange={(e) => setProfileSettings({ ...profileSettings, primaryGame: e.target.value })}
-                          className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-2 text-white focus:border-orange-500 focus:outline-none"
-                        >
-                          <option value="BGMI">BGMI</option>
-                          <option value="VALO">VALO</option>
-                          <option value="CS2">CS2</option>
-                        </select>
+                        <label className="block text-zinc-300 font-medium mb-2">Primary Game</label>
+                        <div className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2 text-zinc-400 flex items-center gap-2 cursor-not-allowed select-none">
+                          <Lock className="w-3.5 h-3.5 shrink-0" />
+                          <span className="text-white">BGMI</span>
+                          <span className="ml-auto text-xs text-zinc-500">Fixed</span>
+                        </div>
                       </div>
                     </div>
 

@@ -150,7 +150,7 @@ router.get('/team/:teamId', auth, async (req, res) => {
     })
       .populate(
         'player',
-        'username inGameName realName profilePicture aegisRating primaryGame inGameRole statistics availability'
+        'username realName profilePicture aegisRating primaryGame inGameRole statistics availability'
       )
       .sort({ createdAt: -1 })
       .lean();
@@ -228,9 +228,9 @@ router.post('/:applicationId/start-tryout', auth, async (req, res) => {
     await application.save();
 
     await tryoutChat
-      .populate('participants', 'username profilePicture inGameName')
+      .populate('participants', 'username profilePicture')
       .populate('team', 'teamName teamTag logo')
-      .populate('applicant', 'username profilePicture inGameName');
+      .populate('applicant', 'username profilePicture');
 
     res.json({
       message: 'Tryout started successfully',

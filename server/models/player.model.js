@@ -10,9 +10,52 @@ const playerSchema = new mongoose.Schema(
       trim: true,
       index: true,
     },
-    inGameName: {
-      type: String,
-      trim: true,
+    // Game IDs - Player can have up to 2
+    gameIds: [
+      {
+        inGameName: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+        characterId: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+        isPrimary: {
+          type: Boolean,
+          default: false,
+        },
+        createdAt: {
+          type: Date,
+          default: Date.now,
+        },
+        lastUpdatedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
+    gameIdUpdateHistory: [
+      {
+        updateDate: {
+          type: Date,
+          default: Date.now,
+        },
+        oldGameId: {
+          inGameName: String,
+          characterId: String,
+        },
+        newGameId: {
+          inGameName: String,
+          characterId: String,
+        },
+      },
+    ],
+    lastGameIdUpdate: {
+      type: Date,
+      default: null,
     },
     realName: {
       type: String,
@@ -89,6 +132,7 @@ const playerSchema = new mongoose.Schema(
     country: {
       type: String,
       trim: true,
+      default: 'India',
     },
     bio: {
       type: String,
@@ -116,7 +160,7 @@ const playerSchema = new mongoose.Schema(
     inGameRole: [
       {
         type: String,
-        enum: ['Assaulter', 'IGL', 'Support', 'Fragger', 'Sniper'],
+        enum: ['IGL', 'Assaulter', 'Fragger', 'Support', 'Sniper', 'Substitute', 'Player'],
       },
     ],
     location: {

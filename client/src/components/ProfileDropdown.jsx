@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Users, Settings, LogOut, Trophy, Star, Bell, ChevronDown } from 'lucide-react';
+import { User, Users, Settings, LogOut, Trophy, Star, Bell, ChevronDown, Gamepad2 } from 'lucide-react';
 
 const ProfileDropdown = ({ user, logout }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -28,6 +28,7 @@ const ProfileDropdown = ({ user, logout }) => {
 
   const menuItems = [
     { icon: User, label: 'My Profile', href: '/my-profile' },
+    { icon: Gamepad2, label: 'My Game IDs', href: '/my-game-ids' },
     { icon: Users, label: 'My Teams', href: '/my-teams' },
     { icon: Trophy, label: 'Achievements', href: '/achievements' },
     { icon: Star, label: 'connections', href: '/connections' },

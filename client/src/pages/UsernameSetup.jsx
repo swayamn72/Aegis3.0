@@ -97,15 +97,28 @@ export default function UsernameSetup() {
         <div className="min-h-screen w-full bg-gradient-to-br from-amber-950 via-orange-950 to-red-950 relative overflow-hidden flex items-center justify-center">
             {/* Background effects */}
             <div className="absolute inset-0 opacity-30">
-                {[...Array(80)].map((_, i) => (
+                {/* Static dots: generated once, not random on every render */}
+                {[
+                    { left: '5%', top: '10%', delay: '0.2s', duration: '2.5s' },
+                    { left: '15%', top: '30%', delay: '1.1s', duration: '3.2s' },
+                    { left: '25%', top: '60%', delay: '0.7s', duration: '2.1s' },
+                    { left: '35%', top: '20%', delay: '2.0s', duration: '4.0s' },
+                    { left: '45%', top: '80%', delay: '0.5s', duration: '2.8s' },
+                    { left: '55%', top: '50%', delay: '1.7s', duration: '3.7s' },
+                    { left: '65%', top: '15%', delay: '0.9s', duration: '2.3s' },
+                    { left: '75%', top: '70%', delay: '2.3s', duration: '3.1s' },
+                    { left: '85%', top: '40%', delay: '1.3s', duration: '2.9s' },
+                    { left: '95%', top: '90%', delay: '0.4s', duration: '2.0s' },
+                    // ...add more if you want more dots, or copy these with small changes
+                ].map((dot, i) => (
                     <div
                         key={i}
                         className="absolute w-1 h-1 bg-amber-400 rounded-full animate-pulse"
                         style={{
-                            left: `${Math.random() * 100}%`,
-                            top: `${Math.random() * 100}%`,
-                            animationDelay: `${Math.random() * 3}s`,
-                            animationDuration: `${1.5 + Math.random() * 4}s`
+                            left: dot.left,
+                            top: dot.top,
+                            animationDelay: dot.delay,
+                            animationDuration: dot.duration
                         }}
                     />
                 ))}
@@ -149,8 +162,8 @@ export default function UsernameSetup() {
                                     placeholder="your_username"
                                     maxLength={20}
                                     className={`w-full pl-12 pr-4 py-3 bg-zinc-800 border-2 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-4 transition-all ${error
-                                            ? 'border-red-500/50 focus:ring-red-500/20 focus:border-red-400'
-                                            : 'border-gray-600/50 focus:ring-orange-500/20 focus:border-orange-400'
+                                        ? 'border-red-500/50 focus:ring-red-500/20 focus:border-red-400'
+                                        : 'border-gray-600/50 focus:ring-orange-500/20 focus:border-orange-400'
                                         }`}
                                     disabled={loading}
                                 />

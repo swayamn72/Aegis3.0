@@ -282,7 +282,6 @@ router.get('/lft-posts', async (req, res) => {
           // minimal player object
           'player._id': 1,
           'player.username': 1,
-          'player.inGameName': 1,
           'player.realName': 1,
           'player.profilePicture': 1,
           'player.age': 1,
@@ -330,15 +329,12 @@ const ALLOWED_ROLES = ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger']; // M
 router.post('/lft-posts', auth, async (req, res) => {
   const session = await mongoose.startSession().catch(() => null);
   try {
-    const { description = '', game, roles = [], region } = req.body || {};
+    const { description = '', roles = [], region } = req.body || {};
 
     // Basic validation + sanitization
     const desc = String(description).trim().slice(0, MAX_DESC_LEN);
 
-    // Validate game/region if provided
-    if (game && !ALLOWED_GAMES.includes(game)) {
-      return res.status(400).json({ error: 'Invalid game' });
-    }
+    // Validate region if provided
     if (region && !ALLOWED_REGIONS.includes(region)) {
       return res.status(400).json({ error: 'Invalid region' });
     }
@@ -357,9 +353,6 @@ router.post('/lft-posts', auth, async (req, res) => {
     }
 
     // Validation matching model requirements
-    if (!game) {
-      return res.status(400).json({ error: 'Preferred game is required' });
-    }
     if (cleanRoles.length === 0) {
       return res.status(400).json({ error: 'At least one role is required' });
     }
@@ -368,7 +361,7 @@ router.post('/lft-posts', auth, async (req, res) => {
     }
 
     // Optional: check player exists (should always, but defensive)
-    const player = await Player.findById(req.user.id).select('_id username inGameName profilePicture aegisRating verified');
+    const player = await Player.findById(req.user.id).select('_id username profilePicture aegisRating verified');
     if (!player) {
       return res.status(400).json({ error: 'Player profile not found' });
     }
@@ -388,7 +381,7 @@ router.post('/lft-posts', auth, async (req, res) => {
       createdPost = await LFTPost.create([{
         player: req.user.id,
         description: desc,
-        game,
+        game: 'BGMI',
         roles: cleanRoles,
         region,
         status: 'active',
@@ -405,7 +398,7 @@ router.post('/lft-posts', auth, async (req, res) => {
       createdPost = new LFTPost({
         player: req.user.id,
         description: desc,
-        game,
+        game: 'BGMI',
         roles: cleanRoles,
         region,
         status: 'active',
@@ -423,7 +416,7 @@ router.post('/lft-posts', auth, async (req, res) => {
     }
 
     // Populate a few safe fields for the client
-    await createdPost.populate('player', 'username inGameName profilePicture aegisRating verified');
+    await createdPost.populate('player', 'username profilePicture aegisRating verified');
 
     res.status(201).json({ message: 'LFT post created successfully', post: createdPost });
   } catch (error) {
@@ -627,7 +620,6 @@ router.get('/lfp-posts', async (req, res) => {
           'team.region': 1,
           'captain._id': 1,
           'captain.username': 1,
-          'captain.inGameName': 1,
           'captain.profilePicture': 1
         }
       },
@@ -765,7 +757,7 @@ router.post('/lfp-posts', auth, async (req, res) => {
 
     await createdPost.populate({
       path: 'team',
-      populate: { path: 'captain', select: 'username inGameName profilePicture' }
+      populate: { path: 'captain', select: 'username profilePicture' }
     });
 
     res.status(201).json({ message: 'LFP post created successfully', post: createdPost });

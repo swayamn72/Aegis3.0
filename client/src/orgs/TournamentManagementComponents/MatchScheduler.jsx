@@ -452,16 +452,18 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
                   <p className="text-zinc-400 text-sm">Total Teams</p>
                   <p className="text-white font-medium">
                     {
-                      (match.participatingTeams && match.participatingTeams.length > 0)
-                        ? match.participatingTeams.length
-                        : (match.participatingGroups?.reduce((total, groupId) => {
-                          const group = allGroups.find(g =>
-                            (g._id?.toString?.() === groupId) ||
-                            (g.id === groupId) ||
-                            (g.name === groupId)
-                          );
-                          return total + (group?.teams?.length || 0);
-                        }, 0) || 0)
+                      (match.results && match.results.length > 0)
+                        ? match.results.length
+                        : (match.teams && match.teams.length > 0)
+                          ? match.teams.length
+                          : (match.participatingGroups?.reduce((total, groupId) => {
+                            const group = allGroups.find(g =>
+                              (g._id?.toString?.() === groupId) ||
+                              (g.id === groupId) ||
+                              (g.name === groupId)
+                            );
+                            return total + (group?.teams?.length || 0);
+                          }, 0) || 0)
                     } teams
                   </p>
                 </div>

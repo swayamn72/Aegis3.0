@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
     Trophy, Users, Calendar, ArrowLeft, Eye, Settings,
-    Target, Play, CheckCircle, Clock, Award, BarChart3, Grid3x3, Edit
+    Target, Play, CheckCircle, Clock, Award, BarChart3, Grid3x3, Edit, Bell
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import axiosInstance from '../utils/axiosConfig';
@@ -15,6 +15,7 @@ import MatchManagement from './TournamentManagementComponents/MatchManagement';
 import TeamSelector from './TournamentManagementComponents/TeamSelector';
 import PrizeDistributionForm from './TournamentManagementComponents/PrizeDistributionForm';
 import TournamentForm from './TournamentManagementComponents/TournamentForm';
+import Announcements from './TournamentManagementComponents/Announcements';
 
 const TournamentManagementPageOrg = () => {
     const { id } = useParams();
@@ -134,6 +135,7 @@ const TournamentManagementPageOrg = () => {
         { id: 'groups', name: 'Groups', icon: Grid3x3 },
         { id: 'standings', name: 'Standings', icon: Trophy },
         { id: 'prizes', name: 'Prizes', icon: Award },
+        { id: 'announcements', name: 'Announcements', icon: Bell },
     ];
 
     return (
@@ -570,6 +572,10 @@ const TournamentManagementPageOrg = () => {
 
                     {activeSection === 'standings' && (
                         <PointsTable tournament={tournament} onUpdate={fetchTournament} />
+                    )}
+
+                    {activeSection === 'announcements' && (
+                        <Announcements tournament={tournament} />
                     )}
 
                     {activeSection === 'prizes' && (

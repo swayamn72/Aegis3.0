@@ -28,11 +28,11 @@ router.get('/:id', auth, async (req, res) => {
     const team = await Team.findById(teamId)
       .populate({
         path: 'captain',
-        select: 'username profilePicture primaryGame inGameName realName age country aegisRating statistics inGameRole discordTag twitch youtube twitter verified'
+        select: 'username profilePicture primaryGame realName age country aegisRating statistics inGameRole discordTag twitch youtube twitter verified'
       })
       .populate({
         path: 'players',
-        select: 'username profilePicture primaryGame inGameName realName age country aegisRating statistics inGameRole discordTag verified'
+        select: 'username profilePicture primaryGame realName age country aegisRating statistics inGameRole discordTag verified'
       })
       .populate('organization', 'orgName logo description website establishedDate')
       .select('-__v');
@@ -48,20 +48,20 @@ router.get('/:id', auth, async (req, res) => {
       }
     }
 
-    // Fetch recent matches (same as before - Match model unchanged)
+    // Fetch recent matches
     const recentMatches = await Match.find({
-      'participatingTeams.team': team._id,
+      'results.team': team._id,
       status: 'completed'
     })
       .sort({ actualEndTime: -1 })
       .limit(5)
       .populate('tournament', 'tournamentName shortName')
-      .select('matchNumber matchType map actualEndTime participatingTeams tournament')
+      .select('matchNumber matchType map actualEndTime results tournament')
       .lean();
 
     // Format match data
     const formattedMatches = recentMatches.map(match => {
-      const teamData = match.participatingTeams.find(
+      const teamData = match.results?.find(
         pt => pt.team.toString() === team._id.toString()
       );
       return {
@@ -582,7 +582,6 @@ router.get('/search/:query', async (req, res) => {
         profileVisibility: 'public',
         $or: [
           { username: { $regex: query, $options: 'i' } },
-          { inGameName: { $regex: query, $options: 'i' } },
           { realName: { $regex: query, $options: 'i' } }
         ]
       };
@@ -594,7 +593,7 @@ router.get('/search/:query', async (req, res) => {
         .sort({ aegisRating: -1 })
         .limit(limit)
         .select(
-          'username inGameName realName profilePicture primaryGame aegisRating teamStatus team'
+          'username realName profilePicture primaryGame aegisRating teamStatus team'
         )
         .lean();
     }

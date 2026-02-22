@@ -20,7 +20,7 @@ router.get("/me", auth, async (req, res) => {
       .select(
         [
           // User fields
-          "_id", "realName", "age", "location", "bio", "languages", "profilePicture", "inGameName", "earnings", "inGameRole", "teamStatus", "availability", "discordTag", "twitch", "youtube", "profileVisibility", "cardTheme", "username", "country", "aegisRating", "verified", "createdAt", "previousTeams", "team", "primaryGame", "tournamentsPlayed", "matchesPlayed"
+          "_id", "realName", "age", "location", "bio", "languages", "profilePicture", "gameIds", "earnings", "inGameRole", "teamStatus", "availability", "discordTag", "twitch", "youtube", "profileVisibility", "cardTheme", "username", "country", "aegisRating", "verified", "createdAt", "previousTeams", "team", "primaryGame", "tournamentsPlayed", "matchesPlayed"
         ].join(" ")
       )
       .populate({
@@ -79,6 +79,13 @@ router.put("/update-profile", auth, async (req, res) => {
   try {
     const userId = req.user.id;
     const updateData = { ...req.body };
+
+    // NEVER allow country to be changed — always India
+    delete updateData.country;
+    // NEVER allow primaryGame to be changed — always BGMI
+    delete updateData.primaryGame;
+    // inGameName is no longer a top-level field
+    delete updateData.inGameName;
 
     // Sanitize empty strings to avoid validation errors with enums or numbers
     const fieldsToSanitize = ['teamStatus', 'availability', 'age', 'location', 'realName'];
@@ -287,13 +294,13 @@ router.get('/dashboard-data', auth, async (req, res) => {
 
       // Query 3: Get recent matches (only if player has teams)
       const matches = await Match.find({
-        'participatingTeams.team': { $in: teamIds },
+        'results.team': { $in: teamIds },
         status: 'completed'
       })
-        .select('participatingTeams map actualEndTime scheduledStartTime tournament')
+        .select('results map actualEndTime scheduledStartTime tournament')
         .sort({ actualEndTime: -1 })
         .limit(parseInt(matchLimit))
-        .populate('participatingTeams.team', 'teamName')
+        .populate('results.team', 'teamName')
         .populate('tournament', 'tournamentName')
         .lean();
 
@@ -305,7 +312,7 @@ router.get('/dashboard-data', auth, async (req, res) => {
       dashboardData.matches = matches
         .map(match => {
           // Find player's team using Set for O(1) lookup
-          const playerTeam = match.participatingTeams.find(team =>
+          const playerTeam = match.results?.find(team =>
             team.team && teamIdStrings.has(team.team._id.toString())
           );
 
@@ -314,9 +321,9 @@ router.get('/dashboard-data', auth, async (req, res) => {
             return null;
           }
 
-          const otherTeams = match.participatingTeams.filter(
+          const otherTeams = match.results?.filter(
             team => team.team && !teamIdStrings.has(team.team._id.toString())
-          );
+          ) || [];
 
           // Calculate score
           let score;
@@ -584,7 +591,7 @@ router.get('/:id/profile', async (req, res) => {
   try {
     const { id } = req.params;
     const player = await Player.findById(id)
-      .select('_id username inGameName realName profilePicture verified primaryGame country location age teamStatus inGameRole team bio languages previousTeams createdAt discordTag twitch youtube twitter')
+      .select('_id username gameIds realName profilePicture verified primaryGame country location age teamStatus inGameRole team bio languages previousTeams createdAt discordTag twitch youtube twitter')
       .populate({
         path: 'team',
         select: '_id teamName teamTag logo primaryGame region players captain',
@@ -600,7 +607,7 @@ router.get('/:id/profile', async (req, res) => {
     let teamMembers = [];
     if (player.team && player.team.players) {
       teamMembers = await Player.find({ _id: { $in: player.team.players } })
-        .select('_id username inGameName profilePicture')
+        .select('_id username profilePicture')
         .lean();
     }
     res.json({
@@ -613,6 +620,319 @@ router.get('/:id/profile', async (req, res) => {
   }
 });
 
+// ============================================================================
+// GAME ID MANAGEMENT ROUTES
+// ============================================================================
+
+// Helper function to check if player is in ongoing tournament
+async function isPlayerInOngoingTournament(playerId) {
+  try {
+    // Find teams this player is in
+    const teams = await Team.find({ players: playerId }).select('_id').lean();
+
+    if (!teams || teams.length === 0) {
+      return { inTournament: false };
+    }
+
+    const teamIds = teams.map(t => t._id);
+
+    // Check if any of these teams are in ongoing tournaments
+    const ongoingRegistration = await Registration.findOne({
+      team: { $in: teamIds },
+      status: { $in: ['approved', 'checked_in'] }
+    })
+      .populate('tournament', 'tournamentName status startDate endDate')
+      .lean();
+
+    if (!ongoingRegistration) {
+      return { inTournament: false };
+    }
+
+    const tournament = ongoingRegistration.tournament;
+    const now = new Date();
+
+    // Check if tournament is actually ongoing
+    const isOngoing =
+      tournament &&
+      (tournament.status === 'in_progress' ||
+        (tournament.status === 'registration_open' && new Date(tournament.startDate) <= now) ||
+        (new Date(tournament.startDate) <= now && new Date(tournament.endDate) >= now));
+
+    if (isOngoing) {
+      return {
+        inTournament: true,
+        tournamentName: tournament.tournamentName,
+        tournamentId: tournament._id
+      };
+    }
+
+    return { inTournament: false };
+  } catch (error) {
+    console.error('Error checking ongoing tournament:', error);
+    return { inTournament: false };
+  }
+}
+
+// Get player's game IDs
+router.get('/game-ids', auth, async (req, res) => {
+  try {
+    const player = await Player.findById(req.user.id)
+      .select('gameIds lastGameIdUpdate')
+      .lean();
+
+    if (!player) {
+      return res.status(404).json({ message: 'Player not found' });
+    }
+
+    // Check if player is in ongoing tournament
+    const tournamentStatus = await isPlayerInOngoingTournament(req.user.id);
+
+    // Calculate next allowed update date
+    let nextUpdateAllowed = null;
+    if (player.lastGameIdUpdate) {
+      nextUpdateAllowed = new Date(player.lastGameIdUpdate);
+      nextUpdateAllowed.setMonth(nextUpdateAllowed.getMonth() + 1);
+    }
+
+    const canUpdate = !tournamentStatus.inTournament &&
+      (!player.lastGameIdUpdate || new Date() >= nextUpdateAllowed);
+
+    res.json({
+      gameIds: player.gameIds || [],
+      canUpdate,
+      reason: !canUpdate ? (
+        tournamentStatus.inTournament
+          ? `Cannot update while participating in ${tournamentStatus.tournamentName}`
+          : `Can update again after ${nextUpdateAllowed?.toLocaleDateString()}`
+      ) : null,
+      lastUpdate: player.lastGameIdUpdate,
+      nextUpdateAllowed,
+      tournamentStatus
+    });
+  } catch (error) {
+    console.error('Error fetching game IDs:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Add new game ID
+router.post('/game-ids', auth, async (req, res) => {
+  try {
+    const { inGameName, characterId, isPrimary } = req.body;
+
+    if (!inGameName || !characterId) {
+      return res.status(400).json({ message: 'In-game name and character ID are required' });
+    }
+
+    const player = await Player.findById(req.user.id);
+
+    if (!player) {
+      return res.status(404).json({ message: 'Player not found' });
+    }
+
+    // Check if player already has 2 game IDs
+    if (player.gameIds && player.gameIds.length >= 2) {
+      return res.status(400).json({ message: 'Maximum 2 game IDs allowed. Please delete one to add another.' });
+    }
+
+    // Check if player is in ongoing tournament
+    const tournamentStatus = await isPlayerInOngoingTournament(req.user.id);
+    if (tournamentStatus.inTournament) {
+      return res.status(403).json({
+        message: `Cannot add game ID while participating in ${tournamentStatus.tournamentName}`,
+        tournamentName: tournamentStatus.tournamentName
+      });
+    }
+
+    // If this is the first game ID or isPrimary is true, make it primary
+    const shouldBePrimary = !player.gameIds || player.gameIds.length === 0 || isPrimary;
+
+    // If setting as primary, unset other primaries
+    if (shouldBePrimary && player.gameIds) {
+      player.gameIds.forEach(gameId => {
+        gameId.isPrimary = false;
+      });
+    }
+
+    // Add new game ID
+    player.gameIds.push({
+      inGameName: inGameName.trim(),
+      characterId: characterId.trim(),
+      isPrimary: shouldBePrimary,
+      createdAt: new Date(),
+      lastUpdatedAt: new Date()
+    });
+
+    await player.save();
+
+    res.json({
+      message: 'Game ID added successfully',
+      gameIds: player.gameIds
+    });
+  } catch (error) {
+    console.error('Error adding game ID:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Update existing game ID
+router.put('/game-ids/:gameIdIndex', auth, async (req, res) => {
+  try {
+    const { gameIdIndex } = req.params;
+    const { inGameName, characterId } = req.body;
+
+    if (!inGameName || !characterId) {
+      return res.status(400).json({ message: 'In-game name and character ID are required' });
+    }
+
+    const player = await Player.findById(req.user.id);
+
+    if (!player) {
+      return res.status(404).json({ message: 'Player not found' });
+    }
+
+    const index = parseInt(gameIdIndex);
+    if (isNaN(index) || index < 0 || index >= player.gameIds.length) {
+      return res.status(400).json({ message: 'Invalid game ID index' });
+    }
+
+    // Check if player is in ongoing tournament
+    const tournamentStatus = await isPlayerInOngoingTournament(req.user.id);
+    if (tournamentStatus.inTournament) {
+      return res.status(403).json({
+        message: `Cannot update game ID while participating in ${tournamentStatus.tournamentName}`,
+        tournamentName: tournamentStatus.tournamentName
+      });
+    }
+
+    // Check if update is allowed (once per month)
+    if (player.lastGameIdUpdate) {
+      const nextUpdateAllowed = new Date(player.lastGameIdUpdate);
+      nextUpdateAllowed.setMonth(nextUpdateAllowed.getMonth() + 1);
+
+      if (new Date() < nextUpdateAllowed) {
+        return res.status(403).json({
+          message: `You can update your game ID again after ${nextUpdateAllowed.toLocaleDateString()}`,
+          nextUpdateAllowed
+        });
+      }
+    }
+
+    // Save old game ID to history
+    const oldGameId = {
+      inGameName: player.gameIds[index].inGameName,
+      characterId: player.gameIds[index].characterId
+    };
+
+    player.gameIdUpdateHistory.push({
+      updateDate: new Date(),
+      oldGameId,
+      newGameId: {
+        inGameName: inGameName.trim(),
+        characterId: characterId.trim()
+      }
+    });
+
+    // Update game ID
+    player.gameIds[index].inGameName = inGameName.trim();
+    player.gameIds[index].characterId = characterId.trim();
+    player.gameIds[index].lastUpdatedAt = new Date();
+    player.lastGameIdUpdate = new Date();
+
+    await player.save();
+
+    res.json({
+      message: 'Game ID updated successfully',
+      gameIds: player.gameIds,
+      nextUpdateAllowed: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
+    });
+  } catch (error) {
+    console.error('Error updating game ID:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Delete game ID
+router.delete('/game-ids/:gameIdIndex', auth, async (req, res) => {
+  try {
+    const { gameIdIndex } = req.params;
+
+    const player = await Player.findById(req.user.id);
+
+    if (!player) {
+      return res.status(404).json({ message: 'Player not found' });
+    }
+
+    const index = parseInt(gameIdIndex);
+    if (isNaN(index) || index < 0 || index >= player.gameIds.length) {
+      return res.status(400).json({ message: 'Invalid game ID index' });
+    }
+
+    // Check if player is in ongoing tournament
+    const tournamentStatus = await isPlayerInOngoingTournament(req.user.id);
+    if (tournamentStatus.inTournament) {
+      return res.status(403).json({
+        message: `Cannot delete game ID while participating in ${tournamentStatus.tournamentName}`,
+        tournamentName: tournamentStatus.tournamentName
+      });
+    }
+
+    // Remove game ID
+    const wasPrimary = player.gameIds[index].isPrimary;
+    player.gameIds.splice(index, 1);
+
+    // If deleted game ID was primary, make the first remaining one primary
+    if (wasPrimary && player.gameIds.length > 0) {
+      player.gameIds[0].isPrimary = true;
+    }
+
+    await player.save();
+
+    res.json({
+      message: 'Game ID deleted successfully',
+      gameIds: player.gameIds
+    });
+  } catch (error) {
+    console.error('Error deleting game ID:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Set primary game ID
+router.put('/game-ids/:gameIdIndex/set-primary', auth, async (req, res) => {
+  try {
+    const { gameIdIndex } = req.params;
+
+    const player = await Player.findById(req.user.id);
+
+    if (!player) {
+      return res.status(404).json({ message: 'Player not found' });
+    }
+
+    const index = parseInt(gameIdIndex);
+    if (isNaN(index) || index < 0 || index >= player.gameIds.length) {
+      return res.status(400).json({ message: 'Invalid game ID index' });
+    }
+
+    // Unset all primaries
+    player.gameIds.forEach(gameId => {
+      gameId.isPrimary = false;
+    });
+
+    // Set new primary
+    player.gameIds[index].isPrimary = true;
+
+    await player.save();
+
+    res.json({
+      message: 'Primary game ID updated successfully',
+      gameIds: player.gameIds
+    });
+  } catch (error) {
+    console.error('Error setting primary game ID:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
 
 export default router;
