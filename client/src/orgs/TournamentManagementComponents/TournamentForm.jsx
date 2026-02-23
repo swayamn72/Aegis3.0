@@ -835,7 +835,7 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || tournament?.status === 'completed'}
               className="px-6 py-2 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg hover:from-orange-600 hover:to-red-600 transition-colors disabled:opacity-50"
             >
               {loading ? (
@@ -844,7 +844,9 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
                   {isEditing ? 'Updating...' : 'Creating...'}
                 </div>
               ) : (
-                isEditing ? 'Update Tournament' : 'Create Tournament'
+                tournament?.status === 'completed'
+                  ? 'Tournament Completed (Locked)'
+                  : (isEditing ? 'Update Tournament' : 'Create Tournament')
               )}
             </button>
           </div>

@@ -135,6 +135,11 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
       return res.status(403).json({ error: 'Not authorized' });
     }
 
+    // Check if tournament is concluded
+    if (tournament.status === 'completed') {
+      return res.status(400).json({ error: 'Tournament is completed. Cannot advance phases.' });
+    }
+
     // Find the phase
     const phaseIndex = tournament.phases.findIndex(p => p.name === phaseName);
     if (phaseIndex === -1) {
@@ -424,7 +429,7 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
         console.log(`✅ Advanced all ${allTeamIds.length} teams to ${nextPhase.name}`);
       }
 
-    } else {
+    } else if (currentPhase.type === 'final_stage') {
       // This is the final phase - update final standings
       console.log('🏆 This is the final phase - updating final standings');
 
@@ -480,6 +485,12 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
       await Registration.bulkWrite(finalPosBulkOps, { ordered: false });
 
       console.log('✅ Updated final standings and registrations');
+    } else {
+      // Last phase but not final_stage - can't advance, can't conclude
+      return res.status(400).json({
+        error: 'Cannot advance/conclude.',
+        message: 'This is the last defined phase but its type is not "final_stage". Please add the next phase or change this phase type to "final_stage" to conclude.'
+      });
     }
 
     // Update or create PhaseStanding summary
@@ -585,6 +596,159 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
       error: 'Failed to advance phase',
       message: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
+  }
+});
+
+// **CONCLUDE TOURNAMENT** - Marks tournament as completed and sets final standings
+router.post('/:tournamentId/conclude', verifyApprovedOrgToken, async (req, res) => {
+  try {
+    const { tournamentId } = req.params;
+    const { phaseName } = req.body;
+
+    const tournament = await Tournament.findById(tournamentId);
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+
+    // Verify ownership
+    if (tournament.organizer.organizationRef?.toString() !== req.organization._id.toString()) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    // Verify it's actually a final stage phase
+    const phase = tournament.phases.find(p => p.name === phaseName);
+    if (!phase) {
+      return res.status(404).json({ error: `Phase "${phaseName}" not found` });
+    }
+    if (phase.type !== 'final_stage') {
+      return res.status(400).json({ error: 'Only a tournament in the "final_stage" can be concluded. Use "Advance Phase" for preliminary stages.' });
+    }
+
+    if (tournament.status === 'completed') {
+      return res.status(400).json({ error: 'Tournament is already completed' });
+    }
+
+    // Logic similar to the final phase part of advance-phase
+    const matches = await Match.find({
+      tournament: tournamentId,
+      tournamentPhase: phaseName
+    }).lean();
+
+    const phaseRegistrations = await Registration.find({
+      tournament: tournamentId,
+      phase: phaseName,
+      status: { $in: ['approved', 'checked_in'] }
+    }).select('team group').lean();
+
+    const teamStandings = {};
+    const phaseTeamIds = phaseRegistrations.map(r => r.team.toString());
+    const phaseTeams = await Team.find({ _id: { $in: phaseTeamIds } }).select('teamName teamTag logo').lean();
+
+    for (const team of phaseTeams) {
+      teamStandings[team._id.toString()] = {
+        team: team,
+        teamId: team._id.toString(),
+        points: 0,
+        positionPoints: 0,
+        killPoints: 0,
+        kills: 0,
+        chickenDinners: 0,
+        matchesPlayed: 0,
+        placements: []
+      };
+    }
+
+    matches.forEach(match => {
+      match.results?.forEach(teamResult => {
+        const teamId = (teamResult.team?._id || teamResult.team)?.toString();
+        if (teamId && teamStandings[teamId]) {
+          const position = teamResult.finalPosition;
+          const kills = teamResult.kills?.total || 0;
+          if (position || kills > 0) {
+            const placementPoints = getPlacementPoints(position);
+            teamStandings[teamId].positionPoints += placementPoints;
+            teamStandings[teamId].killPoints += kills;
+            teamStandings[teamId].points += (placementPoints + kills);
+            teamStandings[teamId].kills += kills;
+            teamStandings[teamId].matchesPlayed += 1;
+            if (position) teamStandings[teamId].placements.push(position);
+            if (teamResult.chickenDinner) teamStandings[teamId].chickenDinners += 1;
+          }
+        }
+      });
+    });
+
+    const overallStandings = Object.values(teamStandings).sort((a, b) => {
+      if (a.points !== b.points) return b.points - a.points;
+      if (a.positionPoints !== b.positionPoints) return b.positionPoints - a.positionPoints;
+      if (a.chickenDinners !== b.chickenDinners) return b.chickenDinners - a.chickenDinners;
+      return b.kills - a.kills;
+    });
+
+    tournament.finalStandings = overallStandings.map((standing, index) => ({
+      position: index + 1,
+      team: standing.teamId,
+      tournamentPointsAwarded: standing.points,
+      kills: standing.kills,
+      chickenDinners: standing.chickenDinners,
+      matchesPlayed: standing.matchesPlayed,
+      statistics: {
+        totalPoints: standing.points,
+        totalKills: standing.kills,
+        averagePlacement: standing.placements.length > 0 ? standing.placements.reduce((a, b) => a + b, 0) / standing.placements.length : 0,
+        chickenDinners: standing.chickenDinners
+      }
+    }));
+
+    tournament.status = 'completed';
+
+    // Mark current phase as completed too
+    if (phase) phase.status = 'completed';
+
+    await tournament.save();
+
+    // Update registrations
+    const finalPosBulkOps = overallStandings.map((standing, i) => ({
+      updateOne: {
+        filter: { tournament: tournamentId, team: standing.teamId },
+        update: {
+          $set: {
+            finalPosition: i + 1,
+            totalTournamentPoints: standing.points,
+            totalTournamentKills: standing.kills,
+            currentStage: 'Completed'
+          }
+        }
+      }
+    }));
+    if (finalPosBulkOps.length > 0) await Registration.bulkWrite(finalPosBulkOps, { ordered: false });
+
+    // Update PhaseStanding summary
+    try {
+      await PhaseStanding.findOneAndUpdate(
+        { tournament: tournamentId, phase: phaseName },
+        {
+          $set: {
+            status: 'completed',
+            topTeams: overallStandings.slice(0, 10).map((s, idx) => ({
+              team: s.teamId,
+              position: idx + 1,
+              points: s.points,
+              kills: s.kills,
+              chickenDinners: s.chickenDinners,
+              matchesPlayed: s.matchesPlayed
+            })),
+            lastCalculated: new Date()
+          }
+        },
+        { upsert: true }
+      );
+    } catch (e) {
+      console.warn('Failed to update PhaseStanding after conclusion:', e);
+    }
+
+    res.json({ success: true, message: 'Tournament concluded successfully', tournament });
+  } catch (error) {
+    console.error('Error concluding tournament:', error);
+    res.status(500).json({ error: 'Failed to conclude tournament' });
   }
 });
 
@@ -780,11 +944,15 @@ router.put('/:tournamentId', verifyApprovedOrgToken, upload.fields([
 
     // Fetch tournament (minimal fields for auth check)
     const tournament = await Tournament.findById(tournamentId)
-      .select('organizer.organizationRef media')
+      .select('organizer.organizationRef media status')
       .lean();
 
     if (!tournament) {
       return res.status(404).json({ error: 'Tournament not found' });
+    }
+
+    if (tournament.status === 'completed') {
+      return res.status(400).json({ error: 'Tournament is completed and cannot be edited.' });
     }
 
     // Check authorization
@@ -963,11 +1131,15 @@ router.put('/:tournamentId/assign-groups', verifyApprovedOrgToken, async (req, r
 
     // Auth check
     const tournament = await Tournament.findById(tournamentId)
-      .select('organizer.organizationRef phases')
+      .select('organizer.organizationRef phases status')
       .lean();
     if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
     if (tournament.organizer.organizationRef?.toString() !== req.organization._id.toString()) {
       return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    if (tournament.status === 'completed') {
+      return res.status(400).json({ error: 'Tournament is completed. Groups are locked.' });
     }
 
     const phaseDoc = tournament.phases?.find(p => p.name === phase);
@@ -1567,7 +1739,7 @@ router.post(
 
       // Fetch match with tournament data
       const match = await Match.findById(matchId)
-        .populate('tournament', 'organizer tournamentName gameSettings phases');
+        .populate('tournament', 'organizer tournamentName gameSettings phases status');
 
       if (!match) {
         return res.status(404).json({ error: 'Match not found' });
@@ -1576,6 +1748,11 @@ router.post(
       // Verify organization owns this tournament
       if (match.tournament.organizer.organizationRef?.toString() !== req.organization._id.toString()) {
         return res.status(403).json({ error: 'Not authorized to update this match' });
+      }
+
+      // Check if tournament is concluded
+      if (match.tournament.status === 'completed') {
+        return res.status(400).json({ error: 'Tournament is concluded. Results are locked.' });
       }
 
       // Get teams from participatingGroups via Registration collection

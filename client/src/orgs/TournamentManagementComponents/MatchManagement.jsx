@@ -339,6 +339,16 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                 </div>
             </div>
 
+            {tournament.status === 'completed' && (
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 flex items-center gap-3 mb-6">
+                    <Trophy className="w-5 h-5 text-blue-400" />
+                    <div>
+                        <p className="text-blue-400 font-medium">Tournament Completed</p>
+                        <p className="text-blue-500/70 text-sm">This tournament is concluded. Results are locked and can no longer be edited.</p>
+                    </div>
+                </div>
+            )}
+
             {error && (
                 <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 flex items-center gap-2 mb-6">
                     <AlertCircle className="w-5 h-5 text-red-400" />
@@ -354,7 +364,7 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                     </div>
                     <button
                         onClick={handleSave}
-                        disabled={saving}
+                        disabled={saving || tournament.status === 'completed'}
                         className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors flex items-center gap-2 disabled:opacity-50"
                     >
                         {saving ? (
@@ -411,7 +421,7 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                                     </span>
                                     <button
                                         onClick={() => openUploadModal(match)}
-                                        disabled={uploadingScreenshot === match._id}
+                                        disabled={uploadingScreenshot === match._id || tournament.status === 'completed'}
                                         className="p-2 text-gray-400 hover:text-orange-400 hover:bg-orange-500/10 rounded-lg transition-colors disabled:opacity-50"
                                         title="Upload match result screenshot"
                                     >
@@ -426,10 +436,12 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                                             setSelectedMatch(match);
                                             setShowCredentialsModal(true);
                                         }}
-                                        className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+                                        disabled={tournament.status === 'completed'}
+                                        className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 rounded-lg transition-colors whitespace-nowrap disabled:opacity-50"
                                         title="Share room credentials"
                                     >
                                         <Share2 className="w-4 h-4" />
+                                        <span>Share Room Credentials</span>
                                     </button>
                                     <button
                                         onClick={() => handleDeleteMatch(match._id)}
@@ -486,18 +498,23 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                                                 : (match.teams || []);
 
                                             return matchTeams && matchTeams.length > 0 ? (
-                                                matchTeams.map((team, index) => {
-                                                    const teamData = team.team || team;
+                                                matchTeams.map((teamEntry, index) => {
+                                                    const teamData = teamEntry.team || teamEntry;
                                                     const teamId = teamData._id || teamData.id;
                                                     const teamName = teamData.teamName || teamData.name || 'Unknown Team';
+
+                                                    // Ensure nested structures exist for display
+                                                    if (!teamEntry.points) teamEntry.points = { placementPoints: 0, killPoints: 0, totalPoints: 0 };
+                                                    if (!teamEntry.kills) teamEntry.kills = { total: 0, breakdown: [] };
+
                                                     const teamKey = `${match._id}-${teamId}`;
 
                                                     const killsKey = `${match._id}-${teamId}-kills`;
                                                     const positionKey = `${match._id}-${teamId}-position`;
 
-                                                    const currentKills = pendingChanges[killsKey] !== undefined ? pendingChanges[killsKey] : (team.kills?.total || 0);
-                                                    const currentPosition = pendingChanges[positionKey] !== undefined ? pendingChanges[positionKey] : (team.finalPosition || '');
-                                                    const currentPoints = team.points?.totalPoints || 0;
+                                                    const currentKills = pendingChanges[killsKey] !== undefined ? pendingChanges[killsKey] : (teamEntry.kills?.total || 0);
+                                                    const currentPosition = pendingChanges[positionKey] !== undefined ? pendingChanges[positionKey] : (teamEntry.finalPosition || '');
+                                                    const currentPoints = teamEntry.points?.totalPoints || 0;
 
                                                     return (
                                                         <div key={teamId || index} className="bg-gray-700/50 rounded-lg overflow-hidden">
@@ -522,7 +539,8 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                                                                         type="number"
                                                                         value={currentKills}
                                                                         onChange={(e) => handleInputChange(match._id, teamId, 'kills', parseInt(e.target.value) || 0)}
-                                                                        className="w-16 bg-gray-600 border border-gray-500 rounded px-2 py-1 text-white text-center text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                                                        disabled={tournament.status === 'completed'}
+                                                                        className="w-16 bg-gray-600 border border-gray-500 rounded px-2 py-1 text-white text-center text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-40"
                                                                         min="0"
                                                                     />
                                                                 </div>
@@ -532,7 +550,8 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                                                                         type="number"
                                                                         value={currentPosition}
                                                                         onChange={(e) => handleInputChange(match._id, teamId, 'position', parseInt(e.target.value) || '')}
-                                                                        className="w-16 bg-gray-600 border border-gray-500 rounded px-2 py-1 text-white text-center text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                                                        disabled={tournament.status === 'completed'}
+                                                                        className="w-16 bg-gray-600 border border-gray-500 rounded px-2 py-1 text-white text-center text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-40"
                                                                         min="1"
                                                                         max="25"
                                                                         placeholder="1-25"
@@ -541,7 +560,7 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                                                                 <div className="w-20 text-center">
                                                                     <span className="text-orange-400 font-medium text-sm">{currentPoints} pts</span>
                                                                 </div>
-                                                                {team.chickenDinner && (
+                                                                {teamEntry.chickenDinner && (
                                                                     <Trophy className="w-5 h-5 text-yellow-400" />
                                                                 )}
                                                             </div>
@@ -552,7 +571,7 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                                                                     <p className="text-xs text-gray-400 mb-2 font-medium">Player Breakdown:</p>
                                                                     <div className="space-y-2">
                                                                         {[0, 1, 2, 3].map((playerIndex) => {
-                                                                            const playerData = team.kills?.breakdown?.[playerIndex];
+                                                                            const playerData = teamEntry.kills?.breakdown?.[playerIndex];
                                                                             const playerName = playerData?.player?.username ||
                                                                                 playerData?.player?.name ||
                                                                                 `Player ${playerIndex + 1}`;
@@ -576,7 +595,8 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                                                                                                 const value = parseInt(e.target.value) || 0;
                                                                                                 handleInputChange(match._id, teamId, `player${playerIndex}-kills`, value);
                                                                                             }}
-                                                                                            className="w-14 bg-gray-600 border border-gray-500 rounded px-2 py-1 text-white text-center text-xs focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                                                                            disabled={tournament.status === 'completed'}
+                                                                                            className="w-14 bg-gray-600 border border-gray-500 rounded px-2 py-1 text-white text-center text-xs focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-40"
                                                                                             min="0"
                                                                                         />
                                                                                     </div>

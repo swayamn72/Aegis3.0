@@ -321,11 +321,11 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
                 </div>
                 <button
                     onClick={handleSave}
-                    disabled={saving || !selectedPhase || groups.length === 0}
+                    disabled={saving || !selectedPhase || groups.length === 0 || tournament.status === 'completed'}
                     className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                     {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    {saving ? 'Saving…' : 'Save Groups'}
+                    {saving ? 'Saving…' : (tournament.status === 'completed' ? 'Groups Locked' : 'Save Groups')}
                 </button>
             </div>
 
@@ -374,7 +374,7 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
 
                             <button
                                 onClick={handleAutoAllocate}
-                                disabled={phaseTeams.length === 0}
+                                disabled={phaseTeams.length === 0 || tournament.status === 'completed'}
                                 className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all disabled:opacity-50 flex items-center gap-2"
                             >
                                 <Grid3x3 className="w-4 h-4" />
@@ -383,7 +383,7 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
 
                             <button
                                 onClick={handleShuffle}
-                                disabled={groups.length === 0}
+                                disabled={groups.length === 0 || tournament.status === 'completed'}
                                 className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-all disabled:opacity-50 flex items-center gap-2"
                             >
                                 <Shuffle className="w-4 h-4" />
@@ -392,7 +392,7 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
 
                             <button
                                 onClick={handleAddGroup}
-                                disabled={phaseTeams.length === 0}
+                                disabled={phaseTeams.length === 0 || tournament.status === 'completed'}
                                 className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all disabled:opacity-50 flex items-center gap-2"
                             >
                                 <Plus className="w-4 h-4" />

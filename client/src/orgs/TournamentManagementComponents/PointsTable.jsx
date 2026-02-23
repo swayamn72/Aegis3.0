@@ -18,6 +18,7 @@ const PointsTable = ({ tournament, onUpdate }) => {
     const [showAdvanceModal, setShowAdvanceModal] = useState(false);
     const [advancingPhase, setAdvancingPhase] = useState(false);
     const [advancePreview, setAdvancePreview] = useState(null);
+    const [isConcluding, setIsConcluding] = useState(false);
 
     const calculationTimeoutRef = useRef(null);
     const lastCalculationKeyRef = useRef('');
@@ -63,46 +64,22 @@ const PointsTable = ({ tournament, onUpdate }) => {
                 }
             } else {
                 const phase = tournament.phases?.find(p => p.name === selectedPhase);
-                if (phase) {
-                    if (phase.groups && phase.groups.length > 0) {
-                        if (selectedGroup === 'overall') {
-                            const overallGroup = phase.groups.find(g => g.name === 'overall');
-                            if (overallGroup && overallGroup.standings) {
-                                standingsData = overallGroup.standings.map(s => ({
-                                    teamId: s.team._id,
-                                    teamName: s.team.teamName,
-                                    teamLogo: s.team.logo,
-                                    position: s.position,
-                                    points: s.points,
-                                    kills: s.kills,
-                                    matchesPlayed: s.matchesPlayed,
-                                    chickenDinners: s.chickenDinners || 0,
-                                    totalPositionPoints: 0,
-                                    totalKillPoints: s.kills,
-                                    totalPoints: s.points,
-                                    source: 'standings'
-                                }));
-                            }
-                        } else {
-                            const group = phase.groups.find(g => g.name === selectedGroup);
-                            if (group && group.standings) {
-                                standingsData = group.standings.map(s => ({
-                                    teamId: s.team._id,
-                                    teamName: s.team.teamName,
-                                    teamLogo: s.team.logo,
-                                    position: s.position,
-                                    points: s.points,
-                                    kills: s.kills,
-                                    matchesPlayed: s.matchesPlayed,
-                                    chickenDinners: s.chickenDinners || 0,
-                                    totalPositionPoints: 0,
-                                    totalKillPoints: s.kills,
-                                    totalPoints: s.points,
-                                    source: 'standings'
-                                }));
-                            }
-                        }
-                    }
+                // Use pre-calculated standings if available in the phase object
+                if (phase && phase.standings && phase.standings[selectedGroup]) {
+                    standingsData = phase.standings[selectedGroup].map(s => ({
+                        teamId: s.team?._id || s.teamId || (typeof s.team === 'string' ? s.team : null),
+                        teamName: s.team?.teamName || s.teamName || 'Unknown Team',
+                        teamLogo: s.team?.logo || s.teamLogo,
+                        position: s.position,
+                        points: s.points,
+                        kills: s.kills,
+                        matchesPlayed: s.matchesPlayed,
+                        chickenDinners: s.chickenDinners || 0,
+                        totalPositionPoints: s.positionPoints || 0,
+                        totalKillPoints: s.killPoints || s.kills || 0,
+                        totalPoints: s.points,
+                        source: 'standings'
+                    }));
                 }
             }
 
@@ -151,51 +128,14 @@ const PointsTable = ({ tournament, onUpdate }) => {
         const teamPoints = {};
         let relevantTeams = tournament.participatingTeams || [];
 
-        // Filter teams based on phase selection
+        // Filter teams based on phase and group selection using Registration metadata
         if (selectedPhase) {
-            const phase = tournament.phases?.find(p => p.name === selectedPhase);
+            relevantTeams = relevantTeams.filter(pt =>
+                (pt.phase || pt.currentStage) === selectedPhase
+            );
 
-            if (selectedGroup !== 'overall') {
-                // Show only teams from specific group
-                const groupTeams = phase?.groups?.find(g => g.name === selectedGroup)?.teams || [];
-                relevantTeams = relevantTeams.filter(pt => {
-                    const ptTeamId = pt.team?._id || pt.team || pt._id;
-                    return groupTeams.some(gt => {
-                        const gtTeamId = gt?._id || gt;
-                        return ptTeamId?.toString() === gtTeamId?.toString();
-                    });
-                });
-            } else {
-                // Show only teams that are part of this phase (from phase.teams or any group in this phase)
-                const phaseTeamIds = new Set();
-
-                // Add teams directly assigned to phase
-                if (phase?.teams) {
-                    phase.teams.forEach(t => {
-                        const teamId = t?._id || t;
-                        if (teamId) phaseTeamIds.add(teamId.toString());
-                    });
-                }
-
-                // Add teams from all groups in this phase
-                if (phase?.groups) {
-                    phase.groups.forEach(group => {
-                        if (group.teams) {
-                            group.teams.forEach(t => {
-                                const teamId = t?._id || t;
-                                if (teamId) phaseTeamIds.add(teamId.toString());
-                            });
-                        }
-                    });
-                }
-
-                // Filter to only teams in this phase
-                if (phaseTeamIds.size > 0) {
-                    relevantTeams = relevantTeams.filter(pt => {
-                        const ptTeamId = pt.team?._id || pt.team || pt._id;
-                        return ptTeamId && phaseTeamIds.has(ptTeamId.toString());
-                    });
-                }
+            if (selectedGroup && selectedGroup !== 'overall') {
+                relevantTeams = relevantTeams.filter(pt => pt.group === selectedGroup);
             }
         }
 
@@ -371,6 +311,35 @@ const PointsTable = ({ tournament, onUpdate }) => {
             setError(err.error || 'Failed to advance phase');
         } finally {
             setAdvancingPhase(false);
+        }
+    };
+
+    const handleConcludeTournament = async () => {
+        if (!selectedPhase) return;
+
+        const confirmConclude = window.confirm(
+            "Are you sure you want to conclude this tournament? \n\n" +
+            "This will: \n" +
+            "1. Sets final standings based on current phase results \n" +
+            "2. Mark the tournament as COMPLETED \n" +
+            "3. Lock the tournament from further modifications \n\n" +
+            "This action cannot be undone."
+        );
+
+        if (!confirmConclude) return;
+
+        setIsConcluding(true);
+        try {
+            await axiosInstance.post(`/api/org-tournaments/${tournament._id}/conclude`, {
+                phaseName: selectedPhase
+            });
+            toast.success('Tournament concluded successfully!');
+            if (onUpdate) await onUpdate();
+        } catch (err) {
+            console.error('Error concluding tournament:', err);
+            toast.error(err.response?.data?.error || 'Failed to conclude tournament');
+        } finally {
+            setIsConcluding(false);
         }
     };
 
@@ -590,14 +559,27 @@ const PointsTable = ({ tournament, onUpdate }) => {
                         Image
                     </button>
                     {selectedPhase && (
-                        <button
-                            onClick={handleAdvancePhaseClick}
-                            disabled={advancingPhase}
-                            className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 flex items-center gap-2"
-                        >
-                            <CheckCircle className="w-4 h-4" />
-                            Advance Phase
-                        </button>
+                        <div className="flex items-center gap-2">
+                            {selectedPhaseObj?.type === 'final_stage' ? (
+                                <button
+                                    onClick={handleConcludeTournament}
+                                    disabled={isConcluding || tournament.status === 'completed'}
+                                    className="px-4 py-2 bg-zinc-100 text-zinc-950 font-bold rounded-lg hover:bg-white transition-all disabled:opacity-50 flex items-center gap-2 shadow-[0_0_15px_rgba(255,255,255,0.1)] hover:shadow-[0_0_20px_rgba(255,255,255,0.2)]"
+                                >
+                                    <Trophy className="w-4 h-4" />
+                                    {tournament.status === 'completed' ? 'Tournament Concluded' : 'Conclude Tournament'}
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={handleAdvancePhaseClick}
+                                    disabled={advancingPhase || tournament.status === 'completed'}
+                                    className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 flex items-center gap-2"
+                                >
+                                    <CheckCircle className="w-4 h-4" />
+                                    Advance Phase
+                                </button>
+                            )}
+                        </div>
                     )}
                 </div>
             </div>

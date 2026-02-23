@@ -34,10 +34,14 @@ const verifyTournamentOwnership = async (req, res, next) => {
       return res.status(400).json({ error: 'Tournament ID is required' });
     }
 
-    const tournament = await Tournament.findById(tournamentId).select('organizer.organizationRef').lean();
+    const tournament = await Tournament.findById(tournamentId).select('organizer.organizationRef status').lean();
 
     if (!tournament) {
       return res.status(404).json({ error: 'Tournament not found' });
+    }
+
+    if (tournament.status === 'completed') {
+      return res.status(400).json({ error: 'Tournament is concluded and locked.' });
     }
 
     if (!tournament.organizer?.organizationRef) {
@@ -75,10 +79,14 @@ const verifyMatchOwnership = async (req, res, next) => {
       return res.status(404).json({ error: 'Match not found' });
     }
 
-    const tournament = await Tournament.findById(match.tournament).select('organizer.organizationRef').lean();
+    const tournament = await Tournament.findById(match.tournament).select('organizer.organizationRef status').lean();
 
     if (!tournament) {
       return res.status(404).json({ error: 'Tournament not found' });
+    }
+
+    if (tournament.status === 'completed') {
+      return res.status(400).json({ error: 'Tournament is concluded and locked.' });
     }
 
     if (!tournament.organizer?.organizationRef) {
@@ -378,14 +386,19 @@ router.post('/:matchId/share-credentials', verifyOrgToken, verifyMatchOwnership,
       });
     }
 
-    // Fetch match with minimal data
+    // Fetch match with all necessary data including groups for scheduled matches
     const match = await Match.findById(matchId)
-      .select('roomCredentials results tournament tournamentPhase matchNumber')
-      .populate('tournament', 'tournamentName logo')
+      .select('roomCredentials results tournament tournamentPhase matchNumber participatingGroups')
+      .populate('tournament', 'tournamentName logo phases status')
       .lean();
 
     if (!match) {
       return res.status(404).json({ error: 'Match not found' });
+    }
+
+    // Check if tournament is concluded
+    if (match.tournament?.status === 'completed') {
+      return res.status(400).json({ error: 'Tournament is concluded. Matches are locked.' });
     }
 
     // Check if credentials already shared
@@ -396,9 +409,33 @@ router.post('/:matchId/share-credentials', verifyOrgToken, verifyMatchOwnership,
       });
     }
 
-    // NEW: Get all registered teams for this match from Registration collection
-    // This ensures we only notify teams that are actually registered
-    const teamIds = match.results.map(pt => pt.team);
+    // Get teams either from results or from participating groups
+    let teamIds = (match.results || []).map(pt => pt.team?._id || pt.team || pt);
+
+    // Support for scheduled matches: If results is empty, resolve teams from participatingGroups
+    if (teamIds.length === 0 && match.participatingGroups?.length > 0) {
+      const phase = match.tournament?.phases?.find(p => p.name === match.tournamentPhase);
+      if (phase) {
+        const groupNames = match.participatingGroups.map(groupId => {
+          const group = phase.groups?.find(g =>
+            g?._id?.toString() === groupId ||
+            g?.id?.toString?.() === groupId ||
+            g?.name === groupId
+          );
+          return group?.name;
+        }).filter(Boolean);
+
+        if (groupNames.length > 0) {
+          const registrations = await Registration.find({
+            tournament: match.tournament?._id || match.tournament,
+            phase: match.tournamentPhase,
+            group: { $in: groupNames },
+            status: { $in: ['approved', 'checked_in'] }
+          }).select('team').lean();
+          teamIds = registrations.map(reg => reg.team);
+        }
+      }
+    }
 
     const [registrations, players] = await Promise.all([
       // Get registrations to verify teams are active
@@ -539,20 +576,14 @@ router.post('/:matchId/share-credentials', verifyOrgToken, verifyMatchOwnership,
     console.log(`   Players notified: ${eligiblePlayers.length}`);
     console.log(`   Shared by: ${req.user?.username || 'System'}`);
 
-    res.json({
-      success: true,
-      message: 'Room credentials shared successfully',
-      stats: {
-        playersNotified: eligiblePlayers.length,
-        teamsNotified: registeredTeamIds.size,
-        messagesCreated: savedMessages.length
-      },
-      roomCredentials: {
-        roomId: roomId.trim(),
-        sharedAt: new Date(),
-        sharedBy: req.user?.id || null
-      }
-    });
+    // Fetch the updated match with all necessary populations for the frontend
+    const updatedMatch = await Match.findById(matchId)
+      .populate('tournament', 'tournamentName logo')
+      .populate('results.team', 'teamName teamTag logo')
+      .populate('results.kills.breakdown.player', 'username')
+      .lean();
+
+    res.json(updatedMatch);
 
   } catch (error) {
     console.error('❌ Error sharing room credentials:', error);
@@ -581,43 +612,62 @@ router.put('/:matchId/results', verifyOrgToken, verifyMatchOwnership, async (req
     console.log('Received results update for match:', matchId);
     console.log('Results data:', JSON.stringify(results, null, 2));
 
-    const match = await Match.findById(matchId);
+    const match = await Match.findById(matchId).populate('tournament', 'status');
     if (!match) {
       return res.status(404).json({ error: 'Match not found' });
+    }
+
+    // Check if tournament is concluded
+    if (match.tournament.status === 'completed') {
+      return res.status(400).json({ error: 'Tournament is concluded. Results are locked.' });
     }
 
     // Update participating teams with results
     if (results && results.length > 0) {
       for (const result of results) {
-        const teamIndex = match.results.findIndex(
-          team => team.team.toString() === result.teamId
+        let teamIndex = match.results.findIndex(
+          team => (team.team?._id || team.team).toString() === result.teamId
         );
 
-        if (teamIndex !== -1) {
-          // Calculate placement points based on position
-          const placementPoints = getPlacementPoints(result.position);
-
-          match.results[teamIndex].finalPosition = result.position;
-          match.results[teamIndex].kills.total = result.kills || 0;
-          match.results[teamIndex].points.placementPoints = placementPoints;
-          match.results[teamIndex].points.killPoints = result.kills || 0;
-          match.results[teamIndex].points.totalPoints = placementPoints + (result.kills || 0);
-
-          // Update player-level kills breakdown if provided
-          if (result.playerKills && Array.isArray(result.playerKills)) {
-            match.results[teamIndex].kills.breakdown = result.playerKills.map((kills, index) => ({
-              player: match.results[teamIndex].kills.breakdown[index]?.player || null,
-              kills: kills || 0
-            }));
-          }
-
-          // Mark as chicken dinner if position 1
-          if (result.position === 1) {
-            match.participatingTeams[teamIndex].chickenDinner = true;
-          }
-        } else {
-          console.error('Team not found in participating teams:', result.teamId);
+        // If team not in results yet (common for first result update of scheduled match), add it
+        if (teamIndex === -1) {
+          match.results.push({
+            team: result.teamId,
+            points: { placementPoints: 0, killPoints: 0, totalPoints: 0 },
+            kills: { total: 0, breakdown: [] },
+            chickenDinner: false
+          });
+          teamIndex = match.results.length - 1;
         }
+
+        const teamEntry = match.results[teamIndex];
+
+        // Ensure nested structures exist
+        if (!teamEntry.points) teamEntry.points = { placementPoints: 0, killPoints: 0, totalPoints: 0 };
+        if (!teamEntry.kills) teamEntry.kills = { total: 0, breakdown: [] };
+
+        // Calculate placement points based on position
+        const placementPoints = getPlacementPoints(result.position);
+
+        teamEntry.finalPosition = result.position;
+        teamEntry.kills.total = result.kills || 0;
+        teamEntry.points.placementPoints = placementPoints;
+        teamEntry.points.killPoints = result.kills || 0;
+        teamEntry.points.totalPoints = placementPoints + (result.kills || 0);
+
+        // Update player-level kills breakdown if provided
+        if (result.playerKills && Array.isArray(result.playerKills)) {
+          // Ensure breakdown collection exists
+          if (!teamEntry.kills.breakdown) teamEntry.kills.breakdown = [];
+
+          teamEntry.kills.breakdown = result.playerKills.map((kills, index) => ({
+            player: (teamEntry.kills.breakdown && teamEntry.kills.breakdown[index]) ? teamEntry.kills.breakdown[index].player : null,
+            kills: kills || 0
+          }));
+        }
+
+        // Mark as chicken dinner if position 1
+        teamEntry.chickenDinner = result.position === 1;
       }
     }
 

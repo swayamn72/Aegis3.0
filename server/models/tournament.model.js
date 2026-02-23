@@ -575,13 +575,20 @@ tournamentSchema.virtual('invitations', {
   foreignField: 'tournament',
 });
 
-// --- Pre-save middleware ---
-tournamentSchema.pre('save', function () {
+tournamentSchema.pre('save', function (next) {
   // Generate slug from tournament name
   if (this.isModified('tournamentName') && this.tournamentName) {
     this.slug = slugify(this.tournamentName, { lower: true, strict: true });
   }
-  // Note: participatingTeamsCount is now updated by Registration model
+
+  // Validation: Ensure only one final_stage exists
+  if (this.isModified('phases') && this.phases) {
+    const finalPhases = this.phases.filter(p => p.type === 'final_stage');
+    if (finalPhases.length > 1) {
+      return next(new Error('A tournament can only have ONE phase of type "final_stage".'));
+    }
+  }
+  next();
 });
 
 // --- Instance Methods ---
