@@ -244,7 +244,6 @@ const OrgDashboard = () => {
                     onClose={() => setShowCreateModal(false)}
                     onSuccess={() => {
                         setShowCreateModal(false);
-                        queryClient.invalidateQueries({ queryKey: ['organizationTournaments'] });
                     }}
                 // Pass additional props as needed
                 />

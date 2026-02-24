@@ -321,7 +321,7 @@ const Tournaments = () => {
   // Loading state
   if (isLoading) {
     return (
-      <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans mt-20">
+      <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans pt-20">
         <div className="container mx-auto px-6 py-12">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
@@ -336,7 +336,7 @@ const Tournaments = () => {
   // Error state
   if (isError) {
     return (
-      <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans mt-20">
+      <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans pt-20">
         <div className="container mx-auto px-6 py-12">
           <div className="text-center">
             <div className="text-red-400 text-6xl mb-4">⚠️</div>
@@ -355,7 +355,7 @@ const Tournaments = () => {
   }
 
   return (
-    <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans mt-20">
+    <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans pt-20">
       <div className="container mx-auto px-6 py-12">
 
         {/* HEADER */}

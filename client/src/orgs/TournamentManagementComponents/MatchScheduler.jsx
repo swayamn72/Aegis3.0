@@ -29,7 +29,7 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
       const group = allGroups.find(g =>
         (g._id?.toString?.() === groupId) || (g.id === groupId) || (g.name === groupId)
       );
-      return total + (group?.teams?.length || 0);
+      return total + (group?.teamCount || group?.teams?.length || 0);
     }, 0);
     setTotalTeams(teams);
   }, [selectedGroups, allGroups]);
@@ -91,49 +91,6 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
     return true;
   };
 
-  const sendChatNotifications = async (matchData) => {
-    try {
-      const teamIds = selectedGroups.flatMap(groupId => {
-        const group = allGroups.find(g =>
-          (g._id?.toString?.() === groupId) || (g.id === groupId) || (g.name === groupId)
-        );
-        return group?.teams || [];
-      });
-
-      const uniqueTeamIds = [...new Set(teamIds)];
-
-      const notificationPromises = uniqueTeamIds.map(async (teamId) => {
-        const team = tournament.participatingTeams?.find(pt =>
-          (pt.team?._id || pt.team?.id || pt._id) === teamId
-        );
-
-        if (team) {
-          const message = {
-            messageType: 'tournament_match_schedule',
-            message: `Your team has been scheduled for "${matchData.matchName}" on ${new Date(matchData.scheduledStartTime).toLocaleString()}. Map: ${matchData.map}`,
-            tournamentId: tournament._id,
-            matchId: matchData._id,
-            senderId: 'system',
-            receiverId: team.team?.captain?._id || team.team?.captain,
-            timestamp: new Date()
-          };
-
-          return fetch('http://localhost:5000/api/chat/send-notification', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify(message)
-          });
-        }
-      });
-
-      await Promise.all(notificationPromises.filter(Boolean));
-      toast.success('Notifications sent to participating teams');
-    } catch (error) {
-      console.error('Error sending notifications:', error);
-      toast.warning('Match scheduled but failed to send some notifications');
-    }
-  };
 
   const handleScheduleMatch = async () => {
     if (!validateForm()) return;
@@ -163,7 +120,6 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
         const savedMatch = await response.json();
         setScheduledMatches(prev => [...prev, savedMatch]);
 
-        await sendChatNotifications(savedMatch);
 
         if (onUpdate) {
           onUpdate();
@@ -326,7 +282,7 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
                   {getGroupsForPhase().map((group) => {
                     const groupKey = group._id?.toString() || group.id || group.name;
                     const isSelected = selectedGroups.includes(groupKey);
-                    const groupTeamCount = group.teams?.length || 0;
+                    const groupTeamCount = group.teamCount || group.teams?.length || 0;
 
                     return (
                       <button
@@ -338,7 +294,6 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
                           }`}
                       >
                         <div className="font-medium">{group.name}</div>
-                        <div className="text-xs opacity-75">{groupTeamCount} teams</div>
                       </button>
                     );
                   })}
@@ -350,32 +305,6 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
               </div>
             )}
 
-            {/* Team Count Summary */}
-            {selectedGroups.length > 0 && (
-              <div className="bg-zinc-900/50 rounded-lg p-4 border border-zinc-700">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4 text-zinc-400" />
-                    <span className="text-zinc-400 text-sm">Selected Groups:</span>
-                    <span className="text-white font-medium">{selectedGroups.length}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Target className="w-4 h-4 text-zinc-400" />
-                    <span className="text-zinc-400 text-sm">Total Teams:</span>
-                    <span className={`font-medium ${totalTeams > 24 ? 'text-red-400' : 'text-green-400'}`}>
-                      {totalTeams}/24
-                    </span>
-                  </div>
-                </div>
-
-                {totalTeams > 24 && (
-                  <div className="flex items-center gap-2 mt-2 text-red-400 text-sm">
-                    <AlertCircle className="w-4 h-4" />
-                    <span>Team limit exceeded. Maximum 24 teams allowed.</span>
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Action Buttons */}
             <div className="flex justify-end gap-3 pt-4 border-t border-zinc-700">
@@ -397,7 +326,7 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
               </button>
               <button
                 onClick={handleScheduleMatch}
-                disabled={totalTeams > 24 || selectedGroups.length === 0}
+                disabled={selectedGroups.length === 0}
                 className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 <MessageSquare className="w-4 h-4" />

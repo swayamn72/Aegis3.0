@@ -197,27 +197,23 @@ router.get('/:id', async (req, res) => {
       recentMatches,
       matchStats
     ] = await Promise.all([
-      // Get all registrations for this tournament
+      // Get all approved registrations in ONE query (no nested loops later)
       Registration.find({
         tournament: id,
         status: { $in: ['approved', 'checked_in'] }
       })
-        .populate('team', mobile === 'true' ?
-          'teamName teamTag logo' :
-          'teamName teamTag logo primaryGame region establishedDate'
-        )
+        .populate('team', 'teamName teamTag logo primaryGame region establishedDate')
         .select('team qualifiedThrough currentStage phase group')
-        .limit(mobile === 'true' ? 50 : 500)
         .lean(),
 
-      // Get phase standings if phases exist
+      // Get phase standings
       tournament.phases && tournament.phases.length > 0 ?
         PhaseStanding.find({ tournament: id })
           .populate('topTeams.team', 'teamName teamTag logo')
           .lean() :
         Promise.resolve([]),
 
-      // Fetch matches only if needed
+      // Fetch recent matches
       includeMatches === 'true' ?
         Match.find({ tournament: id })
           .sort({ scheduledStartTime: -1 })
@@ -230,7 +226,7 @@ router.get('/:id', async (req, res) => {
           .lean() :
         Promise.resolve([]),
 
-      // Match stats aggregation
+      // Global match stats
       Match.aggregate([
         { $match: { tournament: new mongoose.Types.ObjectId(id), status: 'completed' } },
         {
@@ -379,62 +375,42 @@ router.get('/:id', async (req, res) => {
       actualEndTime: match.actualEndTime
     }));
 
-    // Build groups data with standings from Standing collection
+    // Build groups data from pre-fetched registrations and standings (OPTIMIZED)
     const groupsData = {};
     if (tournament.phases && tournament.phases.length > 0) {
-      for (const phase of tournament.phases) {
+      tournament.phases.forEach(phase => {
         if (phase.groups && phase.groups.length > 0) {
           groupsData[phase.name] = {};
 
-          for (const group of phase.groups) {
-            const groupKey = group.name?.replace('Group ', '') || 'A';
+          phase.groups.forEach(group => {
+            const groupKey = group.name?.replace('Group ', '') || '1';
 
-            // Fetch teams from Registration records (single source of truth)
-            const teamsInGroup = await Registration.find({
-              tournament: id,
-              phase: phase.name,
-              group: group.name,
-              status: { $in: ['approved', 'checked_in'] }
-            })
-              .populate('team', 'teamName teamTag logo')
-              .select('team')
-              .lean();
-
-            // Fetch standings for this group
-            const standings = await PhaseStanding.find({
-              tournament: id,
-              phase: phase.name,
-              group: group.name
-            })
-              .sort({ position: 1 })
-              .populate('team', 'teamName teamTag logo')
-              .select('team position matchesPlayed points kills chickenDinners')
-              .lean();
+            // Find matching standings for this group from phaseStandings array
+            const standingDoc = phaseStandings.find(ps =>
+              ps.phase === phase.name && ps.group === group.name
+            );
 
             groupsData[phase.name][groupKey] = {
-              teams: teamsInGroup.map(reg => ({
-                _id: reg.team._id,
-                name: reg.team.teamName || 'Unknown Team',
-                tag: reg.team.teamTag || '',
-                logo: reg.team.logo || null
-              })),
-              standings: standings.map(standing => ({
-                team: {
-                  _id: standing.team._id,
-                  name: standing.team.teamName,
-                  tag: standing.team.teamTag,
-                  logo: standing.team.logo
-                },
-                position: standing.position,
-                matchesPlayed: standing.matchesPlayed || 0,
-                points: standing.points || 0,
-                kills: standing.kills || 0,
-                chickenDinners: standing.chickenDinners || 0
-              }))
+              standings: (standingDoc?.topTeams || [])
+                .slice()
+                .sort((a, b) => a.position - b.position)
+                .map(s => ({
+                  team: {
+                    _id: s.team?._id,
+                    name: s.team?.teamName,
+                    tag: s.team?.teamTag,
+                    logo: s.team?.logo
+                  },
+                  position: s.position,
+                  matchesPlayed: s.matchesPlayed || 0,
+                  points: s.points || 0,
+                  kills: s.kills || 0,
+                  chickenDinners: s.chickenDinners || 0
+                }))
             };
-          }
+          });
         }
-      }
+      });
     }
 
     res.json({
@@ -449,6 +425,58 @@ router.get('/:id', async (req, res) => {
   } catch (error) {
     console.error('Error fetching tournament:', error);
     res.status(500).json({ error: 'Failed to fetch tournament details' });
+  }
+});
+
+// Get teams for a specific phase/group with pagination (Public)
+router.get('/:id/teams', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { phase, group, page = 1, limit = 12 } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid tournament ID' });
+    }
+
+    const currentPage = parseInt(page);
+    const pageLimit = parseInt(limit);
+    const skip = (currentPage - 1) * pageLimit;
+
+    // Build query - Registration is the authority
+    const query = {
+      tournament: id,
+      phase,
+      status: { $nin: ['rejected', 'withdrawn', 'pending'] } // Only show approved teams in public view
+    };
+
+    // For groups, we need to handle "Group X" naming
+    if (group) {
+      query.group = group.startsWith('Group ') ? group : `Group ${group}`;
+    }
+
+    const [registrations, total] = await Promise.all([
+      Registration.find(query)
+        .populate('team', 'teamName teamTag logo')
+        .skip(skip)
+        .limit(pageLimit)
+        .lean(),
+      Registration.countDocuments(query)
+    ]);
+
+    res.json({
+      teams: registrations.map(reg => ({
+        _id: reg.team?._id,
+        name: reg.team?.teamName || 'Unknown Team',
+        tag: reg.team?.teamTag || '',
+        logo: reg.team?.logo || null
+      })),
+      total,
+      page: currentPage,
+      totalPages: Math.ceil(total / pageLimit)
+    });
+  } catch (error) {
+    console.error('Error fetching tournament teams:', error);
+    res.status(500).json({ error: 'Failed to fetch teams' });
   }
 });
 

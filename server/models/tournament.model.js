@@ -105,6 +105,12 @@ const tournamentSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // When false (default): registrations from open teams are auto-approved on creation.
+    // When true: every registration goes to `pending` and the org reviews manually.
+    requiresApproval: {
+      type: Boolean,
+      default: false,
+    },
     registrationStartDate: Date,
     registrationEndDate: Date,
     startDate: {

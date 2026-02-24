@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     Megaphone, Send, Globe, Users, Target, Grid3x3,
-    Clock, CheckCircle, X, ChevronDown, ChevronUp, AlertCircle
+    Clock, CheckCircle, X, ChevronDown, ChevronUp, AlertCircle, Search
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import axiosInstance from '../../utils/axiosConfig';
@@ -121,6 +121,16 @@ const Announcements = ({ tournament }) => {
     const [targetPhase, setTargetPhase] = useState('');
     const [targetGroup, setTargetGroup] = useState('');
     const [selectedTeamIds, setSelectedTeamIds] = useState([]);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+
+    // ── Debounce search
+    React.useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchQuery);
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
 
     // ── Fetch past announcements
     const {
@@ -174,12 +184,30 @@ const Announcements = ({ tournament }) => {
     const phases = tournament?.phases || [];
     const groupsForPhase = phases.find((p) => p.name === targetPhase)?.groups || [];
 
-    // Participating teams (populated from registration)
-    const participatingTeams = (tournament?.participatingTeams || []).map((pt) => ({
-        _id: (pt.team?._id || pt._id || pt)?.toString(),
-        teamName: pt.team?.teamName || pt.teamName || 'Unknown Team',
-        teamTag: pt.team?.teamTag || pt.teamTag || '',
-        logo: pt.team?.logo || pt.logo || null,
+    // Fetch approved teams for specific target selection
+    const {
+        data: teamsData,
+        isLoading: teamsLoading,
+        isFetching: teamsFetching
+    } = useQuery({
+        queryKey: ['org-tournament-approved-teams', tournamentId, debouncedSearch],
+        queryFn: async () => {
+            const { data } = await axiosInstance.get(
+                `/api/org-tournaments/${tournamentId}/registrations`,
+                { params: { status: 'approved', limit: 1000, search: debouncedSearch } }
+            );
+            return data.registrations || [];
+        },
+        enabled: !!tournamentId && targetType === 'specific_teams' && debouncedSearch.trim().length > 0,
+        staleTime: 60 * 1000,
+    });
+
+    // Participating teams (filtered to approved ones)
+    const participatingTeams = (teamsData || []).map((reg) => ({
+        _id: reg.team?._id?.toString(),
+        teamName: reg.team?.teamName || 'Unknown Team',
+        teamTag: reg.team?.teamTag || '',
+        logo: reg.team?.logo || null,
     }));
 
     const toggleTeam = (teamId) => {
@@ -257,8 +285,8 @@ const Announcements = ({ tournament }) => {
                                             setTargetGroup('');
                                         }}
                                         className={`p-3 rounded-xl border text-left transition-all ${active
-                                                ? `${colors.pill} ring-1 ${colors.ring}`
-                                                : 'bg-gray-700/50 border-gray-600 text-gray-400 hover:border-gray-500'
+                                            ? `${colors.pill} ring-1 ${colors.ring}`
+                                            : 'bg-gray-700/50 border-gray-600 text-gray-400 hover:border-gray-500'
                                             }`}
                                     >
                                         <div className={`w-7 h-7 rounded-lg flex items-center justify-center mb-2 ${active ? colors.icon : 'bg-gray-600 text-gray-400'}`}>
@@ -275,13 +303,80 @@ const Announcements = ({ tournament }) => {
                     {/* Specific teams picker */}
                     {targetType === 'specific_teams' && (
                         <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-2">
-                                Select Teams <span className="text-gray-500">({selectedTeamIds.length} selected)</span>
-                            </label>
-                            {participatingTeams.length === 0 ? (
-                                <div className="bg-gray-700/50 rounded-lg p-4 text-center text-gray-400 text-sm flex items-center justify-center gap-2">
-                                    <AlertCircle className="w-4 h-4" />
-                                    No registered teams found
+                            <div className="flex items-center justify-between mb-3">
+                                <label className="block text-sm font-medium text-gray-300">
+                                    Select Teams <span className="text-gray-500">({selectedTeamIds.length} selected)</span>
+                                </label>
+                                {participatingTeams.length > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (selectedTeamIds.length === participatingTeams.length) {
+                                                setSelectedTeamIds([]);
+                                            } else {
+                                                setSelectedTeamIds(participatingTeams.map(t => t._id));
+                                            }
+                                        }}
+                                        className="text-xs text-orange-400 hover:text-orange-300 font-medium"
+                                    >
+                                        {selectedTeamIds.length === participatingTeams.length ? 'Deselect All' : 'Select All'}
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Search Box */}
+                            <div className="relative mb-3">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Search by team name or 6-digit code..."
+                                    className="w-full bg-gray-700/50 border border-gray-600 rounded-lg pl-9 pr-10 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 transition-all"
+                                />
+                                {searchQuery && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setSearchQuery('')}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </div>
+
+                            {(teamsLoading || teamsFetching) ? (
+                                <div className="space-y-2">
+                                    {[1, 2, 3, 4].map(i => (
+                                        <div key={i} className="h-12 bg-gray-700/30 animate-pulse rounded-lg" />
+                                    ))}
+                                </div>
+                            ) : !searchQuery.trim() ? (
+                                <div className="bg-gray-700/30 rounded-lg p-8 text-center text-gray-500 text-sm flex flex-col items-center justify-center gap-3 border border-dashed border-gray-600">
+                                    <div className="w-12 h-12 bg-gray-800/50 rounded-full flex items-center justify-center">
+                                        <Search className="w-6 h-6 text-gray-700" />
+                                    </div>
+                                    <div>
+                                        <p className="font-medium text-gray-400">Search for teams</p>
+                                        <p className="text-xs text-gray-500 mt-1">Type a team name or 6-digit code to start selecting</p>
+                                    </div>
+                                </div>
+                            ) : participatingTeams.length === 0 ? (
+                                <div className="bg-gray-700/50 rounded-lg p-8 text-center text-gray-400 text-sm flex flex-col items-center justify-center gap-3 border border-dashed border-gray-600">
+                                    <div className="w-12 h-12 bg-gray-800 rounded-full flex items-center justify-center">
+                                        <Search className="w-6 h-6 text-gray-600" />
+                                    </div>
+                                    <div>
+                                        <p className="font-medium text-gray-300">No teams found</p>
+                                        <p className="text-xs text-gray-500 mt-1">Try searching for a different name or code</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSearchQuery('')}
+                                        className="text-xs text-purple-400 hover:underline"
+                                    >
+                                        Clear search
+                                    </button>
                                 </div>
                             ) : (
                                 <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
@@ -291,8 +386,8 @@ const Announcements = ({ tournament }) => {
                                             <label
                                                 key={team._id}
                                                 className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all border ${checked
-                                                        ? 'bg-purple-500/10 border-purple-500/40'
-                                                        : 'bg-gray-700/40 border-gray-600 hover:border-gray-500'
+                                                    ? 'bg-purple-500/10 border-purple-500/40'
+                                                    : 'bg-gray-700/40 border-gray-600 hover:border-gray-500'
                                                     }`}
                                             >
                                                 <input
@@ -432,29 +527,31 @@ const Announcements = ({ tournament }) => {
                     )}
                 </h3>
 
-                {historyLoading ? (
-                    <div className="space-y-3">
-                        {[1, 2, 3].map((i) => (
-                            <div key={i} className="bg-gray-800/40 border border-gray-700 rounded-xl p-4 animate-pulse">
-                                <div className="h-3 w-24 bg-gray-700 rounded mb-2" />
-                                <div className="h-4 w-48 bg-gray-700 rounded mb-2" />
-                                <div className="h-3 w-full bg-gray-700 rounded" />
-                            </div>
-                        ))}
-                    </div>
-                ) : announcements.length === 0 ? (
-                    <div className="text-center py-16 bg-gray-800/30 border border-gray-700 rounded-xl">
-                        <Megaphone className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-                        <p className="text-gray-400 font-medium">No announcements yet</p>
-                        <p className="text-gray-500 text-sm mt-1">Create your first announcement above</p>
-                    </div>
-                ) : (
-                    <div className="space-y-3">
-                        {announcements.map((ann) => (
-                            <AnnouncementCard key={ann._id} ann={ann} />
-                        ))}
-                    </div>
-                )}
+                {
+                    historyLoading ? (
+                        <div className="space-y-3">
+                            {[1, 2, 3].map((i) => (
+                                <div key={i} className="bg-gray-800/40 border border-gray-700 rounded-xl p-4 animate-pulse">
+                                    <div className="h-3 w-24 bg-gray-700 rounded mb-2" />
+                                    <div className="h-4 w-48 bg-gray-700 rounded mb-2" />
+                                    <div className="h-3 w-full bg-gray-700 rounded" />
+                                </div>
+                            ))}
+                        </div>
+                    ) : announcements.length === 0 ? (
+                        <div className="text-center py-16 bg-gray-800/30 border border-gray-700 rounded-xl">
+                            <Megaphone className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+                            <p className="text-gray-400 font-medium">No announcements yet</p>
+                            <p className="text-gray-500 text-sm mt-1">Create your first announcement above</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            {announcements.map((ann) => (
+                                <AnnouncementCard key={ann._id} ann={ann} />
+                            ))}
+                        </div>
+                    )
+                }
             </div>
         </div>
     );

@@ -15,9 +15,9 @@ import Team from '../models/team.model.js';
 import Tournament from '../models/tournament.model.js';
 import Registration from '../models/registration.model.js';
 
-const TOURNAMENT_ID = '699b4c24d859d3a229ee3d5f';
-const TEAM_COUNT = 30;
-const PLAYERS_PER_TEAM = 4;
+const TOURNAMENT_ID = '699ddff6e4cfdf05a5f78903';
+const TEAM_COUNT = 1020;
+const PLAYERS_PER_TEAM = 5;
 
 async function seedData() {
     try {
@@ -76,35 +76,40 @@ async function seedData() {
                 { team: team._id }
             );
 
-            // Simulate registration from DetailedTournamentInfo page
-            const firstPhase = tournament.phases && tournament.phases.length > 0 ? tournament.phases[0] : null;
+            // Simulate registration logic consistent with teamTournament.routes.js
+            // Logic: 
+            // - isOpenForAll=true + requiresApproval=false => 'approved'
+            // - otherwise => 'pending'
+            const autoApprove = tournament.isOpenForAll && !tournament.requiresApproval;
+            const registrationStatus = autoApprove ? 'approved' : 'pending';
 
             const registration = await Registration.create({
                 tournament: TOURNAMENT_ID,
                 team: team._id,
-                status: tournament.isOpenForAll ? 'approved' : 'pending',
+                status: registrationStatus,
                 qualifiedThrough: 'open_registration',
-                currentStage: firstPhase?.name || 'Registered',
-                phase: firstPhase?.name,
-                approvedAt: tournament.isOpenForAll ? new Date() : undefined,
+                currentStage: 'Registered', // Defer phase assignment per new logic
+                phase: null,               // Phase is assigned bulk during "Lock Registrations"
+                approvedAt: autoApprove ? new Date() : undefined,
                 roster: teamPlayers.map(player => {
                     return {
                         player: player._id,
-                        inGameName: player.gameIds[0].inGameName
+                        inGameName: player.gameIds[0].inGameName || 'Unknown'
                     };
                 })
             });
 
-            // Update tournament stats (simulating post-save hook or manual update)
+            // Update tournament stats
+            // NOTE: Registration post-save hooks should handle this, 
+            // but we update manually to ensure seed consistency.
             await Tournament.updateOne(
                 { _id: TOURNAMENT_ID },
                 {
-                    $inc: { 'slots.registered': 1 },
-                    $set: { participatingTeamsCount: (tournament.participatingTeamsCount || 0) + i }
+                    $inc: { 'slots.registered': 1 }
                 }
             );
 
-            console.log(`✅ [${i}/${TEAM_COUNT}] Team "${teamName}" registered with ${PLAYERS_PER_TEAM} players.`);
+            console.log(`✅ [${i}/${TEAM_COUNT}] Team "${teamName}" ${registrationStatus === 'approved' ? 'registered (auto-approved)' : 'registered (pending approval)'}.`);
         }
 
         // Final update for participatingTeamsCount to match actual registrations

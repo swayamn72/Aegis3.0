@@ -222,7 +222,7 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
     const tournament = await Tournament.findById(tournamentId)
       .select(`
         tournamentName status registrationEndDate slots gameTitle 
-        phases organizer isOpenForAll
+        phases organizer isOpenForAll requiresApproval
       `)
       .populate('organizer', 'orgName')
       .lean();
@@ -305,27 +305,31 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
       });
     }
 
-    // NEW: Create registration
-    const firstPhase = tournament.phases && tournament.phases.length > 0 ?
-      tournament.phases[0] : null;
-
-    // Fetch players with their game IDs for roster
-
     // Fetch players with full game ID info for roster
     const playersWithGameIdsFull = await Player.find({
       _id: { $in: req.team.players }
     }).select('_id gameIds inGameRole').lean();
 
+    // Phase assignment is intentionally deferred — the org calls
+    // POST /:tournamentId/lock-registrations after registration closes,
+    // which bulk-assigns all approved teams to phase 1 at once.
+    // This prevents stale phase references if the org restructures phases
+    // or renames them before the tournament begins.
+    //
+    // Auto-approval logic:
+    //   isOpenForAll=false          → pending  (invite-only or closed, org reviews)
+    //   isOpenForAll=true + requiresApproval=true  → pending  (org manually reviews each)
+    //   isOpenForAll=true + requiresApproval=false → approved (first-come-first-served)
+    const autoApprove = tournament.isOpenForAll && !tournament.requiresApproval;
     const registration = await Registration.create({
       tournament: tournamentId,
       team: req.team._id,
-      status: tournament.isOpenForAll ? 'approved' : 'pending', // Auto-approve if open tournament
+      status: autoApprove ? 'approved' : 'pending',
       qualifiedThrough: 'open_registration',
-      currentStage: firstPhase?.name || 'Registered',
-      phase: firstPhase?.name,
-      approvedAt: tournament.isOpenForAll ? new Date() : undefined, // Set approval timestamp for open tournaments
+      currentStage: 'Registered',
+      phase: null,
+      approvedAt: autoApprove ? new Date() : undefined,
       roster: playersWithGameIdsFull.map(player => {
-        // Get primary game ID or first game ID
         const primaryGameId = player.gameIds?.find(gid => gid.isPrimary) || player.gameIds?.[0];
         return {
           player: player._id,

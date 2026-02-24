@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Users, Shuffle, Save, AlertCircle, Grid3x3, Loader2, Plus, Trash2, ArrowRightLeft } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Users, Shuffle, Save, AlertCircle, Grid3x3, Loader2, Plus, Trash2, ArrowRightLeft, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import axiosInstance from '../../utils/axiosConfig';
 
@@ -64,14 +65,14 @@ const TeamCard = ({ team, groupName, allGroups, onRemove, onMove }) => {
 // ─── GroupCard ────────────────────────────────────────────────────────────────
 const GroupCard = ({ group, phaseTeamMap, allGroups, unassignedTeams, onRemove, onMove, onAddTeam, onDeleteGroup, index }) => {
     const [addingTeam, setAddingTeam] = useState(false);
-    const letter = String.fromCharCode(65 + index);
+    const groupNumber = group.name?.match(/\d+/)?.[0] || (index + 1);
 
     return (
         <div className="bg-gray-800/50 rounded-xl border border-gray-700 p-5">
             <div className="flex items-center justify-between mb-4">
                 <h3 className="text-white font-semibold flex items-center gap-2">
                     <div className="w-8 h-8 bg-orange-500/20 rounded-lg flex items-center justify-center">
-                        <span className="text-orange-400 font-bold text-sm">{letter}</span>
+                        <span className="text-orange-400 font-bold text-sm">{groupNumber}</span>
                     </div>
                     {group.name}
                 </h3>
@@ -150,54 +151,82 @@ const GroupCard = ({ group, phaseTeamMap, allGroups, unassignedTeams, onRemove, 
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 const TeamGrouping = ({ tournament, onUpdate }) => {
+    const queryClient = useQueryClient();
     const [selectedPhase, setSelectedPhase] = useState('');
-    const [phaseTeams, setPhaseTeams] = useState([]);  // fetched from API
     const [groups, setGroups] = useState([]);
     const [teamsPerGroup, setTeamsPerGroup] = useState(16);
-    const [phaseLoading, setPhaseLoading] = useState(false);
-    const [saving, setSaving] = useState(false);
+    const [groupsPage, setGroupsPage] = useState(1);
+    const GROUPS_PER_PAGE = 6;
 
-    // ── Lookup map: teamId → team object (for O(1) render)
-    const phaseTeamMap = Object.fromEntries(phaseTeams.map(t => [t._id.toString(), t]));
-
-    // ── Fetch teams for the selected phase from Registration (single source of truth)
-    const fetchPhaseTeams = useCallback(async (phase) => {
-        if (!phase || !tournament?._id) return;
-        setPhaseLoading(true);
-        try {
+    // ── Fetch phase teams with React Query
+    const { data: phaseTeams = [], isLoading: phaseLoading } = useQuery({
+        queryKey: ['phaseTeams', tournament?._id, selectedPhase],
+        queryFn: async () => {
             const { data } = await axiosInstance.get(
                 `/api/org-tournaments/${tournament._id}/phase-teams`,
-                { params: { phase } }
+                { params: { phase: selectedPhase, all: true } }
             );
-            setPhaseTeams(data.teams || []);
+            return data.teams || [];
+        },
+        enabled: !!tournament?._id && !!selectedPhase,
+        staleTime: 5 * 60 * 1000, // 5 mins cache
+    });
 
-            // Restore existing group layout from Registration.group field
-            const groupMap = {};
-            (data.teams || []).forEach(t => {
-                if (t.group) {
-                    if (!groupMap[t.group]) groupMap[t.group] = [];
-                    groupMap[t.group].push(t._id.toString());
+    // ── Save groups mutation
+    const { mutate: saveGroups, isPending: saving } = useMutation({
+        mutationFn: async (newGroups) => {
+            await axiosInstance.put(
+                `/api/org-tournaments/${tournament._id}/assign-groups`,
+                {
+                    phase: selectedPhase,
+                    groups: newGroups.map(g => ({ name: g.name, teams: g.teams }))
                 }
-            });
-            // Convert map to array sorted by group name; alphabetical
-            const existingGroups = Object.keys(groupMap)
-                .sort()
-                .map(name => ({ name, teams: groupMap[name] }));
-            setGroups(existingGroups);
-        } catch (err) {
-            console.error('Error fetching phase teams:', err);
-            toast.error('Failed to load teams for this phase');
-            setPhaseTeams([]);
-            setGroups([]);
-        } finally {
-            setPhaseLoading(false);
+            );
+        },
+        onSuccess: () => {
+            toast.success('Groups saved successfully');
+            queryClient.invalidateQueries(['phaseTeams', tournament?._id, selectedPhase]);
+            if (onUpdate) onUpdate();
+        },
+        onError: (err) => {
+            console.error('Error saving groups:', err);
+            toast.error(err?.response?.data?.error || 'Failed to save groups');
         }
-    }, [tournament?._id]);
+    });
 
+    // ── Lookup map: teamId → team object (for O(1) render)
+    const phaseTeamMap = useMemo(() =>
+        Object.fromEntries(phaseTeams.map(t => [t._id.toString(), t])),
+        [phaseTeams]
+    );
+
+    // ── Sync phaseTeams result to local editable groups state
     useEffect(() => {
-        if (selectedPhase) fetchPhaseTeams(selectedPhase);
-        else { setPhaseTeams([]); setGroups([]); }
-    }, [selectedPhase, fetchPhaseTeams]);
+        if (!selectedPhase) {
+            setGroups([]);
+            setGroupsPage(1);
+            return;
+        }
+
+        const groupMap = {};
+        phaseTeams.forEach(t => {
+            if (t.group) {
+                if (!groupMap[t.group]) groupMap[t.group] = [];
+                groupMap[t.group].push(t._id.toString());
+            }
+        });
+
+        const existingGroups = Object.keys(groupMap)
+            .sort((a, b) => {
+                const numA = parseInt(a.replace(/^\D+/g, '')) || 0;
+                const numB = parseInt(b.replace(/^\D+/g, '')) || 0;
+                return numA - numB || a.localeCompare(b);
+            })
+            .map(name => ({ name, teams: groupMap[name] }));
+
+        setGroups(existingGroups);
+        setGroupsPage(1);
+    }, [phaseTeams, selectedPhase]);
 
     // ── Auto-allocate: split all phase teams into N groups of `teamsPerGroup`
     const handleAutoAllocate = () => {
@@ -208,7 +237,7 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
         const shuffled = [...phaseTeams].sort(() => Math.random() - 0.5);
         const numGroups = Math.ceil(shuffled.length / teamsPerGroup);
         const newGroups = Array.from({ length: numGroups }, (_, i) => ({
-            name: `Group ${String.fromCharCode(65 + i)}`,
+            name: `Group ${i + 1}`,
             teams: shuffled
                 .slice(i * teamsPerGroup, (i + 1) * teamsPerGroup)
                 .map(t => t._id.toString())
@@ -265,8 +294,11 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
 
     // ── Add a new empty group
     const handleAddGroup = () => {
-        const nextLetter = String.fromCharCode(65 + groups.length);
-        const newName = `Group ${nextLetter}`;
+        // Find next numeric gap or next highest number
+        const existingNums = groups.map(g => parseInt(g.name.replace(/^\D+/g, ''))).filter(n => !isNaN(n));
+        const maxNum = existingNums.length > 0 ? Math.max(...existingNums) : 0;
+        const newName = `Group ${maxNum + 1}`;
+
         if (groups.find(g => g.name === newName)) {
             toast.error(`${newName} already exists`);
             return;
@@ -282,32 +314,18 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
     };
 
     // ── Save: write to Registration.group via PUT /assign-groups
-    const handleSave = async () => {
+    const handleSave = () => {
         if (!selectedPhase) { toast.error('Select a phase first'); return; }
         if (groups.length === 0) { toast.error('Create groups first (use Auto Allocate)'); return; }
-
-        setSaving(true);
-        try {
-            await axiosInstance.put(
-                `/api/org-tournaments/${tournament._id}/assign-groups`,
-                {
-                    phase: selectedPhase,
-                    groups: groups.map(g => ({ name: g.name, teams: g.teams }))
-                }
-            );
-            toast.success('Groups saved successfully');
-            if (onUpdate) onUpdate(); // re-fetch tournament metadata (group names)
-        } catch (err) {
-            console.error('Error saving groups:', err);
-            toast.error(err?.response?.data?.error || 'Failed to save groups');
-        } finally {
-            setSaving(false);
-        }
+        saveGroups(groups);
     };
 
     // ── Derived: teams not yet assigned to any group
     const assignedIds = new Set(groups.flatMap(g => g.teams));
     const unassignedTeams = phaseTeams.filter(t => !assignedIds.has(t._id.toString()));
+
+    const totalGroupsPages = Math.ceil(groups.length / GROUPS_PER_PAGE);
+    const paginatedGroups = groups.slice((groupsPage - 1) * GROUPS_PER_PAGE, groupsPage * GROUPS_PER_PAGE);
 
     return (
         <div className="p-6">
@@ -412,28 +430,61 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
 
                     {/* Groups grid */}
                     {groups.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {groups.map((group, idx) => (
-                                <GroupCard
-                                    key={group.name}
-                                    group={group}
-                                    phaseTeamMap={phaseTeamMap}
-                                    allGroups={groups}
-                                    unassignedTeams={unassignedTeams}
-                                    onRemove={handleRemoveFromGroup}
-                                    onMove={handleMoveTeam}
-                                    onAddTeam={handleAddTeamToGroup}
-                                    onDeleteGroup={handleDeleteGroup}
-                                    index={idx}
-                                />
-                            ))}
-                        </div>
+                        <>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {paginatedGroups.map((group) => (
+                                    <GroupCard
+                                        key={group.name}
+                                        group={group}
+                                        phaseTeamMap={phaseTeamMap}
+                                        allGroups={groups}
+                                        unassignedTeams={unassignedTeams}
+                                        onRemove={handleRemoveFromGroup}
+                                        onMove={handleMoveTeam}
+                                        onAddTeam={handleAddTeamToGroup}
+                                        onDeleteGroup={handleDeleteGroup}
+                                        index={groups.findIndex(g => g.name === group.name)}
+                                    />
+                                ))}
+                            </div>
+
+                            {/* Pagination Controls */}
+                            {totalGroupsPages > 1 && (
+                                <div className="flex items-center justify-between mt-8 pt-6 border-t border-gray-700">
+                                    <div className="text-sm text-gray-400">
+                                        Showing <span className="text-white font-medium">{(groupsPage - 1) * GROUPS_PER_PAGE + 1}</span> to{' '}
+                                        <span className="text-white font-medium">
+                                            {Math.min(groupsPage * GROUPS_PER_PAGE, groups.length)}
+                                        </span> of{' '}
+                                        <span className="text-white font-medium">{groups.length}</span> groups
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => setGroupsPage(prev => Math.max(1, prev - 1))}
+                                            disabled={groupsPage === 1}
+                                            className="p-2 bg-gray-700 border border-gray-600 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-600 transition-colors"
+                                        >
+                                            <ChevronLeft className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            onClick={() => setGroupsPage(prev => Math.min(totalGroupsPages, prev + 1))}
+                                            disabled={groupsPage === totalGroupsPages}
+                                            className="p-2 bg-gray-700 border border-gray-600 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-600 transition-colors"
+                                        >
+                                            <ChevronRight className="w-5 h-5" />
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </>
                     ) : phaseTeams.length === 0 ? (
                         <div className="text-center py-16 bg-gray-800/30 rounded-xl border border-gray-700">
                             <Users className="w-16 h-16 text-gray-600 mx-auto mb-4" />
                             <h3 className="text-lg font-semibold text-white mb-2">No Teams in Phase</h3>
-                            <p className="text-gray-400">
-                                Add teams to the <strong>{selectedPhase}</strong> phase first via the Teams tab.
+                            <p className="text-gray-400 max-w-sm mx-auto">
+                                Teams are not assigned to <strong>{selectedPhase}</strong> yet.
+                                Go to the <strong>Phases</strong> tab and click{' '}
+                                <strong>Lock Registrations</strong> to assign all approved teams to this phase before grouping.
                             </p>
                         </div>
                     ) : (

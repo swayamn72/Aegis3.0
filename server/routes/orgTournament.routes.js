@@ -764,6 +764,320 @@ router.post('/:tournamentId/conclude', verifyApprovedOrgToken, async (req, res) 
   }
 });
 
+// ============================================================================
+// LOCK REGISTRATIONS — assign all approved teams to phase 1 in bulk.
+// Call this after registration closes and before group assignment starts.
+// Safe to call multiple times (idempotent for already-assigned teams).
+// ============================================================================
+
+router.post('/:tournamentId/lock-registrations', verifyApprovedOrgToken, async (req, res) => {
+  try {
+    const { tournamentId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(tournamentId)) {
+      return res.status(400).json({ error: 'Invalid tournament ID' });
+    }
+
+    const tournament = await Tournament.findById(tournamentId)
+      .select('organizer.organizationRef phases slots status')
+      .lean();
+
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+
+    if (tournament.organizer.organizationRef?.toString() !== req.organization._id.toString()) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    if (tournament.status === 'completed') {
+      return res.status(400).json({ error: 'Tournament is already completed' });
+    }
+
+    if (!tournament.phases || tournament.phases.length === 0) {
+      return res.status(400).json({
+        error: 'No phases defined. Add at least one phase before locking registrations.'
+      });
+    }
+
+    const firstPhaseName = tournament.phases[0].name;
+
+    // Count registrations by status in one aggregation pass
+    const statusCounts = await Registration.aggregate([
+      { $match: { tournament: new mongoose.Types.ObjectId(tournamentId) } },
+      { $group: { _id: '$status', count: { $sum: 1 } } }
+    ]);
+
+    const countMap = Object.fromEntries(statusCounts.map(s => [s._id, s.count]));
+    const approvedCount = (countMap['approved'] || 0) + (countMap['checked_in'] || 0);
+    const pendingCount = countMap['pending'] || 0;
+    const totalCount = Object.values(countMap).reduce((a, b) => a + b, 0);
+
+    const expectedSlots = tournament.slots?.total || 0;
+    const fillRate = expectedSlots > 0
+      ? parseFloat(((approvedCount / expectedSlots) * 100).toFixed(1))
+      : 0;
+
+    let recommendation;
+    if (fillRate < 50) recommendation = 'restructure';
+    else if (fillRate < 80) recommendation = 'warn';
+    else recommendation = 'proceed';
+
+    // Bulk-assign phase 1 to all approved/checked_in teams that have no phase yet.
+    // Teams already assigned to a phase are left untouched (idempotent).
+    const bulkResult = await Registration.updateMany(
+      {
+        tournament: tournamentId,
+        status: { $in: ['approved', 'checked_in'] },
+        $or: [{ phase: null }, { phase: '' }, { phase: { $exists: false } }]
+      },
+      {
+        $set: { phase: firstPhaseName, currentStage: firstPhaseName }
+      }
+    );
+
+    const alreadyAssigned = approvedCount - bulkResult.modifiedCount;
+
+    res.json({
+      success: true,
+      assignedToPhase: firstPhaseName,
+      teamsAssigned: bulkResult.modifiedCount,
+      alreadyAssigned,
+      stats: {
+        expected: expectedSlots,
+        actualApproved: approvedCount,
+        pending: pendingCount,
+        total: totalCount,
+        fillRate
+      },
+      recommendation,
+      message: [
+        `${bulkResult.modifiedCount} approved team(s) assigned to "${firstPhaseName}".`,
+        alreadyAssigned > 0 ? `${alreadyAssigned} team(s) were already assigned.` : '',
+        pendingCount > 0 ? `${pendingCount} pending registration(s) not yet assigned — approve or reject them first.` : ''
+      ].filter(Boolean).join(' ')
+    });
+  } catch (error) {
+    console.error('Error locking registrations:', error);
+    res.status(500).json({ error: 'Failed to lock registrations' });
+  }
+});
+
+// ============================================================================
+// REGISTRATION MANAGEMENT — list, approve, reject, bulk actions
+// ============================================================================
+
+// GET /:tournamentId/registrations?status=pending&page=1&limit=20
+router.get('/:tournamentId/registrations', verifyApprovedOrgToken, async (req, res) => {
+  try {
+    const { tournamentId } = req.params;
+    const { status, page = 1, limit = 20 } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(tournamentId)) {
+      return res.status(400).json({ error: 'Invalid tournament ID' });
+    }
+
+    const tournament = await Tournament.findById(tournamentId)
+      .select('organizer.organizationRef')
+      .lean();
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+    if (tournament.organizer.organizationRef?.toString() !== req.organization._id.toString()) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    const filter = { tournament: tournamentId };
+    if (status && status !== 'all') filter.status = status;
+
+    // Handle search by team name or teamId
+    const { search } = req.query;
+    if (search) {
+      const searchRegex = new RegExp(search, 'i');
+      const matchingTeams = await Team.find({
+        $or: [
+          { teamName: searchRegex },
+          { teamId: search.toUpperCase() }
+        ]
+      }).select('_id').lean();
+
+      const matchingTeamIds = matchingTeams.map(t => t._id);
+      filter.team = { $in: matchingTeamIds };
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const [registrations, total] = await Promise.all([
+      Registration.find(filter)
+        .populate('team', 'teamName teamTag logo region primaryGame')
+        .select('team status qualifiedThrough currentStage phase group registeredAt approvedAt rejectedAt rejectionReason')
+        .sort({ registeredAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      Registration.countDocuments(filter)
+    ]);
+
+    // Status summary counts (for badge display)
+    const counts = await Registration.aggregate([
+      { $match: { tournament: new mongoose.Types.ObjectId(tournamentId) } },
+      { $group: { _id: '$status', count: { $sum: 1 } } }
+    ]);
+    const statusCounts = Object.fromEntries(counts.map(c => [c._id, c.count]));
+
+    res.json({
+      registrations,
+      total,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      statusCounts
+    });
+  } catch (error) {
+    console.error('Error listing registrations:', error);
+    res.status(500).json({ error: 'Failed to list registrations' });
+  }
+});
+
+// PATCH /:tournamentId/registrations/:regId — approve or reject a single registration
+router.patch('/:tournamentId/registrations/:regId', verifyApprovedOrgToken, async (req, res) => {
+  try {
+    const { tournamentId, regId } = req.params;
+    const { action, rejectionReason } = req.body;
+
+    if (!['approve', 'reject'].includes(action)) {
+      return res.status(400).json({ error: 'action must be "approve" or "reject"' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(tournamentId) || !mongoose.Types.ObjectId.isValid(regId)) {
+      return res.status(400).json({ error: 'Invalid ID' });
+    }
+
+    const tournament = await Tournament.findById(tournamentId)
+      .select('organizer.organizationRef status slots')
+      .lean();
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+    if (tournament.organizer.organizationRef?.toString() !== req.organization._id.toString()) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    if (tournament.status === 'completed') {
+      return res.status(400).json({ error: 'Tournament is completed' });
+    }
+
+    const reg = await Registration.findOne({ _id: regId, tournament: tournamentId });
+    if (!reg) return res.status(404).json({ error: 'Registration not found' });
+
+    if (action === 'approve') {
+      // Check slot limit before approving
+      const approvedCount = await Registration.countDocuments({
+        tournament: tournamentId,
+        status: { $in: ['approved', 'checked_in'] }
+      });
+      if (approvedCount >= tournament.slots.total) {
+        return res.status(400).json({ error: 'Tournament is full — cannot approve more teams' });
+      }
+      reg.status = 'approved';
+      reg.approvedAt = new Date();
+      reg.approvedBy = req.organization._id;
+    } else {
+      reg.status = 'rejected';
+      reg.rejectedAt = new Date();
+      reg.rejectedBy = req.organization._id;
+      if (rejectionReason) reg.rejectionReason = rejectionReason;
+    }
+
+    await reg.save();
+    res.json({ success: true, registration: { _id: reg._id, status: reg.status } });
+  } catch (error) {
+    console.error('Error updating registration:', error);
+    res.status(500).json({ error: 'Failed to update registration' });
+  }
+});
+
+// POST /:tournamentId/registrations/bulk — bulk approve / reject
+// Body: { action: 'approve_all' | 'reject_all' | 'approve_selected' | 'reject_selected', ids?: string[] }
+router.post('/:tournamentId/registrations/bulk', verifyApprovedOrgToken, async (req, res) => {
+  try {
+    const { tournamentId } = req.params;
+    const { action, ids, rejectionReason } = req.body;
+
+    const validActions = ['approve_all', 'reject_all', 'approve_selected', 'reject_selected'];
+    if (!validActions.includes(action)) {
+      return res.status(400).json({ error: `action must be one of: ${validActions.join(', ')}` });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(tournamentId)) {
+      return res.status(400).json({ error: 'Invalid tournament ID' });
+    }
+
+    const tournament = await Tournament.findById(tournamentId)
+      .select('organizer.organizationRef status slots')
+      .lean();
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+    if (tournament.organizer.organizationRef?.toString() !== req.organization._id.toString()) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    if (tournament.status === 'completed') {
+      return res.status(400).json({ error: 'Tournament is completed' });
+    }
+
+    const isApprove = action.startsWith('approve');
+    const isAll = action.endsWith('_all');
+
+    let filter = { tournament: tournamentId, status: 'pending' };
+    if (!isAll) {
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: '"ids" array required for selected bulk actions' });
+      }
+      filter._id = { $in: ids.filter(id => mongoose.Types.ObjectId.isValid(id)) };
+    }
+
+    let updatePayload;
+    if (isApprove) {
+      // For approve: respect slot limit — only approve up to available slots
+      const approvedCount = await Registration.countDocuments({
+        tournament: tournamentId,
+        status: { $in: ['approved', 'checked_in'] }
+      });
+      const available = tournament.slots.total - approvedCount;
+      if (available <= 0) {
+        return res.status(400).json({ error: 'Tournament is full — no slots available' });
+      }
+
+      // Get pending registrations sorted by oldest first (fair FCFS queue)
+      const pending = await Registration.find(filter)
+        .select('_id')
+        .sort({ registeredAt: 1 })
+        .limit(available)
+        .lean();
+
+      if (pending.length === 0) {
+        return res.json({ success: true, modified: 0, message: 'No pending registrations to approve' });
+      }
+
+      const result = await Registration.updateMany(
+        { _id: { $in: pending.map(r => r._id) } },
+        { $set: { status: 'approved', approvedAt: new Date(), approvedBy: req.organization._id } }
+      );
+
+      return res.json({
+        success: true,
+        modified: result.modifiedCount,
+        capped: pending.length < (await Registration.countDocuments(filter)),
+        message: `${result.modifiedCount} team(s) approved.${result.modifiedCount < available ? '' : ' Remaining pending registrations exceed available slots.'
+          }`
+      });
+    } else {
+      updatePayload = {
+        $set: {
+          status: 'rejected',
+          rejectedAt: new Date(),
+          rejectedBy: req.organization._id,
+          ...(rejectionReason ? { rejectionReason } : {})
+        }
+      };
+      const result = await Registration.updateMany(filter, updatePayload);
+      return res.json({ success: true, modified: result.modifiedCount, message: `${result.modifiedCount} team(s) rejected.` });
+    }
+  } catch (error) {
+    console.error('Error bulk updating registrations:', error);
+    res.status(500).json({ error: 'Failed to bulk update registrations' });
+  }
+});
+
 // Helper function (if not already defined)
 function getPlacementPoints(position) {
   const pointsMap = {
@@ -794,34 +1108,39 @@ router.get('/:tournamentId', verifyApprovedOrgToken, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
-    // Fetch all related data in parallel
-    const [registrations, phaseStandings, matches] = await Promise.all([
-      // Get all registrations with team data
-      Registration.find({ tournament: tournamentId })
-        .populate('team', 'teamName teamTag logo primaryGame region')
-        .select('team status qualifiedThrough currentStage phase group totalTournamentPoints totalTournamentKills registeredAt')
-        .sort({ totalTournamentPoints: -1 })
-        .lean(),
+    // Fetch all related data in parallel (highly optimized)
+    const [statusCounts, phaseCounts, phaseStandings, matchCount] = await Promise.all([
+      // Registration counts by status
+      Registration.aggregate([
+        { $match: { tournament: new mongoose.Types.ObjectId(tournamentId) } },
+        { $group: { _id: '$status', count: { $sum: 1 } } }
+      ]),
 
-      // Get all phase standings for this tournament
+      // Approved counts per phase
+      Registration.aggregate([
+        {
+          $match: {
+            tournament: new mongoose.Types.ObjectId(tournamentId),
+            status: { $in: ['approved', 'checked_in'] }
+          }
+        },
+        { $group: { _id: '$phase', count: { $sum: 1 } } }
+      ]),
+
+      // All phase standings summaries
       PhaseStanding.find({ tournament: tournamentId })
         .populate('topTeams.team', 'teamName teamTag logo')
         .select('phase topTeams groups')
         .sort({ phase: 1 })
         .lean(),
 
-      // Get pending invitations
-      // Invitation.find({
-      //   tournament: tournamentId,
-      //   status: 'pending'
-      // })
-      //   .populate('team', 'teamName teamTag logo')
-      //   .select('team phase message invitedAt expiresAt')
-      //   .lean(),
-
-      // Get match count
+      // Total matches count
       Match.countDocuments({ tournament: tournamentId })
     ]);
+
+    const statusMap = Object.fromEntries(statusCounts.map(c => [c._id, c.count]));
+    const phaseCountMap = Object.fromEntries(phaseCounts.map(c => [c._id || 'unassigned', c.count]));
+    const activeTeamsCount = (statusMap['approved'] || 0) + (statusMap['checked_in'] || 0);
 
     // Organize standings by phase and group from phase standings
     const standingsByPhase = {};
@@ -874,67 +1193,26 @@ router.get('/:tournamentId', verifyApprovedOrgToken, async (req, res) => {
       }
     });
 
-
     // Build enriched tournament response
     const enrichedTournament = {
       ...tournament,
+      participatingTeams: [], // Serviced via paginated endpoints
+      participatingTeamsCount: activeTeamsCount,
 
-      // Replace participatingTeams array with registrations
-      participatingTeams: registrations.map(reg => ({
-        team: reg.team,
-        status: reg.status,
-        qualifiedThrough: reg.qualifiedThrough,
-        currentStage: reg.currentStage,
-        phase: reg.phase,
-        group: reg.group,
-        totalTournamentPoints: reg.totalTournamentPoints,
-        totalTournamentKills: reg.totalTournamentKills,
-        registeredAt: reg.registeredAt
+      // phases: metadata + standings + counts
+      phases: (tournament.phases || []).map(phase => ({
+        ...phase,
+        teamCount: phaseCountMap[phase.name] || 0,
+        standings: standingsByPhase[phase.name] || {}
       })),
 
-      // phases: metadata + standings only. Team lists are served via GET /phase-teams.
-      phases: (() => {
-        // Count registrations per phase for the overview teamCount field
-        const phaseCountMap = {};
-        registrations.forEach(r => {
-          if (r.phase) phaseCountMap[r.phase] = (phaseCountMap[r.phase] || 0) + 1;
-        });
-
-        return (tournament.phases || []).map(phase => ({
-          _id: phase._id,
-          name: phase.name,
-          type: phase.type,
-          startDate: phase.startDate,
-          endDate: phase.endDate,
-          status: phase.status,
-          matches: phase.matches,
-          rulesetSpecifics: phase.rulesetSpecifics,
-          details: phase.details,
-          qualificationRules: phase.qualificationRules,
-          // Group names only (no team ObjectId lists — use GET /phase-teams?phase=X)
-          groups: (phase.groups || []).map(g => ({ _id: g._id, name: g.name })),
-          // Computed from Registration so it's always accurate
-          teamCount: phaseCountMap[phase.name] || 0,
-          // Standings for this phase from PhaseStanding collection
-          standings: standingsByPhase[phase.name] || {}
-        }));
-      })(),
-
-      // Add summary stats
+      // Summary stats
       stats: {
-        totalRegistrations: registrations.length,
-        activeTeams: registrations.filter(r =>
-          ['approved', 'checked_in'].includes(r.status)
-        ).length,
-        pendingRegistrations: registrations.filter(r =>
-          r.status === 'pending'
-        ).length,
-        // pendingInvitations: invitations.length,
-        totalMatches: matches
-      },
-
-      // Include pending invitations
-      // pendingInvitations: invitations
+        totalRegistrations: Object.values(statusMap).reduce((a, b) => a + b, 0),
+        activeTeams: activeTeamsCount,
+        pendingRegistrations: statusMap['pending'] || 0,
+        totalMatches: matchCount
+      }
     };
 
     res.json({ tournament: enrichedTournament });
@@ -967,9 +1245,10 @@ router.put('/:tournamentId', verifyApprovedOrgToken, upload.fields([
       updateData.phases = JSON.parse(updateData.phases);
     }
 
-    // Fetch tournament (minimal fields for auth check)
+    // Fetch tournament — always include phases so we can detect renames
+    // and migrate Registration.phase in a single pass after the update.
     const tournament = await Tournament.findById(tournamentId)
-      .select('organizer.organizationRef media status')
+      .select('organizer.organizationRef media status phases._id phases.name')
       .lean();
 
     if (!tournament) {
@@ -1054,6 +1333,33 @@ router.put('/:tournamentId', verifyApprovedOrgToken, upload.fields([
       .select('-__v')
       .lean();
 
+    // ── Phase rename migration ──────────────────────────────────────────────
+    // If the org renamed any phase, existing Registration documents still carry
+    // the old phase name and would become invisible to group-assignment and
+    // standings queries. Detect renames by matching on phase._id and bulk-update.
+    if (updateData.phases && Array.isArray(updateData.phases) && tournament.phases?.length > 0) {
+      const renameBulkOps = [];
+      for (const oldPhase of tournament.phases) {
+        // Match by _id (string comparison — incoming payload may send _id as string)
+        const newPhase = updateData.phases.find(
+          p => p._id && p._id.toString() === oldPhase._id.toString()
+        );
+        if (newPhase && newPhase.name && newPhase.name !== oldPhase.name) {
+          renameBulkOps.push({
+            updateMany: {
+              filter: { tournament: tournamentId, phase: oldPhase.name },
+              update: { $set: { phase: newPhase.name, currentStage: newPhase.name } }
+            }
+          });
+        }
+      }
+      if (renameBulkOps.length > 0) {
+        await Registration.bulkWrite(renameBulkOps, { ordered: false });
+        console.log(`✅ Migrated registrations for ${renameBulkOps.length} renamed phase(s)`);
+      }
+    }
+    // ───────────────────────────────────────────────────────────────────────
+
     res.json({
       success: true,
       message: 'Tournament updated successfully',
@@ -1108,19 +1414,37 @@ router.get('/:tournamentId/phase-teams', verifyApprovedOrgToken, async (req, res
       return res.status(404).json({ error: `Phase "${phase}" not found` });
     }
 
+    const { page = 1, limit = 50, all = 'false' } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const isAll = all === 'true';
+
     // Registration is the authority — one query, no stale data
-    const registrations = await Registration.find({
+    const query = Registration.find({
       tournament: tournamentId,
       phase,
       status: { $nin: ['rejected', 'withdrawn'] }
     })
       .populate('team', 'teamName teamTag logo')
-      .select('team group status registeredAt')
-      .lean();
+      .select('team group status registeredAt');
+
+    if (!isAll) {
+      query.skip(skip).limit(parseInt(limit));
+    }
+
+    const [registrations, total] = await Promise.all([
+      query.lean(),
+      Registration.countDocuments({
+        tournament: tournamentId,
+        phase,
+        status: { $nin: ['rejected', 'withdrawn'] }
+      })
+    ]);
 
     res.json({
       phase,
-      total: registrations.length,
+      total,
+      page: isAll ? 1 : parseInt(page),
+      limit: isAll ? total : parseInt(limit),
       teams: registrations.map(r => ({
         _id: r.team._id,
         teamName: r.team.teamName,
@@ -1440,8 +1764,8 @@ router.post(
         if (!total || total < 2) {
           validationErrors.push('Tournament must have at least 2 team slots');
         }
-        if (total > 1000) {
-          validationErrors.push('Maximum 1000 teams allowed per tournament');
+        if (total > 4096) {
+          validationErrors.push('Maximum 4096 teams allowed per tournament');
         }
         if (invited + openReg > total) {
           validationErrors.push('Invited + open registration slots cannot exceed total slots');
@@ -1585,6 +1909,9 @@ router.post(
 
         status: 'announced',
         isOpenForAll: tournamentData.isOpenForAll || false,
+        // When true: open registrations go to 'pending' for org review
+        // When false (default): auto-approved on sign-up (first-come-first-served)
+        requiresApproval: (tournamentData.isOpenForAll && tournamentData.requiresApproval) ? true : false,
 
         // Structure
         format: tournamentData.format || 'Battle Royale Points System',

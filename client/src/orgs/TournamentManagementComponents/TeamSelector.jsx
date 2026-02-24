@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Users, Loader, Plus } from 'lucide-react';
+import axiosInstance from '../../utils/axiosConfig';
 
 const TeamSelector = ({ onSelect, selectedPhase, tournament }) => {
   const [teams, setTeams] = useState([]);
@@ -15,20 +16,11 @@ const TeamSelector = ({ onSelect, selectedPhase, tournament }) => {
   const fetchTeams = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/teams/available', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          tournamentId: tournament?._id,
-          phase: selectedPhase
-        })
+      const { data } = await axiosInstance.post('/api/teams/available', {
+        tournamentId: tournament?._id,
+        phase: selectedPhase
       });
-      
-      if (res.ok) {
-        const data = await res.json();
-        setTeams(data.teams || []);
-      }
+      setTeams(data.teams || []);
     } catch (err) {
       console.error('Error fetching teams:', err);
     } finally {

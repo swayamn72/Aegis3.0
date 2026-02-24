@@ -68,6 +68,10 @@ const DetailedTournamentInfo = () => {
   const [showNonCaptainModal, setShowNonCaptainModal] = useState(false);
   const [sendingReference, setSendingReference] = useState(false);
   const [referenceSentSuccess, setReferenceSentSuccess] = useState(false);
+  const [teamsPage, setTeamsPage] = useState(1);
+  const [groupButtonsPage, setGroupButtonsPage] = useState(1);
+  const TEAMS_PER_PAGE = 6;
+  const GROUP_BUTTONS_PER_PAGE = 6;
 
   // Queries
   const {
@@ -126,6 +130,27 @@ const DetailedTournamentInfo = () => {
     refetchOnWindowFocus: false,
   });
 
+  // Paginated teams query
+  const {
+    data: paginatedTeamsData,
+    isLoading: paginatedTeamsLoading,
+  } = useQuery({
+    queryKey: ['tournamentTeams', id, selectedPhase, selectedGroup, teamsPage],
+    queryFn: async () => {
+      const { data } = await axiosInstance.get(`/api/tournaments/${id}/teams`, {
+        params: {
+          phase: selectedPhase,
+          group: selectedGroup,
+          page: teamsPage,
+          limit: TEAMS_PER_PAGE
+        }
+      });
+      return data;
+    },
+    enabled: !!id && !!selectedPhase && activeTab === 'teams',
+    placeholderData: (previousData) => previousData,
+  });
+
   // Derived data
   const tournamentData = tournamentResp?.tournamentData || null;
   const scheduleData = tournamentResp?.scheduleData || [];
@@ -159,6 +184,16 @@ const DetailedTournamentInfo = () => {
       }
     }
   }, [selectedPhase, groupsData, selectedGroup]);
+
+  // Reset page when phase or group changes
+  useEffect(() => {
+    setTeamsPage(1);
+  }, [selectedGroup]);
+
+  useEffect(() => {
+    setTeamsPage(1);
+    setGroupButtonsPage(1);
+  }, [selectedPhase]);
 
   // Set default phase when tournamentData changes
   useEffect(() => {
@@ -494,7 +529,7 @@ const DetailedTournamentInfo = () => {
 
   if (tournamentLoading || userTeamLoading || matchesLoading) {
     return (
-      <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans mt-[100px] flex items-center justify-center">
+      <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans pt-[100px] flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-orange-400 mx-auto mb-4"></div>
           <p className="text-zinc-400 text-lg">Loading tournament data...</p>
@@ -505,7 +540,7 @@ const DetailedTournamentInfo = () => {
 
   if (tournamentError || userTeamError || matchesError) {
     return (
-      <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans mt-[100px] flex items-center justify-center">
+      <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans pt-[100px] flex items-center justify-center">
         <div className="text-center">
           <div className="text-red-400 text-lg mb-4">Error loading tournament data</div>
           <p className="text-zinc-400 mb-4">{tournamentError?.message || userTeamError?.message || matchesError?.message}</p>
@@ -522,7 +557,7 @@ const DetailedTournamentInfo = () => {
 
   if (!tournamentData) {
     return (
-      <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans mt-[100px] flex items-center justify-center">
+      <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans pt-[100px] flex items-center justify-center">
         <div className="text-center">
           <p className="text-zinc-400 text-lg">Tournament not found</p>
         </div>
@@ -531,7 +566,7 @@ const DetailedTournamentInfo = () => {
   }
 
   return (
-    <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans mt-[100px]">
+    <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans pt-[100px]">
       <div className="container mx-auto px-6 py-8">
 
         {/* Header Section with Banner */}
@@ -1013,23 +1048,67 @@ const DetailedTournamentInfo = () => {
                 </div>
 
                 <div className="flex items-center justify-between mb-6">
-                  <div className="flex gap-2">
-                    {groupsData[selectedPhase] && Object.keys(groupsData[selectedPhase]).map((groupKey) => (
-                      <button
-                        key={groupKey}
-                        onClick={() => setSelectedGroup(groupKey)}
-                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedGroup === groupKey ? 'bg-orange-500 text-white' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
-                          }`}
-                      >
-                        Group {groupKey}
-                      </button>
-                    ))}
+                  <div className="flex flex-col gap-4 w-full">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {groupsData[selectedPhase] && Object.keys(groupsData[selectedPhase])
+                        .sort((a, b) => {
+                          const numA = parseInt(a) || 0;
+                          const numB = parseInt(b) || 0;
+                          return numA - numB || a.localeCompare(b);
+                        })
+                        .slice((groupButtonsPage - 1) * GROUP_BUTTONS_PER_PAGE, groupButtonsPage * GROUP_BUTTONS_PER_PAGE)
+                        .map((groupKey) => (
+                          <button
+                            key={groupKey}
+                            onClick={() => setSelectedGroup(groupKey)}
+                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedGroup === groupKey ? 'bg-orange-500 text-white' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
+                              }`}
+                          >
+                            Group {groupKey}
+                          </button>
+                        ))}
+                    </div>
+
+                    {/* Group Buttons Pagination */}
+                    {groupsData[selectedPhase] && Object.keys(groupsData[selectedPhase]).length > GROUP_BUTTONS_PER_PAGE && (
+                      <div className="flex items-center gap-2 pt-2 border-t border-zinc-800/50">
+                        <button
+                          onClick={() => setGroupButtonsPage(prev => Math.max(1, prev - 1))}
+                          disabled={groupButtonsPage === 1}
+                          className="p-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-400 disabled:opacity-30 disabled:cursor-not-allowed hover:text-white"
+                        >
+                          <ChevronDown className="w-4 h-4 rotate-90" />
+                        </button>
+                        <span className="text-xs text-zinc-500">
+                          Groups {((groupButtonsPage - 1) * GROUP_BUTTONS_PER_PAGE) + 1} - {Math.min(groupButtonsPage * GROUP_BUTTONS_PER_PAGE, Object.keys(groupsData[selectedPhase]).length)} of {Object.keys(groupsData[selectedPhase]).length}
+                        </span>
+                        <button
+                          onClick={() => setGroupButtonsPage(prev => Math.min(Math.ceil(Object.keys(groupsData[selectedPhase]).length / GROUP_BUTTONS_PER_PAGE), prev + 1))}
+                          disabled={groupButtonsPage >= Math.ceil(Object.keys(groupsData[selectedPhase]).length / GROUP_BUTTONS_PER_PAGE)}
+                          className="p-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-400 disabled:opacity-30 disabled:cursor-not-allowed hover:text-white"
+                        >
+                          <ChevronDown className="w-4 h-4 -rotate-90" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {groupsData[selectedPhase] && groupsData[selectedPhase][selectedGroup] && groupsData[selectedPhase][selectedGroup].teams ? (
-                    groupsData[selectedPhase][selectedGroup].teams.map((team, index) => (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 min-h-[400px]">
+                  {paginatedTeamsLoading ? (
+                    Array.from({ length: 6 }).map((_, i) => (
+                      <div key={i} className="bg-zinc-800/30 border border-zinc-700/50 rounded-lg p-4 animate-pulse">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 bg-zinc-700 rounded-lg"></div>
+                          <div className="space-y-2">
+                            <div className="h-4 w-24 bg-zinc-700 rounded"></div>
+                            <div className="h-3 w-16 bg-zinc-700 rounded"></div>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : paginatedTeamsData?.teams && paginatedTeamsData.teams.length > 0 ? (
+                    paginatedTeamsData.teams.map((team, index) => (
                       <div key={team._id || index} className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4 hover:bg-zinc-800/70 transition-colors">
                         <div className="flex items-center gap-3">
                           <img
@@ -1048,11 +1127,42 @@ const DetailedTournamentInfo = () => {
                       </div>
                     ))
                   ) : (
-                    <div className="col-span-full text-center py-8">
-                      <p className="text-zinc-400">No teams available for {selectedPhase} - Group {selectedGroup}</p>
+                    <div className="col-span-full text-center py-20 bg-zinc-800/20 rounded-xl border border-dashed border-zinc-700">
+                      <Users className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
+                      <p className="text-zinc-400 font-medium">No teams available</p>
+                      <p className="text-zinc-500 text-sm mt-1">Teams for {selectedPhase} - Group {selectedGroup} haven't been assigned yet</p>
                     </div>
                   )}
                 </div>
+
+                {/* Pagination Controls */}
+                {paginatedTeamsData?.totalPages > 1 && (
+                  <div className="flex items-center justify-between mt-8 pt-6 border-t border-zinc-800">
+                    <div className="text-sm text-zinc-400">
+                      Showing <span className="text-white font-medium">{(teamsPage - 1) * TEAMS_PER_PAGE + 1}</span> to{' '}
+                      <span className="text-white font-medium">
+                        {Math.min(teamsPage * TEAMS_PER_PAGE, paginatedTeamsData.total)}
+                      </span> of{' '}
+                      <span className="text-white font-medium">{paginatedTeamsData.total}</span> teams
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setTeamsPage(prev => Math.max(1, prev - 1))}
+                        disabled={teamsPage === 1}
+                        className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-700 transition-colors"
+                      >
+                        <ChevronRight className="w-5 h-5 rotate-180" />
+                      </button>
+                      <button
+                        onClick={() => setTeamsPage(prev => Math.min(paginatedTeamsData.totalPages, prev + 1))}
+                        disabled={teamsPage === paginatedTeamsData.totalPages}
+                        className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-700 transition-colors"
+                      >
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="mt-6 p-4 bg-zinc-800/50 rounded-lg">
                   <h3 className="text-lg font-bold text-white mb-2">Qualification Rules</h3>

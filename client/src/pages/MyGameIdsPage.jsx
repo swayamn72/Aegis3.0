@@ -106,11 +106,10 @@ const GameIdModal = ({ mode, initialData, onClose, onSubmit, isLoading }) => {
                             <button
                                 type="button"
                                 onClick={() => setFormData({ ...formData, isPrimary: !formData.isPrimary })}
-                                className={`w-full flex items-center gap-3 rounded-lg p-3 border transition-all text-sm font-semibold ${
-                                    formData.isPrimary
+                                className={`w-full flex items-center gap-3 rounded-lg p-3 border transition-all text-sm font-semibold ${formData.isPrimary
                                         ? 'bg-[#FF4500]/10 border-[#FF4500]/40 text-[#FF4500]'
                                         : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700'
-                                }`}
+                                    }`}
                             >
                                 <Star className={`w-4 h-4 ${formData.isPrimary ? 'fill-current' : ''}`} />
                                 SET AS PRIMARY GAME ID
@@ -223,7 +222,7 @@ const MyGameIdsPage = () => {
     }
 
     return (
-        <div className="relative min-h-screen bg-zinc-950 text-white font-sans mt-20 overflow-hidden">
+        <div className="relative min-h-screen bg-zinc-950 text-white font-sans pt-20 overflow-hidden">
             <Navbar />
             {/* Grid pattern background */}
             <div className="absolute inset-0 pointer-events-none"
@@ -320,9 +319,8 @@ const MyGameIdsPage = () => {
                         gameIds.map((gameId, index) => (
                             <div
                                 key={index}
-                                className={`relative bg-zinc-900/50 border rounded-xl overflow-hidden transition-all group ${
-                                    gameId.isPrimary ? 'border-[#FF4500]/40' : 'border-zinc-800 hover:border-zinc-700'
-                                }`}
+                                className={`relative bg-zinc-900/50 border rounded-xl overflow-hidden transition-all group ${gameId.isPrimary ? 'border-[#FF4500]/40' : 'border-zinc-800 hover:border-zinc-700'
+                                    }`}
                             >
                                 {/* Primary indicator bar */}
                                 {gameId.isPrimary && (
@@ -381,11 +379,10 @@ const MyGameIdsPage = () => {
                                                 onClick={() => setModal({ mode: 'edit', index })}
                                                 disabled={!canUpdate || locked}
                                                 title={!canUpdate ? updateReason : locked ? 'Locked during tournament' : 'Edit game ID'}
-                                                className={`p-2 rounded-lg border transition-all ${
-                                                    canUpdate && !locked
+                                                className={`p-2 rounded-lg border transition-all ${canUpdate && !locked
                                                         ? 'bg-zinc-800/50 border-zinc-700 text-zinc-500 hover:text-cyan-400 hover:border-cyan-400/40 hover:bg-cyan-500/5'
                                                         : 'bg-zinc-900 border-zinc-800 text-zinc-700 cursor-not-allowed'
-                                                }`}
+                                                    }`}
                                             >
                                                 {canUpdate && !locked ? <Edit className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
                                             </button>
@@ -394,11 +391,10 @@ const MyGameIdsPage = () => {
                                                 onClick={() => handleDelete(index)}
                                                 disabled={locked || deleteMutation.isLoading}
                                                 title={locked ? 'Cannot delete during tournament' : 'Delete game ID'}
-                                                className={`p-2 rounded-lg border transition-all ${
-                                                    !locked
+                                                className={`p-2 rounded-lg border transition-all ${!locked
                                                         ? 'bg-zinc-800/50 border-zinc-700 text-zinc-500 hover:text-red-400 hover:border-red-400/40 hover:bg-red-500/5'
                                                         : 'bg-zinc-900 border-zinc-800 text-zinc-700 cursor-not-allowed'
-                                                }`}
+                                                    }`}
                                             >
                                                 <Trash2 className="w-4 h-4" />
                                             </button>

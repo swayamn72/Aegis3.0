@@ -637,7 +637,7 @@ const RecruitmentPage = () => {
     }, [lftPosts, debouncedPlayerSearch]);
 
     return (
-        <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans mt-20">
+        <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans pt-20">
             <div className="container mx-auto px-6 py-12">
                 <div className="text-center mb-12">
                     <h1 className="text-5xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-500 to-red-500 mb-4">

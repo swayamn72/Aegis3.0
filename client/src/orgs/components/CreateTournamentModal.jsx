@@ -3,10 +3,12 @@ import { Plus, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import axiosInstance from '../../utils/axiosConfig';
+import PhaseStructureSuggester from './PhaseStructureSuggester';
 
 const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
     const IndiaFlag = () => <span role="img" aria-label="India" className="ml-2">🇮🇳</span>;
     const [step, setStep] = useState(1);
+    const isSubmittingRef = React.useRef(false);
     const [formData, setFormData] = useState({
         tournamentName: '',
         shortName: '',
@@ -148,10 +150,19 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
         }));
     };
 
+    // ────────────────────────────────────────────────────────────────────────
+
     const handleSubmit = async () => {
+        if (isSubmittingRef.current) return;
+        isSubmittingRef.current = true;
         try {
             if (!formData.tournamentName || formData.tournamentName.trim() === '') {
                 toast.error('Tournament Name is required.');
+                return;
+            }
+            const hasFinalStage = formData.phases?.some(p => p.type === 'final_stage');
+            if (!hasFinalStage) {
+                toast.error('At least one phase must be set as "Final Stage" before submitting.');
                 return;
             }
             const formDataToSend = new FormData();
@@ -166,6 +177,8 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
             await createTournamentMutation.mutateAsync(formDataToSend);
         } catch (error) {
             // Error already handled in mutation
+        } finally {
+            isSubmittingRef.current = false;
         }
     };
 
@@ -254,14 +267,18 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium mb-2">Total Slots *</label>
+                                    <label className="block text-sm font-medium mb-2">Total Slots * <span className="text-gray-400 font-normal text-xs">(min 16, e.g. 64, 128, 4096)</span></label>
                                     <input
                                         type="number"
                                         value={formData.slots.total}
-                                        onChange={(e) => handleNestedChange('slots', 'total', parseInt(e.target.value))}
-                                        className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
-                                        min="2"
+                                        onChange={(e) => handleNestedChange('slots', 'total', parseInt(e.target.value) || 16)}
+                                        className={`w-full bg-gray-700 border rounded px-3 py-2 text-white ${formData.slots.total < 16 ? 'border-red-500' : 'border-gray-600'
+                                            }`}
+                                        min="16"
                                     />
+                                    {formData.slots.total < 16 && (
+                                        <p className="text-red-400 text-xs mt-1">Minimum 16 teams required.</p>
+                                    )}
                                 </div>
 
                                 <div>
@@ -286,16 +303,34 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                             </div>
 
                             {/* Open for All Checkbox */}
-                            <div className="flex items-center space-x-3">
-                                <input
-                                    type="checkbox"
-                                    checked={formData.isOpenForAll || false}
-                                    onChange={(e) => handleInputChange('isOpenForAll', e.target.checked)}
-                                    className="w-4 h-4 text-orange-500 bg-gray-700 border-gray-600 rounded focus:ring-orange-500 focus:ring-2"
-                                />
-                                <label className="text-sm font-medium text-gray-300">
-                                    Is this tournament open for all?
-                                </label>
+                            <div className="space-y-2">
+                                <div className="flex items-center space-x-3">
+                                    <input
+                                        type="checkbox"
+                                        id="isOpenForAll"
+                                        checked={formData.isOpenForAll || false}
+                                        onChange={(e) => handleInputChange('isOpenForAll', e.target.checked)}
+                                        className="w-4 h-4 text-orange-500 bg-gray-700 border-gray-600 rounded focus:ring-orange-500 focus:ring-2"
+                                    />
+                                    <label htmlFor="isOpenForAll" className="text-sm font-medium text-gray-300">
+                                        Open for public registration
+                                    </label>
+                                </div>
+                                {formData.isOpenForAll && (
+                                    <div className="flex items-center space-x-3 ml-7">
+                                        <input
+                                            type="checkbox"
+                                            id="requiresApproval"
+                                            checked={formData.requiresApproval || false}
+                                            onChange={(e) => handleInputChange('requiresApproval', e.target.checked)}
+                                            className="w-4 h-4 text-blue-500 bg-gray-700 border-gray-600 rounded focus:ring-blue-500 focus:ring-2"
+                                        />
+                                        <label htmlFor="requiresApproval" className="text-sm text-gray-400">
+                                            Require manual approval per team
+                                            <span className="ml-1 text-xs text-gray-500">(default: auto-approve on sign-up)</span>
+                                        </label>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Conditional Registration Dates */}
@@ -358,6 +393,12 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                                     <Plus className="w-4 h-4" /> Add Phase
                                 </button>
                             </div>
+
+                            {/* ── Phase Structure Suggester ── */}
+                            <PhaseStructureSuggester
+                                totalTeams={formData.slots.total}
+                                onApply={(phases) => setFormData(prev => ({ ...prev, phases }))}
+                            />
 
                             {formData.phases.length === 0 ? (
                                 <div className="bg-gray-700 rounded-lg p-8 text-center">
@@ -605,7 +646,19 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
 
                         {step < 3 ? (
                             <button
-                                onClick={() => setStep(step + 1)}
+                                onClick={() => {
+                                    if (step === 1) {
+                                        if (!formData.tournamentName || formData.tournamentName.trim() === '') {
+                                            toast.error('Tournament Name is required.');
+                                            return;
+                                        }
+                                        if (!formData.slots.total || formData.slots.total < 16) {
+                                            toast.error('Total Slots must be at least 16.');
+                                            return;
+                                        }
+                                    }
+                                    setStep(step + 1);
+                                }}
                                 className="px-4 py-2 bg-orange-500 rounded hover:bg-orange-600"
                             >
                                 Next
