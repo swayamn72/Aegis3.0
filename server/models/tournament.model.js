@@ -575,7 +575,7 @@ tournamentSchema.virtual('invitations', {
   foreignField: 'tournament',
 });
 
-tournamentSchema.pre('save', function (next) {
+tournamentSchema.pre('save', async function () {
   // Generate slug from tournament name
   if (this.isModified('tournamentName') && this.tournamentName) {
     this.slug = slugify(this.tournamentName, { lower: true, strict: true });
@@ -585,10 +585,9 @@ tournamentSchema.pre('save', function (next) {
   if (this.isModified('phases') && this.phases) {
     const finalPhases = this.phases.filter(p => p.type === 'final_stage');
     if (finalPhases.length > 1) {
-      return next(new Error('A tournament can only have ONE phase of type "final_stage".'));
+      throw new Error('A tournament can only have ONE phase of type "final_stage".');
     }
   }
-  next();
 });
 
 // --- Instance Methods ---

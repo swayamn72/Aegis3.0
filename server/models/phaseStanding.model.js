@@ -72,8 +72,11 @@ const phaseStandingSchema = new mongoose.Schema(
         },
         points: Number,
         kills: Number,
+        positionPoints: Number,
+        killPoints: Number,
         chickenDinners: Number,
         matchesPlayed: Number,
+        group: String,
       },
     ],
 

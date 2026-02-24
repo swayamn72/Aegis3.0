@@ -503,13 +503,16 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
         {
           $set: {
             status: 'completed',
-            topTeams: overallStandings.slice(0, 10).map(s => ({
+            topTeams: overallStandings.map((s, idx) => ({
               team: s.team._id || s.teamId,
-              position: s.position,
+              position: idx + 1,
               points: s.points,
               kills: s.kills,
+              positionPoints: s.positionPoints || 0,
+              killPoints: s.killPoints || 0,
               chickenDinners: s.chickenDinners,
-              matchesPlayed: s.matchesPlayed
+              matchesPlayed: s.matchesPlayed,
+              group: s.group || null
             })),
             statistics: {
               totalTeams: overallStandings.length,
@@ -728,14 +731,23 @@ router.post('/:tournamentId/conclude', verifyApprovedOrgToken, async (req, res) 
         {
           $set: {
             status: 'completed',
-            topTeams: overallStandings.slice(0, 10).map((s, idx) => ({
+            topTeams: overallStandings.map((s, idx) => ({
               team: s.teamId,
               position: idx + 1,
               points: s.points,
               kills: s.kills,
+              positionPoints: s.positionPoints || 0,
+              killPoints: s.killPoints || 0,
               chickenDinners: s.chickenDinners,
-              matchesPlayed: s.matchesPlayed
+              matchesPlayed: s.matchesPlayed,
+              group: null
             })),
+            statistics: {
+              totalTeams: overallStandings.length,
+              totalMatches: matches.length,
+              totalPoints: overallStandings.reduce((sum, s) => sum + s.points, 0),
+              totalKills: overallStandings.reduce((sum, s) => sum + s.kills, 0)
+            },
             lastCalculated: new Date()
           }
         },
@@ -816,35 +828,48 @@ router.get('/:tournamentId', verifyApprovedOrgToken, async (req, res) => {
     phaseStandings.forEach(phaseStanding => {
       standingsByPhase[phaseStanding.phase] = {};
 
-      // Add top teams to overall standings
       if (phaseStanding.topTeams && phaseStanding.topTeams.length > 0) {
-        standingsByPhase[phaseStanding.phase].overall = phaseStanding.topTeams.map(team => ({
-          team: team.team,
-          phase: phaseStanding.phase,
-          group: null,
-          position: team.position,
-          points: team.points,
-          kills: team.kills,
-          chickenDinners: team.chickenDinners,
-          matchesPlayed: team.matchesPlayed
-        }));
-      }
+        // Overall standings — all teams sorted by position
+        standingsByPhase[phaseStanding.phase].overall = phaseStanding.topTeams
+          .slice()
+          .sort((a, b) => a.position - b.position)
+          .map(team => ({
+            team: team.team,
+            phase: phaseStanding.phase,
+            group: team.group || null,
+            position: team.position,
+            points: team.points,
+            kills: team.kills,
+            positionPoints: team.positionPoints || 0,
+            killPoints: team.killPoints || 0,
+            chickenDinners: team.chickenDinners,
+            matchesPlayed: team.matchesPlayed
+          }));
 
-      // Add group standings if available
-      if (phaseStanding.groups && phaseStanding.groups.length > 0) {
-        phaseStanding.groups.forEach(group => {
-          if (group.standings && group.standings.length > 0) {
-            standingsByPhase[phaseStanding.phase][group.name] = group.standings.map(team => ({
+        // Derive per-group standings from topTeams where group is set
+        const groupMap = {};
+        phaseStanding.topTeams.forEach(team => {
+          if (team.group) {
+            if (!groupMap[team.group]) groupMap[team.group] = [];
+            groupMap[team.group].push({
               team: team.team,
               phase: phaseStanding.phase,
-              group: group.name,
+              group: team.group,
               position: team.position,
               points: team.points,
               kills: team.kills,
+              positionPoints: team.positionPoints || 0,
+              killPoints: team.killPoints || 0,
               chickenDinners: team.chickenDinners,
               matchesPlayed: team.matchesPlayed
-            }));
+            });
           }
+        });
+        Object.entries(groupMap).forEach(([groupName, teams]) => {
+          standingsByPhase[phaseStanding.phase][groupName] = teams
+            .slice()
+            .sort((a, b) => a.points !== b.points ? b.points - a.points : b.kills - a.kills)
+            .map((t, i) => ({ ...t, position: i + 1 }));
         });
       }
     });

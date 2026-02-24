@@ -19,6 +19,7 @@ const PointsTable = ({ tournament, onUpdate }) => {
     const [advancingPhase, setAdvancingPhase] = useState(false);
     const [advancePreview, setAdvancePreview] = useState(null);
     const [isConcluding, setIsConcluding] = useState(false);
+    const [showConcludeDialog, setShowConcludeDialog] = useState(false);
 
     const calculationTimeoutRef = useRef(null);
     const lastCalculationKeyRef = useRef('');
@@ -48,9 +49,9 @@ const PointsTable = ({ tournament, onUpdate }) => {
                 // Show overall final standings
                 if (tournament.finalStandings && tournament.finalStandings.length > 0) {
                     standingsData = tournament.finalStandings.map(standing => ({
-                        teamId: standing.team._id,
-                        teamName: standing.team.teamName,
-                        teamLogo: standing.team.logo,
+                        teamId: standing.team?._id || standing.team,
+                        teamName: standing.team?.teamName || 'Unknown Team',
+                        teamLogo: standing.team?.logo || null,
                         position: standing.position,
                         points: standing.tournamentPointsAwarded || 0,
                         kills: 0,
@@ -314,20 +315,13 @@ const PointsTable = ({ tournament, onUpdate }) => {
         }
     };
 
-    const handleConcludeTournament = async () => {
+    const handleConcludeTournament = () => {
         if (!selectedPhase) return;
+        setShowConcludeDialog(true);
+    };
 
-        const confirmConclude = window.confirm(
-            "Are you sure you want to conclude this tournament? \n\n" +
-            "This will: \n" +
-            "1. Sets final standings based on current phase results \n" +
-            "2. Mark the tournament as COMPLETED \n" +
-            "3. Lock the tournament from further modifications \n\n" +
-            "This action cannot be undone."
-        );
-
-        if (!confirmConclude) return;
-
+    const confirmConcludeTournament = async () => {
+        setShowConcludeDialog(false);
         setIsConcluding(true);
         try {
             await axiosInstance.post(`/api/org-tournaments/${tournament._id}/conclude`, {
@@ -728,6 +722,74 @@ const PointsTable = ({ tournament, onUpdate }) => {
                             : `No standings available for ${selectedPhase || 'this tournament'}`}
                     </p>
                 </div>
+            )}
+
+            {/* Conclude Tournament Dialog */}
+            {showConcludeDialog && ReactDOM.createPortal(
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-zinc-900 border border-zinc-700 rounded-2xl max-w-md w-full shadow-2xl">
+                        {/* Header */}
+                        <div className="p-6 border-b border-zinc-700/60 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-center">
+                                    <Trophy className="w-5 h-5 text-amber-400" />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-semibold text-white">Conclude Tournament</h3>
+                                    <p className="text-xs text-zinc-400 mt-0.5">This action is irreversible</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowConcludeDialog(false)}
+                                className="text-zinc-500 hover:text-white transition-colors p-1 rounded-lg hover:bg-zinc-800"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-6 space-y-4">
+                            <p className="text-zinc-300 text-sm">
+                                Are you sure you want to conclude this tournament? The following changes will be applied:
+                            </p>
+                            <ul className="space-y-2">
+                                {[
+                                    { icon: '🏅', text: 'Final standings will be set based on current phase results' },
+                                    { icon: '✅', text: 'Tournament will be marked as COMPLETED' },
+                                    { icon: '🔒', text: 'Tournament will be locked from further modifications' },
+                                ].map(({ icon, text }, i) => (
+                                    <li key={i} className="flex items-start gap-3 bg-zinc-800/60 rounded-lg px-4 py-3">
+                                        <span className="text-base leading-tight mt-0.5">{icon}</span>
+                                        <span className="text-zinc-300 text-sm">{text}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                            <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
+                                <p className="text-red-400 text-xs font-medium">
+                                    ⚠️ This action cannot be undone. Please make sure all match results are finalised.
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-6 border-t border-zinc-700/60 flex justify-end gap-3">
+                            <button
+                                onClick={() => setShowConcludeDialog(false)}
+                                className="px-4 py-2 bg-zinc-800 text-zinc-200 rounded-lg hover:bg-zinc-700 transition-colors text-sm font-medium"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmConcludeTournament}
+                                className="px-5 py-2 bg-zinc-100 text-zinc-950 font-bold rounded-lg hover:bg-white transition-all flex items-center gap-2 text-sm shadow-[0_0_15px_rgba(255,255,255,0.08)] hover:shadow-[0_0_20px_rgba(255,255,255,0.18)]"
+                            >
+                                <Trophy className="w-4 h-4" />
+                                Yes, Conclude
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
             )}
 
             {/* Advance Phase Modal */}
