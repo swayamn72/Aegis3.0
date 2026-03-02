@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Clock, MessageSquare, Users, X, Check, AlertCircle, Calendar, Target, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Clock, MessageSquare, Users, X, Check, AlertCircle, Calendar, Target, ChevronDown, ChevronUp, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'react-toastify';
+import axios from '../../utils/axiosConfig';
 
 const MatchScheduler = ({ tournament, onUpdate }) => {
   const [scheduledMatches, setScheduledMatches] = useState([]);
@@ -15,13 +16,20 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
     scheduledTime: '',
     map: 'Erangel'
   });
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [matchToDelete, setMatchToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalMatches, setTotalMatches] = useState(0);
+  const MATCHES_PER_PAGE = 10;
 
   const phases = tournament.phases || [];
   const allGroups = phases.flatMap(phase => phase.groups || []);
   const maps = ['Erangel', 'Miramar', 'Sanhok', 'Vikendi', 'Livik', 'Nusa', 'Rondo'];
 
   useEffect(() => {
-    fetchScheduledMatches();
+    setCurrentPage(1);
+    fetchScheduledMatches(1);
   }, [tournament._id]);
 
   useEffect(() => {
@@ -34,21 +42,29 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
     setTotalTeams(teams);
   }, [selectedGroups, allGroups]);
 
-  const fetchScheduledMatches = async () => {
+  const fetchScheduledMatches = async (page = currentPage) => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:5000/api/matches/scheduled/${tournament._id}`);
-      if (response.ok) {
-        const data = await response.json();
-        setScheduledMatches(data.matches || []);
-      } else {
-        console.error('Failed to fetch scheduled matches');
-      }
+      const offset = (page - 1) * MATCHES_PER_PAGE;
+      const response = await axios.get(`/api/matches/scheduled/${tournament._id}`, {
+        params: {
+          limit: MATCHES_PER_PAGE,
+          offset: offset
+        }
+      });
+      setScheduledMatches(response.data.matches || []);
+      setTotalMatches(response.data.pagination?.total || 0);
     } catch (error) {
       console.error('Error fetching scheduled matches:', error);
+      toast.error('Failed to load scheduled matches');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePageChange = (newPage) => {
+    setCurrentPage(newPage);
+    fetchScheduledMatches(newPage);
   };
 
   const handleGroupToggle = (groupId) => {
@@ -109,59 +125,59 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
         matchType: 'scheduled'
       };
 
-      const response = await fetch('http://localhost:5000/api/matches/schedule', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(matchData)
-      });
+      const response = await axios.post('/api/matches/schedule', matchData);
 
-      if (response.ok) {
-        const savedMatch = await response.json();
-        setScheduledMatches(prev => [...prev, savedMatch]);
+      // Refresh matches and go to first page to see new match
+      setCurrentPage(1);
+      fetchScheduledMatches(1);
 
-
-        if (onUpdate) {
-          onUpdate();
-        }
-
-        setFormData({
-          matchName: '',
-          tournamentPhase: '',
-          scheduledDate: '',
-          scheduledTime: '',
-          map: 'Erangel'
-        });
-        setSelectedGroups([]);
-        setShowScheduleForm(false);
-
-        toast.success('Match scheduled successfully');
-      } else {
-        const error = await response.json();
-        toast.error(error.message || 'Failed to schedule match');
+      if (onUpdate) {
+        onUpdate();
       }
+
+      setFormData({
+        matchName: '',
+        tournamentPhase: '',
+        scheduledDate: '',
+        scheduledTime: '',
+        map: 'Erangel'
+      });
+      setSelectedGroups([]);
+      setShowScheduleForm(false);
+      toast.success('Match scheduled successfully');
     } catch (error) {
       console.error('Error scheduling match:', error);
       toast.error('Failed to schedule match');
     }
   };
 
-  const handleDeleteScheduledMatch = async (matchId) => {
-    try {
-      const response = await fetch(`http://localhost:5000/api/matches/scheduled/${matchId}`, {
-        method: 'DELETE',
-        credentials: 'include'
-      });
+  const handleDeleteScheduledMatch = (matchId) => {
+    setMatchToDelete(matchId);
+    setShowDeleteModal(true);
+  };
 
-      if (response.ok) {
-        setScheduledMatches(prev => prev.filter(match => match._id !== matchId));
-        toast.success('Scheduled match deleted');
-      } else {
-        toast.error('Failed to delete scheduled match');
-      }
+  const confirmDeleteScheduledMatch = async () => {
+    if (!matchToDelete) return;
+
+    try {
+      setIsDeleting(true);
+      await axios.delete(`/api/matches/scheduled/${matchToDelete}`);
+
+      // If we're on a page that will become empty after deletion, go back one page
+      const isLastOnPage = scheduledMatches.length === 1 && currentPage > 1;
+      const pageToFetch = isLastOnPage ? currentPage - 1 : currentPage;
+
+      if (isLastOnPage) setCurrentPage(pageToFetch);
+      fetchScheduledMatches(pageToFetch);
+
+      toast.success('Scheduled match deleted');
+      setShowDeleteModal(false);
+      setMatchToDelete(null);
     } catch (error) {
       console.error('Error deleting scheduled match:', error);
-      toast.error('Failed to delete scheduled match');
+      toast.error(error.response?.data?.error || 'Failed to delete scheduled match');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -180,7 +196,7 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h3 className="text-xl font-semibold text-white">Match Scheduling</h3>
         <button
@@ -361,7 +377,7 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
                     className="p-2 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
                     title="Delete scheduled match"
                   >
-                    <X className="w-4 h-4" />
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -426,6 +442,88 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
             </div>
             <h3 className="text-lg font-semibold text-white mb-2">No Matches Scheduled</h3>
             <p className="text-zinc-400">Schedule your first match to get started.</p>
+          </div>
+        )}
+        {/* Pagination Controls */}
+        {Math.ceil(totalMatches / MATCHES_PER_PAGE) > 1 && (
+          <div className="flex items-center justify-between mt-8 pt-6 border-t border-zinc-700">
+            <div className="text-sm text-zinc-400">
+              Showing <span className="text-white font-medium">{(currentPage - 1) * MATCHES_PER_PAGE + 1}</span> to{' '}
+              <span className="text-white font-medium">
+                {Math.min(currentPage * MATCHES_PER_PAGE, totalMatches)}
+              </span> of{' '}
+              <span className="text-white font-medium">{totalMatches}</span> scheduled matches
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-700 transition-colors"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              {[...Array(Math.ceil(totalMatches / MATCHES_PER_PAGE))].map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => handlePageChange(i + 1)}
+                  className={`w-10 h-10 rounded-lg border transition-all font-medium ${currentPage === i + 1
+                    ? 'bg-orange-500 border-orange-500 text-white shadow-lg shadow-orange-500/20'
+                    : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700 hover:text-white'
+                    }`}
+                >
+                  {i + 1}
+                </button>
+              ))}
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === Math.ceil(totalMatches / MATCHES_PER_PAGE)}
+                className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-700 transition-colors"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-300">
+            <div className="bg-zinc-900 border border-red-500/20 rounded-2xl max-w-sm w-full p-6 shadow-2xl shadow-red-500/10 animate-in zoom-in-95 duration-300">
+              <div className="flex flex-col items-center text-center space-y-4">
+                <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center">
+                  <Trash2 className="w-8 h-8 text-red-500" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white">Delete Scheduled Match?</h3>
+                  <p className="text-zinc-400 mt-2 text-sm leading-relaxed">
+                    Are you sure you want to delete this scheduled match? This will remove the schedule and notify participating teams.
+                  </p>
+                </div>
+                <div className="flex gap-3 w-full pt-4">
+                  <button
+                    onClick={() => {
+                      setShowDeleteModal(false);
+                      setMatchToDelete(null);
+                    }}
+                    disabled={isDeleting}
+                    className="flex-1 px-4 py-3 bg-zinc-800 text-white rounded-xl hover:bg-zinc-700 transition-all font-medium disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmDeleteScheduledMatch}
+                    disabled={isDeleting}
+                    className="flex-1 px-4 py-3 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all font-bold flex items-center justify-center gap-2 shadow-lg shadow-red-500/20 disabled:opacity-50 hover:scale-[1.02] transform active:scale-[0.98]"
+                  >
+                    {isDeleting ? (
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      'Delete'
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

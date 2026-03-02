@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Save, AlertCircle, Trash2, ChevronDown, ChevronUp, Share2, Key, Trophy, Upload, Image, Users } from 'lucide-react';
+import { Calendar, Save, AlertCircle, Trash2, ChevronDown, ChevronUp, Share2, Key, Trophy, Upload, Image, Users, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'react-toastify';
 import axios from '../../utils/axiosConfig';
 
@@ -20,23 +20,53 @@ const MatchManagement = ({ tournament, onUpdate }) => {
     const [selectedFile, setSelectedFile] = useState(null);
     const [previewUrl, setPreviewUrl] = useState(null);
     const [expandedTeams, setExpandedTeams] = useState(new Set());
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [matchToDelete, setMatchToDelete] = useState(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalMatches, setTotalMatches] = useState(0);
+    const MATCHES_PER_PAGE = 10;
 
     useEffect(() => {
-        fetchMatches();
-    }, [tournament._id]);
+        setCurrentPage(1);
+        fetchMatches(1);
+    }, [tournament._id, selectedPhase]);
 
-    const fetchMatches = async () => {
+    const fetchMatches = async (page = currentPage) => {
         try {
             setLoading(true);
-            const response = await axios.get(`/api/matches/tournament/${tournament._id}`);
-            const matchesData = response.data;
-            setMatches(Array.isArray(matchesData) ? matchesData : (matchesData.matches || []));
+            const offset = (page - 1) * MATCHES_PER_PAGE;
+            const response = await axios.get(`/api/matches/tournament/${tournament._id}`, {
+                params: {
+                    limit: MATCHES_PER_PAGE,
+                    offset: offset,
+                    phase: selectedPhase || undefined
+                }
+            });
+
+            const data = response.data;
+            if (data.matches) {
+                setMatches(data.matches);
+                setTotalMatches(data.pagination?.total || 0);
+            } else {
+                // Fallback for older API versions
+                const matchesList = Array.isArray(data) ? data : [];
+                setMatches(matchesList);
+                setTotalMatches(matchesList.length);
+            }
         } catch (err) {
             setError('Error connecting to server');
             console.error('Error fetching matches:', err);
         } finally {
             setLoading(false);
         }
+    };
+
+    const handlePageChange = (newPage) => {
+        setCurrentPage(newPage);
+        fetchMatches(newPage);
+        // Scroll to top of match list
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const handleInputChange = (matchId, teamId, field, value) => {
@@ -185,16 +215,33 @@ const MatchManagement = ({ tournament, onUpdate }) => {
         }
     };
 
-    const handleDeleteMatch = async (matchId) => {
-        if (!window.confirm('Are you sure you want to delete this match?')) return;
+    const handleDeleteMatch = (matchId) => {
+        setMatchToDelete(matchId);
+        setShowDeleteModal(true);
+    };
+
+    const confirmDeleteMatch = async () => {
+        if (!matchToDelete) return;
 
         try {
-            await axios.delete(`/api/matches/${matchId}`);
-            setMatches(matches.filter(match => match._id !== matchId));
+            setIsDeleting(true);
+            await axios.delete(`/api/matches/${matchToDelete}`);
+
+            // If we're on a page that will become empty after deletion, go back one page
+            const isLastOnPage = matches.length === 1 && currentPage > 1;
+            const pageToFetch = isLastOnPage ? currentPage - 1 : currentPage;
+
+            if (isLastOnPage) setCurrentPage(pageToFetch);
+            fetchMatches(pageToFetch);
+
             toast.success('Match deleted successfully');
+            setShowDeleteModal(false);
+            setMatchToDelete(null);
         } catch (err) {
             toast.error('Error deleting match');
             console.error('Error deleting match:', err);
+        } finally {
+            setIsDeleting(false);
         }
     };
 
@@ -306,9 +353,7 @@ const MatchManagement = ({ tournament, onUpdate }) => {
     };
 
     const availablePhases = tournament.phases?.map(p => p.name) || [];
-    const filteredMatches = selectedPhase
-        ? matches.filter(m => m.tournamentPhase === selectedPhase)
-        : matches;
+    const totalPages = Math.ceil(totalMatches / MATCHES_PER_PAGE);
 
     if (loading) {
         return (
@@ -319,7 +364,7 @@ const MatchManagement = ({ tournament, onUpdate }) => {
     }
 
     return (
-        <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700 rounded-xl p-6">
+        <div className="p-6">
             <div className="flex items-center justify-between mb-6">
                 <div>
                     <h3 className="text-xl font-semibold text-white">Match Results</h3>
@@ -383,8 +428,8 @@ const MatchManagement = ({ tournament, onUpdate }) => {
             )}
 
             <div className="space-y-4">
-                {filteredMatches.length > 0 ? (
-                    filteredMatches.map(match => (
+                {matches.length > 0 ? (
+                    matches.map(match => (
                         <div key={match._id} className="bg-gray-800/50 rounded-xl border border-gray-700">
                             <div className="p-4 flex items-center justify-between">
                                 <div className="flex items-center gap-3 flex-1">
@@ -632,60 +677,101 @@ const MatchManagement = ({ tournament, onUpdate }) => {
 
             {/* Credentials Modal */}
             {showCredentialsModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-gray-900 rounded-xl max-w-md w-full p-6">
-                        <h3 className="text-lg font-semibold text-white mb-4">Share Room Credentials</h3>
-                        <p className="text-gray-400 mb-4 text-sm">
-                            Share credentials for Match #{selectedMatch?.matchNumber}
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 transition-all duration-300">
+                    <div className="bg-gray-900 border border-gray-700 rounded-2xl max-w-lg w-full p-8 shadow-2xl animate-in zoom-in-95 duration-300">
+                        <h3 className="text-2xl font-bold text-white mb-2">Share Room Credentials</h3>
+                        <p className="text-gray-400 mb-8 text-sm">
+                            The following credentials will be shared with all teams participating in <span className="text-white font-medium">Match #{selectedMatch?.matchNumber}</span>.
                         </p>
-                        <div className="space-y-4">
+                        <div className="space-y-6">
                             <div>
-                                <label className="block text-sm text-gray-400 mb-2">Room ID</label>
+                                <label className="block text-sm font-medium text-gray-400 mb-2">Room ID</label>
                                 <input
                                     type="text"
                                     value={credentialsForm.roomId}
                                     onChange={(e) => setCredentialsForm({ ...credentialsForm, roomId: e.target.value })}
-                                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all text-lg font-mono tracking-wider"
                                     placeholder="Enter room ID"
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm text-gray-400 mb-2">Room Password</label>
+                                <label className="block text-sm font-medium text-gray-400 mb-2">Room Password</label>
                                 <input
                                     type="text"
                                     value={credentialsForm.roomPassword}
                                     onChange={(e) => setCredentialsForm({ ...credentialsForm, roomPassword: e.target.value })}
-                                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all text-lg font-mono tracking-wider"
                                     placeholder="Enter room password"
                                 />
                             </div>
                         </div>
-                        <div className="flex gap-3 mt-6">
+                        <div className="flex gap-3 mt-8">
                             <button
                                 onClick={() => {
                                     setShowCredentialsModal(false);
                                     setSelectedMatch(null);
                                     setCredentialsForm({ roomId: '', roomPassword: '' });
                                 }}
-                                className="flex-1 px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                                className="flex-1 px-4 py-3 bg-gray-800 text-white rounded-xl hover:bg-gray-700 transition-all font-medium"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={handleShareCredentials}
-                                className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                                className="flex-1 px-4 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-all font-bold shadow-lg shadow-blue-500/20"
                             >
-                                Share
+                                Share Room
                             </button>
                         </div>
                     </div>
                 </div>
             )}
 
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-8 pt-6 border-t border-gray-700">
+                    <div className="text-sm text-gray-400">
+                        Showing <span className="text-white font-medium">{(currentPage - 1) * MATCHES_PER_PAGE + 1}</span> to{' '}
+                        <span className="text-white font-medium">
+                            {Math.min(currentPage * MATCHES_PER_PAGE, totalMatches)}
+                        </span> of{' '}
+                        <span className="text-white font-medium">{totalMatches}</span> matches
+                    </div>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => handlePageChange(currentPage - 1)}
+                            disabled={currentPage === 1}
+                            className="p-2 bg-gray-700 border border-gray-600 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-600 transition-colors"
+                        >
+                            <ChevronLeft className="w-5 h-5" />
+                        </button>
+                        {[...Array(totalPages)].map((_, i) => (
+                            <button
+                                key={i}
+                                onClick={() => handlePageChange(i + 1)}
+                                className={`w-10 h-10 rounded-lg border transition-all font-medium ${currentPage === i + 1
+                                    ? 'bg-orange-500 border-orange-500 text-white shadow-lg shadow-orange-500/20'
+                                    : 'bg-gray-700 border-gray-600 text-gray-400 hover:bg-gray-600 hover:text-white'
+                                    }`}
+                            >
+                                {i + 1}
+                            </button>
+                        ))}
+                        <button
+                            onClick={() => handlePageChange(currentPage + 1)}
+                            disabled={currentPage === totalPages}
+                            className="p-2 bg-gray-700 border border-gray-600 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-600 transition-colors"
+                        >
+                            <ChevronRight className="w-5 h-5" />
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Upload Screenshot Modal */}
             {showUploadModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-gray-900 rounded-xl max-w-2xl w-full p-6">
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-all duration-300">
+                    <div className="bg-gray-900 border border-gray-700 rounded-2xl max-w-2xl w-full p-8 shadow-2xl overflow-y-auto max-h-[90vh]">
                         <h3 className="text-lg font-semibold text-white mb-4">Upload Match Result Screenshot</h3>
                         <p className="text-gray-400 mb-4 text-sm">
                             Upload a screenshot to process match results for Match #{selectedMatch?.matchNumber}
@@ -748,31 +834,72 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                             </div>
                         </div>
 
-                        <div className="flex gap-3 mt-6">
+                        <div className="flex gap-3 mt-8">
                             <button
                                 onClick={closeUploadModal}
                                 disabled={uploadingScreenshot === selectedMatch?._id}
-                                className="flex-1 px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
+                                className="flex-1 px-4 py-3 bg-gray-800 text-white rounded-xl hover:bg-gray-700 transition-all font-medium disabled:opacity-50"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={handleUploadScreenshot}
                                 disabled={!selectedFile || uploadingScreenshot === selectedMatch?._id}
-                                className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                                className="flex-1 px-4 py-3 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition-all font-bold disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20"
                             >
                                 {uploadingScreenshot === selectedMatch?._id ? (
                                     <>
-                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                                         Processing...
                                     </>
                                 ) : (
                                     <>
-                                        <Upload className="w-4 h-4" />
+                                        <Upload className="w-5 h-5" />
                                         Upload & Process
                                     </>
                                 )}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Delete Confirmation Modal */}
+            {showDeleteModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-300">
+                    <div className="bg-gray-900 border border-red-500/20 rounded-2xl max-w-sm w-full p-6 shadow-2xl shadow-red-500/10 animate-in zoom-in-95 duration-300">
+                        <div className="flex flex-col items-center text-center space-y-4">
+                            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center">
+                                <Trash2 className="w-8 h-8 text-red-500" />
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-bold text-white">Delete Match?</h3>
+                                <p className="text-gray-400 mt-2 text-sm leading-relaxed">
+                                    Are you sure you want to delete this match? This action cannot be undone and all results will be permanently removed.
+                                </p>
+                            </div>
+                            <div className="flex gap-3 w-full pt-4">
+                                <button
+                                    onClick={() => {
+                                        setShowDeleteModal(false);
+                                        setMatchToDelete(null);
+                                    }}
+                                    disabled={isDeleting}
+                                    className="flex-1 px-4 py-3 bg-gray-800 text-white rounded-xl hover:bg-gray-700 transition-all font-medium disabled:opacity-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={confirmDeleteMatch}
+                                    disabled={isDeleting}
+                                    className="flex-1 px-4 py-3 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all font-bold flex items-center justify-center gap-2 shadow-lg shadow-red-500/20 disabled:opacity-50 hover:scale-[1.02] transform active:scale-[0.98]"
+                                >
+                                    {isDeleting ? (
+                                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    ) : (
+                                        'Delete'
+                                    )}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

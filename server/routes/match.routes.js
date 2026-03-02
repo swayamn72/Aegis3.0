@@ -112,20 +112,35 @@ const verifyMatchOwnership = async (req, res, next) => {
 router.get('/scheduled/:tournamentId', async (req, res) => {
   try {
     const { tournamentId } = req.params;
+    const { limit = 10, offset = 0 } = req.query;
 
-    const matches = await Match.find({
+    const filter = {
       tournament: tournamentId,
       status: 'scheduled'
-    })
+    };
+
+    const totalMatches = await Match.countDocuments(filter);
+
+    const matches = await Match.find(filter)
       .populate({
         path: 'results.team',
         select: 'teamName teamTag logo'
       })
       .populate('tournament', 'tournamentName shortName')
       .sort({ scheduledStartTime: 1 })
+      .skip(parseInt(offset))
+      .limit(parseInt(limit))
       .lean();
 
-    res.json({ matches });
+    res.json({
+      matches,
+      pagination: {
+        total: totalMatches,
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        hasMore: (parseInt(offset) + parseInt(limit)) < totalMatches
+      }
+    });
   } catch (error) {
     console.error('Error fetching scheduled matches:', error);
     res.status(500).json({ error: 'Failed to fetch scheduled matches' });
@@ -624,12 +639,15 @@ router.put('/:matchId/results', verifyOrgToken, verifyMatchOwnership, async (req
 
     // Update participating teams with results
     if (results && results.length > 0) {
+      let overallMostKills = 0;
+      let overallBestPlayer = null;
+
       for (const result of results) {
         let teamIndex = match.results.findIndex(
           team => (team.team?._id || team.team).toString() === result.teamId
         );
 
-        // If team not in results yet (common for first result update of scheduled match), add it
+        // If team not in results yet, add it
         if (teamIndex === -1) {
           match.results.push({
             team: result.teamId,
@@ -646,7 +664,6 @@ router.put('/:matchId/results', verifyOrgToken, verifyMatchOwnership, async (req
         if (!teamEntry.points) teamEntry.points = { placementPoints: 0, killPoints: 0, totalPoints: 0 };
         if (!teamEntry.kills) teamEntry.kills = { total: 0, breakdown: [] };
 
-        // Calculate placement points based on position
         const placementPoints = getPlacementPoints(result.position);
 
         teamEntry.finalPosition = result.position;
@@ -655,34 +672,150 @@ router.put('/:matchId/results', verifyOrgToken, verifyMatchOwnership, async (req
         teamEntry.points.killPoints = result.kills || 0;
         teamEntry.points.totalPoints = placementPoints + (result.kills || 0);
 
-        // Update player-level kills breakdown if provided
+        // Update player-level kills breakdown
         if (result.playerKills && Array.isArray(result.playerKills)) {
-          // Ensure breakdown collection exists
-          if (!teamEntry.kills.breakdown) teamEntry.kills.breakdown = [];
-
-          teamEntry.kills.breakdown = result.playerKills.map((kills, index) => ({
-            player: (teamEntry.kills.breakdown && teamEntry.kills.breakdown[index]) ? teamEntry.kills.breakdown[index].player : null,
-            kills: kills || 0
-          }));
+          // If breakdown is empty or missing players, try to get team members
+          if (!teamEntry.kills.breakdown || teamEntry.kills.breakdown.length === 0 || teamEntry.kills.breakdown.some(b => !b.player)) {
+            const teamWithPlayers = await Team.findById(result.teamId).select('players').lean();
+            if (teamWithPlayers && teamWithPlayers.players) {
+              teamEntry.kills.breakdown = teamWithPlayers.players.map((playerId, index) => ({
+                player: playerId,
+                kills: result.playerKills[index] || 0
+              }));
+            } else {
+              // Fallback to null players if team members not found
+              teamEntry.kills.breakdown = result.playerKills.map((kills, index) => ({
+                player: (teamEntry.kills.breakdown && teamEntry.kills.breakdown[index]) ? teamEntry.kills.breakdown[index].player : null,
+                kills: kills || 0
+              }));
+            }
+          } else {
+            // Update existing breakdown
+            result.playerKills.forEach((kills, index) => {
+              if (teamEntry.kills.breakdown[index]) {
+                teamEntry.kills.breakdown[index].kills = kills || 0;
+              }
+            });
+          }
         }
 
-        // Mark as chicken dinner if position 1
+        // Track overall most kills for matchStats
+        if (teamEntry.kills.breakdown) {
+          teamEntry.kills.breakdown.forEach(b => {
+            if (b.player && b.kills > overallMostKills) {
+              overallMostKills = b.kills;
+              overallBestPlayer = b.player;
+            }
+          });
+        }
+
         teamEntry.chickenDinner = result.position === 1;
+      }
+
+      // Update matchStats
+      if (overallBestPlayer) {
+        match.matchStats.mostKillsPlayer = {
+          player: overallBestPlayer,
+          kills: overallMostKills
+        };
       }
     }
 
-    // Keep match status as in_progress to allow further editing
     match.status = 'in_progress';
 
     await match.save();
     await match.populate('results.team', 'teamName teamTag logo');
-    await match.populate('results.kills.breakdown.player', 'username');
+    await match.populate('results.kills.breakdown.player', 'username inGameName profilePicture');
+    await match.populate('matchStats.mostKillsPlayer.player', 'username inGameName profilePicture');
 
-    console.log('Updated match:', match._id);
+    console.log('✅ Updated match results and stats:', match._id);
     res.json(match);
   } catch (error) {
     console.error('Error updating match results:', error);
     res.status(500).json({ error: 'Failed to update match results' });
+  }
+});
+
+// Delete a match
+router.delete('/:matchId', verifyOrgToken, verifyMatchOwnership, async (req, res) => {
+  try {
+    const { matchId } = req.params;
+
+    const match = await Match.findById(matchId);
+    if (!match) {
+      return res.status(404).json({ error: 'Match not found' });
+    }
+
+    // Remove reference from tournament phases
+    await Tournament.updateOne(
+      { _id: match.tournament },
+      { $pull: { 'phases.$[].matches': matchId } }
+    );
+
+    // Delete the match
+    await Match.findByIdAndDelete(matchId);
+
+    console.log(`✅ Deleted match: ${matchId}`);
+    res.json({ success: true, message: 'Match deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting match:', error);
+    res.status(500).json({ error: 'Failed to delete match' });
+  }
+});
+
+// Alias for scheduled match deletion
+router.delete('/scheduled/:matchId', verifyOrgToken, verifyMatchOwnership, async (req, res) => {
+  try {
+    const { matchId } = req.params;
+
+    const match = await Match.findById(matchId);
+    if (!match) {
+      return res.status(404).json({ error: 'Match not found' });
+    }
+
+    // Remove reference from tournament phases
+    await Tournament.updateOne(
+      { _id: match.tournament },
+      { $pull: { 'phases.$[].matches': matchId } }
+    );
+
+    // Delete the match
+    await Match.findByIdAndDelete(matchId);
+
+    console.log(`✅ Deleted scheduled match: ${matchId}`);
+    res.json({ success: true, message: 'Scheduled match deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting scheduled match:', error);
+    res.status(500).json({ error: 'Failed to delete scheduled match' });
+  }
+});
+
+
+// Get a single match by ID (public — no auth required)
+// Optimized with targeted population and lean()
+router.get('/:matchId', async (req, res) => {
+  try {
+    const { matchId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(matchId)) {
+      return res.status(400).json({ error: 'Invalid match ID format' });
+    }
+
+    const match = await Match.findById(matchId)
+      .populate('results.team', 'teamName teamTag logo')
+      .populate('results.kills.breakdown.player', 'username inGameName profilePicture')
+      .populate('matchStats.mostKillsPlayer.player', 'username inGameName profilePicture')
+      .populate('tournament', 'tournamentName shortName logo')
+      .lean();
+
+    if (!match) {
+      return res.status(404).json({ error: 'Match not found' });
+    }
+
+    res.json(match);
+  } catch (error) {
+    console.error('Error fetching match by ID:', error);
+    res.status(500).json({ error: 'Failed to fetch match info' });
   }
 });
 

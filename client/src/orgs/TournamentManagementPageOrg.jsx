@@ -269,7 +269,7 @@ const TournamentManagementPageOrg = () => {
         <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
             {/* Top Bar */}
             <div className="bg-gray-900/50 backdrop-blur-sm border-b border-gray-700 sticky top-0 z-40">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <button
@@ -317,7 +317,7 @@ const TournamentManagementPageOrg = () => {
                 </div>
             </div>
 
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
                 {/* Quick Stats */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                     <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-xl p-4 hover:border-orange-500/50 transition-all">
@@ -421,7 +421,7 @@ const TournamentManagementPageOrg = () => {
                 </div>
 
                 {/* Content Area */}
-                <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700 rounded-xl overflow-hidden">
+                <div className="bg-gray-800/30 border border-gray-700 rounded-xl overflow-hidden relative">
                     {activeSection === 'overview' && (
                         <div className="p-6">
                             <h2 className="text-2xl font-bold text-white mb-6">Tournament Overview</h2>

@@ -93,46 +93,58 @@ router.get('/all', async (req, res) => {
     };
 
     // Calculate additional fields for main tournaments
-    const enrichedTournaments = tournaments.map(tournament => ({
-      ...tournament,
-      // Get accurate participant count
-      participantCount: getParticipantCount(tournament),
-      totalSlots: tournament.slots?.total || null,
-      // Format dates properly
-      startDate: tournament.startDate ? new Date(tournament.startDate).toISOString() : null,
-      endDate: tournament.endDate ? new Date(tournament.endDate).toISOString() : null,
-      // Ensure media has default values
-      media: {
-        logo: tournament.media?.logo || null,
-        banner: tournament.media?.banner || null,
-        coverImage: tournament.media?.coverImage || null
-      },
-      // Ensure organizer has default
-      organizer: {
-        name: tournament.organizer?.name || 'Unknown Organizer'
-      },
-      // Calculate registration status
-      registrationStatus: calculateRegistrationStatus(tournament)
-    }));
+    const enrichedTournaments = tournaments.map(tournament => {
+      const actualCount = getParticipantCount(tournament);
+      return {
+        ...tournament,
+        // Get accurate participant count
+        participantCount: actualCount,
+        participatingTeamsCount: actualCount, // Sync with DB field for frontend consistency
+        totalSlots: tournament.slots?.total || null,
+        // Format dates properly
+        startDate: tournament.startDate ? new Date(tournament.startDate).toISOString() : null,
+        endDate: tournament.endDate ? new Date(tournament.endDate).toISOString() : null,
+        // Ensure media has default values
+        media: {
+          logo: tournament.media?.logo || null,
+          banner: tournament.media?.banner || null,
+          coverImage: tournament.media?.coverImage || null
+        },
+        // Ensure organizer has default
+        organizer: {
+          name: tournament.organizer?.name || 'Unknown Organizer'
+        },
+        // Calculate registration status
+        registrationStatus: calculateRegistrationStatus(tournament)
+      };
+    });
 
     // Enrich live tournaments
-    const enrichedLiveTournaments = liveTournaments.map(tournament => ({
-      ...tournament,
-      participantCount: getParticipantCount(tournament),
-      isLive: isLive(tournament),
-      hasActiveStreams: tournament.streamLinks?.length > 0,
-      registrationStatus: calculateRegistrationStatus(tournament)
-    }));
+    const enrichedLiveTournaments = liveTournaments.map(tournament => {
+      const actualCount = getParticipantCount(tournament);
+      return {
+        ...tournament,
+        participantCount: actualCount,
+        participatingTeamsCount: actualCount,
+        isLive: isLive(tournament),
+        hasActiveStreams: tournament.streamLinks?.length > 0,
+        registrationStatus: calculateRegistrationStatus(tournament)
+      };
+    });
 
     // Enrich upcoming tournaments
-    const enrichedUpcomingTournaments = upcomingTournaments.map(tournament => ({
-      ...tournament,
-      participantCount: getParticipantCount(tournament),
-      totalSlots: tournament.slots?.total || null,
-      registrationStatus: calculateRegistrationStatus(tournament),
-      daysUntilStart: tournament.startDate ?
-        Math.ceil((new Date(tournament.startDate) - new Date()) / (1000 * 60 * 60 * 24)) : null
-    }));
+    const enrichedUpcomingTournaments = upcomingTournaments.map(tournament => {
+      const actualCount = getParticipantCount(tournament);
+      return {
+        ...tournament,
+        participantCount: actualCount,
+        participatingTeamsCount: actualCount,
+        totalSlots: tournament.slots?.total || null,
+        registrationStatus: calculateRegistrationStatus(tournament),
+        daysUntilStart: tournament.startDate ?
+          Math.ceil((new Date(tournament.startDate) - new Date()) / (1000 * 60 * 60 * 24)) : null
+      };
+    });
 
     const total = await Tournament.countDocuments(filter);
 

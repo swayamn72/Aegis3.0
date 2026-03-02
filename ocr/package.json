@@ -1,0 +1,13 @@
+{
+  "name": "bgmi-ocr",
+  "version": "1.0.0",
+  "description": "BGMI OCR Points Calculator using AWS Rekognition",
+  "main": "bgmi_ocr.js",
+  "scripts": {
+    "start": "node bgmi_ocr.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-rekognition": "^3.0.0",
+    "dotenv": "^16.0.0"
+  }
+}

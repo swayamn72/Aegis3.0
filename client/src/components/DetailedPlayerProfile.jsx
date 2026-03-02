@@ -167,9 +167,10 @@ const DetailedPlayerProfile = () => {
                             {/* Profile Picture */}
                             <div className="relative flex-shrink-0">
                                 <img
-                                    src={playerData.profilePicture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${playerData.username}`}
-                                    alt={playerData.inGameName}
+                                    src={playerData.profilePicture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(playerData.username || 'player')}`}
+                                    alt={playerData.inGameName || playerData.username}
                                     className="w-32 h-32 lg:w-40 lg:h-40 rounded-lg object-cover border-2 border-zinc-800 bg-zinc-900"
+                                    onError={(e) => { e.target.src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(playerData.username || 'player')}`; }}
                                 />
                                 {playerData.verified && (
                                     <div className="absolute -bottom-2 -right-2 bg-[#FF4500] p-2 rounded-full shadow-lg">
@@ -326,7 +327,12 @@ const DetailedPlayerProfile = () => {
                                         <div className="flex items-start gap-4">
                                             <div className="w-20 h-20 rounded-xl overflow-hidden border-2 border-zinc-700 group-hover:border-[#FF4500] transition-all shrink-0">
                                                 {currentTeam.logo ? (
-                                                    <img src={currentTeam.logo} alt={currentTeam.teamName} className="w-full h-full object-cover" />
+                                                    <img
+                                                        src={currentTeam.logo}
+                                                        alt={currentTeam.teamName}
+                                                        className="w-full h-full object-cover"
+                                                        onError={(e) => { e.target.src = `https://placehold.co/128x128/1a1a1a/71717a?text=${encodeURIComponent(currentTeam.teamTag || currentTeam.teamName || 'T')}`; }}
+                                                    />
                                                 ) : (
                                                     <div className="w-full h-full bg-gradient-to-br from-zinc-700 to-zinc-800 flex items-center justify-center">
                                                         <Users className="w-8 h-8 text-zinc-500" />
@@ -358,9 +364,10 @@ const DetailedPlayerProfile = () => {
                                                         return (
                                                             <div key={member._id} className={`flex flex-col items-center ${isCurrent ? 'border-2 border-[#FF4500] bg-zinc-900 shadow-lg scale-105' : 'bg-zinc-800 border border-zinc-700'} rounded-xl p-2 transition-all`}>
                                                                 <img
-                                                                    src={member.profilePicture}
+                                                                    src={member.profilePicture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(member.username || 'player')}`}
                                                                     alt={member.inGameName || member.username}
-                                                                    className={`w-12 h-12 rounded-full object-cover mb-2 ${isCurrent ? 'border-2 border-[#FF4500]' : ''}`}
+                                                                    className={`w-12 h-12 rounded-full object-cover mb-2 ${isCurrent ? 'border-2 border-[#FF4500]' : 'border border-zinc-700'}`}
+                                                                    onError={(e) => { e.target.src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(member.username || 'player')}`; }}
                                                                 />
                                                                 <span className={`text-xs font-bold ${isCurrent ? 'text-[#FF4500]' : 'text-zinc-300'}`}>{member.inGameName || member.username}</span>
                                                                 {isCaptain && (

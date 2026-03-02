@@ -279,37 +279,75 @@ registrationSchema.statics.bulkApprove = async function (registrationIds, adminI
   );
 };
 
-// --- Pre-save Middleware ---
-registrationSchema.pre('save', async function () {
+// --- Middleware ---
+
+registrationSchema.pre('save', function (next) {
+  this._wasNew = this.isNew;
+  this._statusModified = this.isModified('status');
+
   // Automatically set phase/group from currentStage if not set
   if (this.currentStage && !this.phase) {
-    // You can parse currentStage like "Group A - Qualifiers" 
-    // This is optional based on your naming convention
+    // Optional parsing logic could go here
+  }
+  next();
+});
+
+// Update tournament's participatingTeamsCount and registration slots
+registrationSchema.post('save', async function (doc) {
+  try {
+    const Tournament = mongoose.model('Tournament');
+    const RegistrationModel = mongoose.model('Registration');
+
+    // 1. Sync slots.registered (total registrations including pending)
+    if (this._wasNew) {
+      await Tournament.updateOne(
+        { _id: doc.tournament },
+        { $inc: { 'slots.registered': 1 } }
+      );
+    }
+
+    // 2. Sync participatingTeamsCount (only approved/checked_in teams)
+    // Always sync on new document (if approved) or status change
+    if (this._wasNew || this._statusModified) {
+      const activeCount = await RegistrationModel.countDocuments({
+        tournament: doc.tournament,
+        status: { $in: ['approved', 'checked_in'] }
+      });
+
+      await Tournament.updateOne(
+        { _id: doc.tournament },
+        { $set: { participatingTeamsCount: activeCount } }
+      );
+    }
+  } catch (error) {
+    console.error('Error in Registration post-save middleware:', error);
   }
 });
 
-// --- Post-save Middleware ---
-// Update tournament's participatingTeamsCount
-registrationSchema.post('save', async function (doc) {
-  if (this.wasNew) {
-    // Increment count when new registration is created
-    await mongoose.model('Tournament').updateOne(
-      { _id: doc.tournament },
-      { $inc: { 'slots.registered': 1 } }
-    );
-  }
+// Update counts when a registration is removed
+registrationSchema.post('remove', async function (doc) {
+  try {
+    const Tournament = mongoose.model('Tournament');
+    const RegistrationModel = mongoose.model('Registration');
 
-  // Update count of approved teams
-  if (this.isModified('status')) {
-    const count = await mongoose.model('Registration').countDocuments({
+    // Decrement total registrations
+    await Tournament.updateOne(
+      { _id: doc.tournament },
+      { $inc: { 'slots.registered': -1 } }
+    );
+
+    // Sync active participant count
+    const activeCount = await RegistrationModel.countDocuments({
       tournament: doc.tournament,
-      status: { $in: ['approved', 'checked_in'] },
+      status: { $in: ['approved', 'checked_in'] }
     });
 
-    await mongoose.model('Tournament').updateOne(
+    await Tournament.updateOne(
       { _id: doc.tournament },
-      { $set: { participatingTeamsCount: count } }
+      { $set: { participatingTeamsCount: activeCount } }
     );
+  } catch (error) {
+    console.error('Error in Registration post-remove middleware:', error);
   }
 });
 

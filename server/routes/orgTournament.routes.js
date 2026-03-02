@@ -1238,17 +1238,40 @@ router.put('/:tournamentId', verifyApprovedOrgToken, upload.fields([
     const { tournamentId } = req.params;
 
     // Parse update data
-    let updateData = req.body.tournamentData ?
-      JSON.parse(req.body.tournamentData) : req.body;
-
-    if (updateData.phases && typeof updateData.phases === 'string') {
-      updateData.phases = JSON.parse(updateData.phases);
+    let rawUpdateData = req.body;
+    if (req.body.tournamentData) {
+      try {
+        rawUpdateData = typeof req.body.tournamentData === 'string'
+          ? JSON.parse(req.body.tournamentData)
+          : req.body.tournamentData;
+      } catch (e) {
+        console.error('Error parsing tournamentData:', e);
+        return res.status(400).json({ error: 'Invalid tournament data format' });
+      }
     }
 
-    // Fetch tournament — always include phases so we can detect renames
-    // and migrate Registration.phase in a single pass after the update.
+    // STRICTLY filter allowed fields for this generic update route
+    // Only allow media and phases (for the separate phase manager)
+    const allowedFields = ['media', 'phases'];
+    const updateData = {};
+
+    allowedFields.forEach(field => {
+      if (rawUpdateData[field] !== undefined) {
+        updateData[field] = rawUpdateData[field];
+      }
+    });
+
+    if (updateData.phases && typeof updateData.phases === 'string') {
+      try {
+        updateData.phases = JSON.parse(updateData.phases);
+      } catch (e) {
+        return res.status(400).json({ error: 'Invalid phases format' });
+      }
+    }
+
+    // Fetch tournament
     const tournament = await Tournament.findById(tournamentId)
-      .select('organizer.organizationRef media status phases._id phases.name')
+      .select('organizer.organizationRef media status phases._id phases.name startDate endDate')
       .lean();
 
     if (!tournament) {

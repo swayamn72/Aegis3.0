@@ -25,6 +25,7 @@ import RewardsPage from "./pages/RewardsPage";
 
 import TournamentsPage from "./pages/TournamentsPage";
 import DetailedTournamentInfoPage from './pages/DetailedTournamentInfoPage';
+import DetailedMatchInfoPage from './pages/DetailedMatchInfoPage';
 import TournamentManagementPageOrg from "./orgs/TournamentManagementPageOrg";
 import DetailedPlayerProfilePage from "./pages/DetailedPlayerProfilePage";
 
@@ -57,6 +58,7 @@ function AppContent() {
           <Route path="/setup-username" element={<UsernameSetup />} />
           <Route path="/org-profile-setup" element={<OrgProfileSetup />} />
           <Route path="/detailed/:id" element={<DetailedPlayerProfilePage />} />
+          <Route path="/matches/:id" element={<DetailedMatchInfoPage />} />
 
           {/* Organization Routes */}
           <Route

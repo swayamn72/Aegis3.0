@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Upload, Calendar, MapPin, Trophy, Users, DollarSign, Settings, UserPlus, Target, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Upload, Calendar, MapPin, Trophy, Users, DollarSign, Settings, UserPlus, Target, ChevronDown, ChevronUp, Lock } from 'lucide-react';
 import { toast } from 'react-toastify';
 import TeamSearchModal from './TeamSearchModal';
 import PrizeDistributionForm from './PrizeDistributionForm';
@@ -243,22 +243,6 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
         newErrors.tournamentName = 'Tournament name is required';
       }
 
-      if (!formData.gameTitle) {
-        newErrors.gameTitle = 'Game title is required';
-      }
-
-      if (!formData.startDate) {
-        newErrors.startDate = 'Start date is required';
-      }
-
-      if (!formData.endDate) {
-        newErrors.endDate = 'End date is required';
-      }
-
-      if (new Date(formData.startDate) >= new Date(formData.endDate)) {
-        newErrors.endDate = 'End date must be after start date';
-      }
-
       if (Object.keys(newErrors).length > 0) {
         setErrors(newErrors);
         setLoading(false);
@@ -268,39 +252,34 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
       // Create FormData for file uploads
       const formDataToSend = new FormData();
 
-      // Append all form fields, flattening nested objects
-      const cleanedFormData = {
-        ...formData,
-        participatingTeams: formData.participatingTeams?.filter(team => team && team.teamName && team.teamName.trim() !== '').map(team => ({
-          team: team._id || team.id, // Use the team ID if available
-          qualifiedThrough: 'open_registration', // Default qualification method
-          seed: null, // Will be set later if needed
-          group: null,
-          currentStage: null,
-          totalTournamentPoints: 0,
-          totalTournamentKills: 0
-        })) || [],
-        // Ensure individual awards have proper structure
-        prizePool: {
-          ...formData.prizePool,
-          individualAwards: formData.prizePool?.individualAwards?.filter(award =>
-            award && award.name && award.name.trim() !== ''
-          ) || []
-        }
-      };
+      if (isEditing) {
+        // Only allow updating media when editing
+        const updatePayload = {
+          media: {
+            ...formData.media
+          }
+        };
 
-      // Append all fields to FormData
-      Object.keys(cleanedFormData).forEach(key => {
-        if (key === 'media') {
-          // Handle media separately - exclude logo/coverImage if files are provided
-          const media = { ...cleanedFormData.media };
-          if (logoFile) delete media.logo;
-          if (coverFile) delete media.coverImage;
-          formDataToSend.append(key, JSON.stringify(media));
-        } else {
-          formDataToSend.append(key, JSON.stringify(cleanedFormData[key]));
-        }
-      });
+        formDataToSend.append('tournamentData', JSON.stringify(updatePayload));
+      } else {
+        // Full tournament creation logic
+        const cleanedFormData = {
+          ...formData,
+          participatingTeams: formData.participatingTeams?.filter(team => team && team.teamName && team.teamName.trim() !== '').map(team => ({
+            team: team._id || team.id,
+            qualifiedThrough: 'open_registration',
+            totalTournamentPoints: 0,
+            totalTournamentKills: 0
+          })) || [],
+          prizePool: {
+            ...formData.prizePool,
+            individualAwards: formData.prizePool?.individualAwards?.filter(award =>
+              award && award.name && award.name.trim() !== ''
+            ) || []
+          }
+        };
+        formDataToSend.append('tournamentData', JSON.stringify(cleanedFormData));
+      }
 
       // Append files if selected
       if (logoFile) {
@@ -379,15 +358,16 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-zinc-300 mb-2">
-                Tournament Name *
+                Tournament Name * {isEditing && <Lock className="inline w-3 h-3 ml-1 opacity-50" />}
               </label>
               <input
                 type="text"
                 name="tournamentName"
                 value={formData.tournamentName}
                 onChange={handleChange}
+                readOnly={isEditing}
                 className={`w-full bg-zinc-800/50 border rounded-lg px-4 py-2 text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-orange-500 ${errors.tournamentName ? 'border-red-500' : 'border-zinc-700'
-                  }`}
+                  } ${isEditing ? 'opacity-60 cursor-not-allowed border-dashed' : ''}`}
                 placeholder="Enter tournament name"
               />
               {errors.tournamentName && (
@@ -397,128 +377,135 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
 
             <div>
               <label className="block text-sm font-medium text-zinc-300 mb-2">
-                Short Name
+                Short Name {isEditing && <Lock className="inline w-3 h-3 ml-1 opacity-50" />}
               </label>
               <input
                 type="text"
                 name="shortName"
                 value={formData.shortName}
                 onChange={handleChange}
-                className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2 text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                readOnly={isEditing}
+                className={`w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2 text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-orange-500 ${isEditing ? 'opacity-60 cursor-not-allowed border-dashed' : ''}`}
                 placeholder="Short name or acronym"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-2">
-                Game Title *
-              </label>
-              <select
-                name="gameTitle"
-                value={formData.gameTitle}
-                onChange={handleChange}
-                className={`w-full bg-zinc-800/50 border rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500 ${errors.gameTitle ? 'border-red-500' : 'border-zinc-700'
-                  }`}
-              >
-                <option value="">Select Game</option>
-                {gameOptions.map(game => (
-                  <option key={game} value={game}>{game}</option>
-                ))}
-              </select>
-              {errors.gameTitle && (
-                <p className="text-red-400 text-sm mt-1">{errors.gameTitle}</p>
-              )}
-            </div>
+          {!isEditing && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">
+                  Game Title *
+                </label>
+                <select
+                  name="gameTitle"
+                  value={formData.gameTitle}
+                  onChange={handleChange}
+                  className={`w-full bg-zinc-800/50 border rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500 ${errors.gameTitle ? 'border-red-500' : 'border-zinc-700'
+                    }`}
+                >
+                  <option value="">Select Game</option>
+                  {gameOptions.map(game => (
+                    <option key={game} value={game}>{game}</option>
+                  ))}
+                </select>
+                {errors.gameTitle && (
+                  <p className="text-red-400 text-sm mt-1">{errors.gameTitle}</p>
+                )}
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-2">
-                Region
-              </label>
-              <select
-                name="region"
-                value={formData.region}
-                onChange={handleChange}
-                className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-              >
-                <option value="">Select Region</option>
-                {regionOptions.map(region => (
-                  <option key={region} value={region}>{region}</option>
-                ))}
-              </select>
-            </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">
+                  Region
+                </label>
+                <select
+                  name="region"
+                  value={formData.region}
+                  onChange={handleChange}
+                  className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                >
+                  <option value="">Select Region</option>
+                  {regionOptions.map(region => (
+                    <option key={region} value={region}>{region}</option>
+                  ))}
+                </select>
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-2">
-                Tier
-              </label>
-              <select
-                name="tier"
-                value={formData.tier}
-                onChange={handleChange}
-                className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-              >
-                {tierOptions.map(tier => (
-                  <option key={tier} value={tier}>{tier}-Tier</option>
-                ))}
-              </select>
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">
+                  Tier
+                </label>
+                <select
+                  name="tier"
+                  value={formData.tier}
+                  onChange={handleChange}
+                  className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                >
+                  {tierOptions.map(tier => (
+                    <option key={tier} value={tier}>{tier}-Tier</option>
+                  ))}
+                </select>
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Dates */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-2">
-                Start Date *
-              </label>
-              <input
-                type="date"
-                name="startDate"
-                value={formData.startDate}
-                onChange={handleChange}
-                className={`w-full bg-zinc-800/50 border rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500 ${errors.startDate ? 'border-red-500' : 'border-zinc-700'
-                  }`}
-              />
-              {errors.startDate && (
-                <p className="text-red-400 text-sm mt-1">{errors.startDate}</p>
-              )}
-            </div>
+          {!isEditing && (
+            <>
+              {/* Dates */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">
+                    Start Date *
+                  </label>
+                  <input
+                    type="date"
+                    name="startDate"
+                    value={formData.startDate}
+                    onChange={handleChange}
+                    className={`w-full bg-zinc-800/50 border rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500 ${errors.startDate ? 'border-red-500' : 'border-zinc-700'
+                      }`}
+                  />
+                  {errors.startDate && (
+                    <p className="text-red-400 text-sm mt-1">{errors.startDate}</p>
+                  )}
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-2">
-                End Date *
-              </label>
-              <input
-                type="date"
-                name="endDate"
-                value={formData.endDate}
-                onChange={handleChange}
-                className={`w-full bg-zinc-800/50 border rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500 ${errors.endDate ? 'border-red-500' : 'border-zinc-700'
-                  }`}
-              />
-              {errors.endDate && (
-                <p className="text-red-400 text-sm mt-1">{errors.endDate}</p>
-              )}
-            </div>
-          </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">
+                    End Date *
+                  </label>
+                  <input
+                    type="date"
+                    name="endDate"
+                    value={formData.endDate}
+                    onChange={handleChange}
+                    className={`w-full bg-zinc-800/50 border rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500 ${errors.endDate ? 'border-red-500' : 'border-zinc-700'
+                      }`}
+                  />
+                  {errors.endDate && (
+                    <p className="text-red-400 text-sm mt-1">{errors.endDate}</p>
+                  )}
+                </div>
+              </div>
 
-          {/* Open for All Checkbox */}
-          <div className="flex items-center space-x-3">
-            <input
-              type="checkbox"
-              name="isOpenForAll"
-              checked={formData.isOpenForAll}
-              onChange={handleChange}
-              className="w-4 h-4 text-orange-500 bg-zinc-800 border-zinc-700 rounded focus:ring-orange-500 focus:ring-2"
-            />
-            <label className="text-sm font-medium text-zinc-300">
-              Is this tournament open for all?
-            </label>
-          </div>
+              {/* Open for All Checkbox */}
+              <div className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  name="isOpenForAll"
+                  checked={formData.isOpenForAll}
+                  onChange={handleChange}
+                  className="w-4 h-4 text-orange-500 bg-zinc-800 border-zinc-700 rounded focus:ring-orange-500 focus:ring-2"
+                />
+                <label className="text-sm font-medium text-zinc-300">
+                  Is this tournament open for all?
+                </label>
+              </div>
+            </>
+          )}
 
           {/* Conditional Registration Dates */}
-          {formData.isOpenForAll && (
+          {!isEditing && formData.isOpenForAll && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-zinc-300 mb-2">
@@ -548,38 +535,42 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
             </div>
           )}
 
-          {/* Prize Pool */}
-          <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-2">
-              Prize Pool (INR)
-            </label>
-            <div className="relative">
-              <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-zinc-400" />
-              <input
-                type="number"
-                name="prizePool.total"
-                value={formData.prizePool.total}
-                onChange={handleChange}
-                className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg pl-10 pr-4 py-2 text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                placeholder="Total prize pool amount"
-              />
-            </div>
-          </div>
+          {!isEditing && (
+            <>
+              {/* Prize Pool */}
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">
+                  Prize Pool (INR)
+                </label>
+                <div className="relative">
+                  <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-zinc-400" />
+                  <input
+                    type="number"
+                    name="prizePool.total"
+                    value={formData.prizePool.total}
+                    onChange={handleChange}
+                    className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg pl-10 pr-4 py-2 text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    placeholder="Total prize pool amount"
+                  />
+                </div>
+              </div>
 
-          {/* Description */}
-          <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-2">
-              Description
-            </label>
-            <textarea
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              rows={4}
-              className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2 text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
-              placeholder="Tournament description..."
-            />
-          </div>
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">
+                  Description
+                </label>
+                <textarea
+                  name="description"
+                  value={formData.description}
+                  onChange={handleChange}
+                  rows={4}
+                  className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2 text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  placeholder="Tournament description..."
+                />
+              </div>
+            </>
+          )}
 
           {/* Media Uploads */}
           <div className="space-y-6">
@@ -655,46 +646,51 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
           </div>
 
           {/* Status and Visibility */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-2">
-                Status
-              </label>
-              <select
-                name="status"
-                value={formData.status}
-                onChange={handleChange}
-                className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-              >
-                {statusOptions.map(status => (
-                  <option key={status} value={status}>
-                    {status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                  </option>
-                ))}
-              </select>
+          {!isEditing && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">
+                  Status
+                </label>
+                <select
+                  name="status"
+                  value={formData.status}
+                  onChange={handleChange}
+                  className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                >
+                  {statusOptions.map(status => (
+                    <option key={status} value={status}>
+                      {status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">
+                  Visibility
+                </label>
+                <select
+                  name="visibility"
+                  value={formData.visibility}
+                  onChange={handleChange}
+                  className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                >
+                  <option value="public">Public</option>
+                  <option value="private">Private</option>
+                </select>
+              </div>
             </div>
+          )}
 
-            <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-2">
-                Visibility
-              </label>
-              <select
-                name="visibility"
-                value={formData.visibility}
-                onChange={handleChange}
-                className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-              >
-                <option value="public">Public</option>
-                <option value="private">Private</option>
-              </select>
+          {!isEditing && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-white border-b border-zinc-800 pb-2">Advanced Settings</h3>
             </div>
-          </div>
+          )}
 
-          {/* Advanced Settings - Collapsible Sections */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-white border-b border-zinc-800 pb-2">Advanced Settings</h3>
-
-            {/* Prize Distribution Section */}
+          {/* Prize Distribution Section */}
+          {!isEditing && (
             <div className="bg-zinc-800/30 border border-zinc-700 rounded-lg">
               <button
                 type="button"
@@ -751,8 +747,10 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
                 </div>
               )}
             </div>
+          )}
 
-            {/* Tournament Phases Section */}
+          {/* Tournament Phases Section */}
+          {!isEditing && (
             <div className="bg-zinc-800/30 border border-zinc-700 rounded-lg">
               <button
                 type="button"
@@ -822,7 +820,7 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
                 </div>
               )}
             </div>
-          </div>
+          )}
 
           {/* Action Buttons */}
           <div className="flex justify-end gap-4 pt-6 border-t border-zinc-800">
