@@ -15,7 +15,7 @@ import Team from '../models/team.model.js';
 import Tournament from '../models/tournament.model.js';
 import Registration from '../models/registration.model.js';
 
-const TOURNAMENT_ID = '699ddff6e4cfdf05a5f78903';
+const TOURNAMENT_ID = '69a6fce25061f0d80c2ab07f';
 const TEAM_COUNT = 1020;
 const PLAYERS_PER_TEAM = 5;
 

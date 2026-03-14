@@ -917,7 +917,11 @@ router.post('/complete-org-profile', verifyOrgToken, asyncHandler(async (req, re
       ownerInstagram
     } = req.body;
 
-    const org = req.organization;
+    const org = await Organization.findById(req.organization._id);
+    
+    if (!org) {
+      return res.status(404).json({ message: "Organization not found" });
+    }
 
     if (!orgName || !ownerName || !country) {
       return res.status(400).json({ message: "Organization name, owner name and country are required" });
@@ -938,6 +942,10 @@ router.post('/complete-org-profile', verifyOrgToken, asyncHandler(async (req, re
     org.headquarters = headquarters || '';
     org.description = description || '';
     org.contactPhone = contactPhone || '';
+    
+    if (!org.orgSocial) org.orgSocial = {};
+    if (!org.ownerSocial) org.ownerSocial = {};
+
     org.orgSocial.website = website || '';
     org.orgSocial.instagram = orgInstagram || '';
     org.ownerSocial.instagram = ownerInstagram || '';

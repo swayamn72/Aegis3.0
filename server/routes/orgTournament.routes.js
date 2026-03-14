@@ -834,6 +834,10 @@ router.post('/:tournamentId/lock-registrations', verifyApprovedOrgToken, async (
       }
     );
 
+    await Tournament.findByIdAndUpdate(tournamentId, {
+      $set: { status: 'registration_closed' }
+    });
+
     const alreadyAssigned = approvedCount - bulkResult.modifiedCount;
 
     res.json({
@@ -1517,6 +1521,19 @@ router.put('/:tournamentId/assign-groups', verifyApprovedOrgToken, async (req, r
     const phaseDoc = tournament.phases?.find(p => p.name === phase);
     if (!phaseDoc) return res.status(404).json({ error: `Phase "${phase}" not found` });
 
+    // Guard: reject edits to any group that is currently locked
+    // (a match is scheduled for it — delete that match first to unlock)
+    const lockedGroupNames = new Set(
+      (phaseDoc.groups || []).filter(g => g.isLocked).map(g => g.name)
+    );
+    for (const group of groups) {
+      if (lockedGroupNames.has(group.name)) {
+        return res.status(400).json({
+          error: `Group "${group.name}" is locked — a match has been scheduled for it. Delete the scheduled match first to unlock.`
+        });
+      }
+    }
+
     // Build bulkWrite — one updateOne per team, all in a single round-trip
     const bulkOps = [];
     for (const group of groups) {
@@ -1550,11 +1567,31 @@ router.put('/:tournamentId/assign-groups', verifyApprovedOrgToken, async (req, r
       await Registration.bulkWrite(bulkOps, { ordered: false });
     }
 
-    // Persist group names (not team lists) into tournament.phases[x].groups
-    // so PointsTable / MatchScheduler know which groups exist for this phase
+    // Build group metadata for tournament doc.
+    // - Generate slotList from the ordered teams in the payload (slot 1 = teams[0], …)
+    // - Preserve existing isLocked value (only the schedule/delete-match routes change it)
     const groupMetadata = groups
       .filter(g => g.name)
-      .map(g => ({ name: g.name, teams: [] })); // no team IDs stored here
+      .map(g => {
+        const existingGroup = (phaseDoc.groups || []).find(eg => eg.name === g.name);
+        const slotList = (g.teams || [])
+          .filter(id => mongoose.Types.ObjectId.isValid(id))
+          .map((teamId, idx) => {
+            // BGMI lobby convention:
+            //   slot 1     → reserved (never assigned)
+            //   slot 2     → 24th team only (last / extra team)
+            //   slots 3-25 → teams 1-23 in order
+            const slot = idx < 23 ? idx + 3 : 2;
+            return { slot, team: teamId };
+          });
+
+        return {
+          name: g.name,
+          teams: [],                                   // Membership lives in Registration
+          isLocked: existingGroup?.isLocked || false,  // Preserve existing lock state
+          slotList
+        };
+      });
 
     await Tournament.updateOne(
       { _id: tournamentId, 'phases._id': phaseDoc._id },
@@ -1570,6 +1607,68 @@ router.put('/:tournamentId/assign-groups', verifyApprovedOrgToken, async (req, r
   } catch (err) {
     console.error('Error assigning groups:', err);
     res.status(500).json({ error: 'Failed to assign groups' });
+  }
+});
+
+// ============================================================================
+// GET GROUP SLOT LIST — returns groups with their slotList populated with
+// team names/logos for a given phase. Used by TeamGrouping & MatchScheduler.
+// ============================================================================
+
+router.get('/:tournamentId/group-slot-list', verifyApprovedOrgToken, async (req, res) => {
+  try {
+    const { tournamentId } = req.params;
+    const { phase } = req.query;
+
+    if (!phase) {
+      return res.status(400).json({ error: '"phase" query parameter is required' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(tournamentId)) {
+      return res.status(400).json({ error: 'Invalid tournament ID' });
+    }
+
+    const tournament = await Tournament.findById(tournamentId)
+      .select('organizer.organizationRef phases')
+      .lean();
+
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+    if (tournament.organizer.organizationRef?.toString() !== req.organization._id.toString()) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    const phaseDoc = tournament.phases?.find(p => p.name === phase);
+    if (!phaseDoc) return res.status(404).json({ error: `Phase "${phase}" not found` });
+
+    const groups = phaseDoc.groups || [];
+
+    // Collect all unique team IDs across all group slotLists in one pass
+    const allTeamIds = groups.flatMap(g =>
+      (g.slotList || []).map(s => s.team).filter(Boolean)
+    );
+
+    // Single batch populate for all teams
+    const teamDocs = await Team.find({ _id: { $in: allTeamIds } })
+      .select('teamName teamTag logo')
+      .lean();
+
+    const teamMap = Object.fromEntries(teamDocs.map(t => [t._id.toString(), t]));
+
+    const enrichedGroups = groups.map(g => ({
+      name: g.name,
+      isLocked: g.isLocked || false,
+      slotList: (g.slotList || [])
+        .sort((a, b) => a.slot - b.slot)
+        .map(s => ({
+          slot: s.slot,
+          team: s.team ? (teamMap[s.team.toString()] || { _id: s.team }) : null
+        }))
+    }));
+
+    res.json({ groups: enrichedGroups });
+  } catch (err) {
+    console.error('Error fetching group slot list:', err);
+    res.status(500).json({ error: 'Failed to fetch group slot list' });
   }
 });
 

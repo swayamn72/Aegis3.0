@@ -87,9 +87,13 @@ router.post(
         stream.end(req.file.buffer);
       });
 
-      // Save URL
-      organization.logo = uploadResult.secure_url;
-      await organization.save();
+      // Save URL — use findByIdAndUpdate because req.organization is a plain
+      // object (from the JWT middleware), NOT a Mongoose document
+      await Organization.findByIdAndUpdate(
+        req.organization._id,
+        { logo: uploadResult.secure_url },
+        { new: true }
+      );
 
       res.status(200).json({
         message: 'Logo uploaded successfully',

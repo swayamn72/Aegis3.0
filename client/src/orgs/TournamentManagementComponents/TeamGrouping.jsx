@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Users, Shuffle, Save, AlertCircle, Grid3x3, Loader2, Plus, Trash2, ArrowRightLeft, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Users, Shuffle, Save, AlertCircle, Grid3x3, Loader2, Plus, Trash2, ArrowRightLeft, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import axiosInstance from '../../utils/axiosConfig';
 
 // ─── TeamCard ────────────────────────────────────────────────────────────────
-const TeamCard = ({ team, groupName, allGroups, onRemove, onMove }) => {
+const TeamCard = ({ team, groupName, allGroups, onRemove, onMove, isLocked }) => {
     const [showMove, setShowMove] = useState(false);
     const otherGroups = allGroups.filter(g => g.name !== groupName);
 
@@ -24,92 +24,153 @@ const TeamCard = ({ team, groupName, allGroups, onRemove, onMove }) => {
                     {team.teamTag && <p className="text-gray-500 text-xs">[{team.teamTag}]</p>}
                 </div>
             </div>
-            <div className="flex items-center gap-1 ml-2 flex-shrink-0">
-                {otherGroups.length > 0 && (
-                    <div className="relative">
-                        <button
-                            onClick={() => setShowMove(v => !v)}
-                            className="p-1 text-gray-500 hover:text-blue-400 transition-colors"
-                            title="Move to group"
-                        >
-                            <ArrowRightLeft className="w-3.5 h-3.5" />
-                        </button>
-                        {showMove && (
-                            <div className="absolute right-0 top-7 z-20 bg-gray-800 border border-gray-600 rounded-lg shadow-xl min-w-[130px] py-1">
-                                <p className="text-gray-500 text-xs px-3 py-1">Move to…</p>
-                                {otherGroups.map(g => (
-                                    <button
-                                        key={g.name}
-                                        onClick={() => { onMove(groupName, team._id, g.name); setShowMove(false); }}
-                                        className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-gray-700 transition-colors"
-                                    >
-                                        {g.name}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
-                <button
-                    onClick={() => onRemove(groupName, team._id)}
-                    className="p-1 text-gray-500 hover:text-red-400 transition-colors text-lg leading-none"
-                    title="Remove from group"
-                >
-                    ×
-                </button>
-            </div>
+            {/* Move / Remove only shown when group is not locked */}
+            {!isLocked && (
+                <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+                    {otherGroups.length > 0 && (
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowMove(v => !v)}
+                                className="p-1 text-gray-500 hover:text-blue-400 transition-colors"
+                                title="Move to group"
+                            >
+                                <ArrowRightLeft className="w-3.5 h-3.5" />
+                            </button>
+                            {showMove && (
+                                <div className="absolute right-0 top-7 z-20 bg-gray-800 border border-gray-600 rounded-lg shadow-xl min-w-[130px] py-1">
+                                    <p className="text-gray-500 text-xs px-3 py-1">Move to…</p>
+                                    {otherGroups.map(g => (
+                                        <button
+                                            key={g.name}
+                                            onClick={() => { onMove(groupName, team._id, g.name); setShowMove(false); }}
+                                            className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-gray-700 transition-colors"
+                                        >
+                                            {g.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    <button
+                        onClick={() => onRemove(groupName, team._id)}
+                        className="p-1 text-gray-500 hover:text-red-400 transition-colors text-lg leading-none"
+                        title="Remove from group"
+                    >
+                        ×
+                    </button>
+                </div>
+            )}
         </div>
     );
 };
 
 // ─── GroupCard ────────────────────────────────────────────────────────────────
-const GroupCard = ({ group, phaseTeamMap, allGroups, unassignedTeams, onRemove, onMove, onAddTeam, onDeleteGroup, index }) => {
+const GroupCard = ({ group, phaseTeamMap, allGroups, unassignedTeams, onRemove, onMove, onAddTeam, onDeleteGroup, index, slotData }) => {
     const [addingTeam, setAddingTeam] = useState(false);
     const groupNumber = group.name?.match(/\d+/)?.[0] || (index + 1);
+    const isLocked = slotData?.isLocked || false;
+    // Sort: slot 2 always last (BGMI lobby convention — 24th-team spot)
+    const slotList = [...(slotData?.slotList || [])].sort((a, b) =>
+        a.slot === 2 ? 1 : b.slot === 2 ? -1 : a.slot - b.slot
+    );
 
     return (
-        <div className="bg-gray-800/50 rounded-xl border border-gray-700 p-5">
+        <div className={`bg-gray-800/50 rounded-xl border p-5 ${isLocked ? 'border-orange-500/40' : 'border-gray-700'}`}>
             <div className="flex items-center justify-between mb-4">
                 <h3 className="text-white font-semibold flex items-center gap-2">
                     <div className="w-8 h-8 bg-orange-500/20 rounded-lg flex items-center justify-center">
                         <span className="text-orange-400 font-bold text-sm">{groupNumber}</span>
                     </div>
                     {group.name}
+                    {isLocked && (
+                        <span
+                            className="flex items-center gap-1 px-2 py-0.5 bg-orange-500/20 border border-orange-400/40 rounded-full text-orange-400 text-xs"
+                            title="Locked — a match has been scheduled for this group. Delete the scheduled match to unlock."
+                        >
+                            <Lock className="w-3 h-3" />
+                            Locked
+                        </span>
+                    )}
                 </h3>
                 <div className="flex items-center gap-2">
                     <span className="text-gray-400 text-sm">{group.teams.length} teams</span>
-                    <button
-                        onClick={() => onDeleteGroup(group.name)}
-                        className="p-1 text-gray-600 hover:text-red-400 transition-colors"
-                        title="Delete group"
-                    >
-                        <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {!isLocked && (
+                        <button
+                            onClick={() => onDeleteGroup(group.name)}
+                            className="p-1 text-gray-600 hover:text-red-400 transition-colors"
+                            title="Delete group"
+                        >
+                            <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                    )}
                 </div>
             </div>
 
-            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                {group.teams.map(teamId => {
-                    const team = phaseTeamMap[teamId];
-                    if (!team) return null;
-                    return (
-                        <TeamCard
-                            key={teamId}
-                            team={team}
-                            groupName={group.name}
-                            allGroups={allGroups}
-                            onRemove={onRemove}
-                            onMove={onMove}
-                        />
-                    );
-                })}
-                {group.teams.length === 0 && (
-                    <p className="text-gray-500 text-sm text-center py-4">No teams in this group</p>
-                )}
-            </div>
+            {/* Slot list — shown when group has been saved with slot assignments */}
+            {slotList.length > 0 ? (
+                <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1 mb-3">
+                    {slotList.map(entry => (
+                        <div
+                            key={entry.slot}
+                            className="flex items-center gap-3 px-3 py-2 bg-gray-700/50 rounded-lg"
+                        >
+                            <span className="flex-shrink-0 w-16 text-xs font-bold text-orange-400">
+                                Slot {entry.slot}
+                            </span>
+                            <span className="text-white text-sm truncate">
+                                {entry.team?.teamName || '—'}
+                            </span>
+                            {entry.team?.teamTag && (
+                                <span className="text-gray-500 text-xs">[{entry.team.teamTag}]</span>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                /* Fallback: no slot list yet — show BGMI slot numbers derived client-side */
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                    {group.teams.map((teamId, idx) => {
+                        const team = phaseTeamMap[teamId];
+                        if (!team) return null;
+                        // BGMI: teams 1-23 → slots 3-25, team 24 → slot 2
+                        const slotNum = idx < 23 ? idx + 3 : 2;
+                        return (
+                            <div
+                                key={teamId}
+                                className="flex items-center gap-3 px-3 py-2 bg-gray-700/50 rounded-lg"
+                            >
+                                <span className="flex-shrink-0 w-16 text-xs font-bold text-orange-400">
+                                    Slot {slotNum}
+                                </span>
+                                <div className="flex-1 flex items-center gap-2 min-w-0">
+                                    {team.logo ? (
+                                        <img src={team.logo} alt={team.teamName} className="w-6 h-6 rounded flex-shrink-0 object-cover" />
+                                    ) : null}
+                                    <span className="text-white text-sm truncate">{team.teamName}</span>
+                                    {team.teamTag && <span className="text-gray-500 text-xs">[{team.teamTag}]</span>}
+                                </div>
+                                {/* Remove button — only when unlocked */}
+                                {!isLocked && (
+                                    <button
+                                        onClick={() => onRemove(group.name, teamId)}
+                                        className="p-1 text-gray-500 hover:text-red-400 transition-colors text-lg leading-none flex-shrink-0"
+                                        title="Remove from group"
+                                    >
+                                        ×
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })}
+                    {group.teams.length === 0 && (
+                        <p className="text-gray-500 text-sm text-center py-4">No teams in this group</p>
+                    )}
+                </div>
+            )}
 
-            {/* Add team to group */}
-            {unassignedTeams.length > 0 && (
+            {/* Add team — only when not locked and there are unassigned teams */}
+            {!isLocked && unassignedTeams.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-gray-700">
                     {addingTeam ? (
                         <div className="flex gap-2">
@@ -145,6 +206,13 @@ const GroupCard = ({ group, phaseTeamMap, allGroups, unassignedTeams, onRemove, 
                     )}
                 </div>
             )}
+
+            {/* Locked hint */}
+            {isLocked && (
+                <p className="mt-3 pt-3 border-t border-orange-500/20 text-xs text-orange-400/70 text-center">
+                    🔒 Delete the scheduled match to edit this group
+                </p>
+            )}
         </div>
     );
 };
@@ -169,8 +237,35 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
             return data.teams || [];
         },
         enabled: !!tournament?._id && !!selectedPhase,
-        staleTime: 5 * 60 * 1000, // 5 mins cache
+        staleTime: 5 * 60 * 1000,
     });
+
+    // ── Fetch slot list (isLocked + slotList per group)
+    const { data: slotListData } = useQuery({
+        queryKey: ['groupSlotList', tournament?._id, selectedPhase],
+        queryFn: async () => {
+            const { data } = await axiosInstance.get(
+                `/api/org-tournaments/${tournament._id}/group-slot-list`,
+                { params: { phase: selectedPhase } }
+            );
+            return data.groups || [];
+        },
+        enabled: !!tournament?._id && !!selectedPhase,
+        staleTime: 30 * 1000, // 30s — lock state can change when matches are scheduled/deleted
+    });
+
+    // Build a map: groupName -> { isLocked, slotList } for O(1) lookup in GroupCard
+    const slotDataByGroup = useMemo(() => {
+        const map = {};
+        (slotListData || []).forEach(g => { map[g.name] = g; });
+        return map;
+    }, [slotListData]);
+
+    // Whether ANY group is locked (determines if we need to show a global warning)
+    const hasLockedGroups = useMemo(
+        () => (slotListData || []).some(g => g.isLocked),
+        [slotListData]
+    );
 
     // ── Save groups mutation
     const { mutate: saveGroups, isPending: saving } = useMutation({
@@ -186,6 +281,7 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
         onSuccess: () => {
             toast.success('Groups saved successfully');
             queryClient.invalidateQueries(['phaseTeams', tournament?._id, selectedPhase]);
+            queryClient.invalidateQueries(['groupSlotList', tournament?._id, selectedPhase]);
             if (onUpdate) onUpdate();
         },
         onError: (err) => {
@@ -317,6 +413,14 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
     const handleSave = () => {
         if (!selectedPhase) { toast.error('Select a phase first'); return; }
         if (groups.length === 0) { toast.error('Create groups first (use Auto Allocate)'); return; }
+
+        // Prevent saving if any group is locked
+        const lockedGroup = groups.find(g => slotDataByGroup[g.name]?.isLocked);
+        if (lockedGroup) {
+            toast.error(`Group "${lockedGroup.name}" is locked — delete the scheduled match first`);
+            return;
+        }
+
         saveGroups(groups);
     };
 
@@ -346,6 +450,14 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
                     {saving ? 'Saving…' : (tournament.status === 'completed' ? 'Groups Locked' : 'Save Groups')}
                 </button>
             </div>
+
+            {/* Locked-group global warning banner */}
+            {hasLockedGroups && (
+                <div className="flex items-center gap-3 px-4 py-3 mb-4 bg-orange-500/10 border border-orange-500/30 rounded-xl text-orange-300 text-sm">
+                    <Lock className="w-4 h-4 flex-shrink-0" />
+                    Some groups are locked because matches are scheduled for them. Delete the scheduled match to unlock a group.
+                </div>
+            )}
 
             {/* Phase Selector */}
             <div className="bg-gray-800/50 rounded-xl border border-gray-700 p-5 mb-6">
@@ -392,7 +504,7 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
 
                             <button
                                 onClick={handleAutoAllocate}
-                                disabled={phaseTeams.length === 0 || tournament.status === 'completed'}
+                                disabled={phaseTeams.length === 0 || tournament.status === 'completed' || hasLockedGroups}
                                 className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all disabled:opacity-50 flex items-center gap-2"
                             >
                                 <Grid3x3 className="w-4 h-4" />
@@ -401,7 +513,7 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
 
                             <button
                                 onClick={handleShuffle}
-                                disabled={groups.length === 0 || tournament.status === 'completed'}
+                                disabled={groups.length === 0 || tournament.status === 'completed' || hasLockedGroups}
                                 className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-all disabled:opacity-50 flex items-center gap-2"
                             >
                                 <Shuffle className="w-4 h-4" />
@@ -410,7 +522,7 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
 
                             <button
                                 onClick={handleAddGroup}
-                                disabled={phaseTeams.length === 0 || tournament.status === 'completed'}
+                                disabled={phaseTeams.length === 0 || tournament.status === 'completed' || hasLockedGroups}
                                 className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all disabled:opacity-50 flex items-center gap-2"
                             >
                                 <Plus className="w-4 h-4" />
@@ -444,6 +556,7 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
                                         onAddTeam={handleAddTeamToGroup}
                                         onDeleteGroup={handleDeleteGroup}
                                         index={groups.findIndex(g => g.name === group.name)}
+                                        slotData={slotDataByGroup[group.name]}
                                     />
                                 ))}
                             </div>

@@ -15,16 +15,20 @@ const MatchManagement = ({ tournament, onUpdate }) => {
     const [showCredentialsModal, setShowCredentialsModal] = useState(false);
     const [selectedMatch, setSelectedMatch] = useState(null);
     const [credentialsForm, setCredentialsForm] = useState({ roomId: '', roomPassword: '' });
-    const [uploadingScreenshot, setUploadingScreenshot] = useState(null);
     const [showUploadModal, setShowUploadModal] = useState(false);
-    const [selectedFile, setSelectedFile] = useState(null);
-    const [previewUrl, setPreviewUrl] = useState(null);
+    const [selectedFiles, setSelectedFiles] = useState([]);
+    const [previewUrls, setPreviewUrls] = useState([]);
     const [expandedTeams, setExpandedTeams] = useState(new Set());
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [matchToDelete, setMatchToDelete] = useState(null);
     const [isDeleting, setIsDeleting] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [totalMatches, setTotalMatches] = useState(0);
+    // OCR state
+    const [ocrStep, setOcrStep] = useState(1);          // 1 = upload, 2 = review
+    const [ocrResults, setOcrResults] = useState([]);   // rows returned by server
+    const [ocrProcessing, setOcrProcessing] = useState(false);
+    const [applyingOcr, setApplyingOcr] = useState(false);
     const MATCHES_PER_PAGE = 10;
 
     useEffect(() => {
@@ -246,80 +250,122 @@ const MatchManagement = ({ tournament, onUpdate }) => {
     };
 
     const handleFileSelect = (e) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            if (!file.type.startsWith('image/')) {
-                toast.error('Please select an image file');
-                return;
-            }
-            if (file.size > 5 * 1024 * 1024) {
-                toast.error('File size should be less than 5MB');
-                return;
-            }
-            setSelectedFile(file);
-            setPreviewUrl(URL.createObjectURL(file));
-        }
-    };
+        const files = Array.from(e.target.files || []);
+        if (files.length === 0) return;
 
-    const handleUploadScreenshot = async () => {
-        if (!selectedFile || !selectedMatch) {
-            toast.error('Please select a file');
+        if (files.length > 12) {
+            toast.error('You can upload up to 12 screenshots at a time');
             return;
         }
 
-        try {
-            setUploadingScreenshot(selectedMatch._id);
+        const validFiles = [];
+        const newPreviewUrls = [];
 
-            const formData = new FormData();
-            formData.append('screenshot', selectedFile);
+        for (const file of files) {
+            if (!file.type.startsWith('image/')) {
+                toast.error(`${file.name} is not an image file`);
+                continue;
+            }
+            if (file.size > 5 * 1024 * 1024) {
+                toast.error(`${file.name} is too large (max 5MB)`);
+                continue;
+            }
+            validFiles.push(file);
+            newPreviewUrls.push(URL.createObjectURL(file));
+        }
 
-            const response = await axios.post(
-                `/api/org-tournaments/matches/${selectedMatch._id}/upload-result`,
-                formData,
-                {
-                    headers: {
-                        'Content-Type': 'multipart/form-data'
-                    }
-                }
-            );
-
-            // Update the match in the list
-            setMatches(matches.map(match =>
-                match._id === selectedMatch._id ? response.data.match : match
-            ));
-
-            toast.success('Match results processed successfully! ' + (response.data.note || ''));
-            setShowUploadModal(false);
-            setSelectedMatch(null);
-            setSelectedFile(null);
-            setPreviewUrl(null);
-
-            // Refresh matches to get updated data
-            await fetchMatches();
-
-            if (onUpdate) onUpdate();
-        } catch (err) {
-            console.error('Error uploading screenshot:', err);
-            toast.error(err.response?.data?.error || 'Failed to upload screenshot');
-        } finally {
-            setUploadingScreenshot(null);
+        if (validFiles.length > 0) {
+            setSelectedFiles(validFiles.slice(0, 12));
+            setPreviewUrls(newPreviewUrls.slice(0, 12));
         }
     };
+
+    // ── OCR upload: send image to server and get editable results ──
+    const handleUploadScreenshot = async () => {
+        if (selectedFiles.length === 0 || !selectedMatch) {
+            toast.error('Please select at least one screenshot first');
+            return;
+        }
+        try {
+            setOcrProcessing(true);
+            const formData = new FormData();
+            selectedFiles.forEach(file => {
+                formData.append('screenshots', file);
+            });
+
+            const response = await axios.post(
+                `/api/matches/${selectedMatch._id}/upload-result`,
+                formData,
+                { headers: { 'Content-Type': 'multipart/form-data' } }
+            );
+
+            // Initialise editable rows from server response
+            setOcrResults(
+                response.data.ocrResults.map(r => ({
+                    ...r,
+                    // Make editable copies of numeric fields
+                    position: r.position ?? '',
+                    kills: r.kills ?? 0,
+                }))
+            );
+            setOcrStep(2);
+        } catch (err) {
+            const msg = err.response?.data?.error || 'OCR processing failed. Try a clearer screenshot.';
+            const hint = err.response?.data?.hint || '';
+            toast.error(hint ? `${msg} ${hint}` : msg);
+        } finally {
+            setOcrProcessing(false);
+        }
+    };
+
+    // ── OCR confirm: apply (possibly-edited) rows via existing results endpoint ──
+    const handleApplyOcrResults = async () => {
+        if (!selectedMatch || ocrResults.length === 0) return;
+        try {
+            setApplyingOcr(true);
+
+            const results = ocrResults.map(r => ({
+                teamId: r.teamId,
+                position: parseInt(r.position) || null,
+                kills: parseInt(r.kills) || 0,
+                // Now includes fuzzy-matched player kills from OCR
+                playerKills: r.playerKills || [],
+            }));
+
+            const response = await axios.put(
+                `/api/matches/${selectedMatch._id}/results`,
+                { results }
+            );
+
+            setMatches(prev => prev.map(m => m._id === selectedMatch._id ? response.data : m));
+            toast.success('Match results applied successfully!');
+            closeUploadModal();
+            if (onUpdate) onUpdate();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Failed to apply results');
+        } finally {
+            setApplyingOcr(false);
+        }
+    };
+
 
     const openUploadModal = (match) => {
         setSelectedMatch(match);
         setShowUploadModal(true);
         setSelectedFile(null);
         setPreviewUrl(null);
+        setOcrStep(1);
+        setOcrResults([]);
     };
 
     const closeUploadModal = () => {
+        if (ocrProcessing || applyingOcr) return; // prevent close during async ops
         setShowUploadModal(false);
         setSelectedMatch(null);
         setSelectedFile(null);
-        if (previewUrl) {
-            URL.revokeObjectURL(previewUrl);
-        }
+        setOcrStep(1);
+        setOcrResults([]);
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
         setPreviewUrl(null);
     };
 
@@ -466,15 +512,11 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                                     </span>
                                     <button
                                         onClick={() => openUploadModal(match)}
-                                        disabled={uploadingScreenshot === match._id || tournament.status === 'completed'}
+                                        disabled={tournament.status === 'completed'}
                                         className="p-2 text-gray-400 hover:text-orange-400 hover:bg-orange-500/10 rounded-lg transition-colors disabled:opacity-50"
-                                        title="Upload match result screenshot"
+                                        title="Upload & OCR match result screenshot"
                                     >
-                                        {uploadingScreenshot === match._id ? (
-                                            <div className="w-4 h-4 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
-                                        ) : (
-                                            <Upload className="w-4 h-4" />
-                                        )}
+                                        <Upload className="w-4 h-4" />
                                     </button>
                                     <button
                                         onClick={() => {
@@ -768,101 +810,237 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                 </div>
             )}
 
-            {/* Upload Screenshot Modal */}
+            {/* Upload Screenshot Modal — 2-step OCR flow */}
             {showUploadModal && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-all duration-300">
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-gray-900 border border-gray-700 rounded-2xl max-w-2xl w-full p-8 shadow-2xl overflow-y-auto max-h-[90vh]">
-                        <h3 className="text-lg font-semibold text-white mb-4">Upload Match Result Screenshot</h3>
-                        <p className="text-gray-400 mb-4 text-sm">
-                            Upload a screenshot to process match results for Match #{selectedMatch?.matchNumber}
-                            <br />
-                            <span className="text-orange-400 text-xs">⚠️ OCR is being fine-tuned. Currently using simulated data for demonstration.</span>
-                            <br />
-                            <span className="text-gray-500 text-xs">Screenshot will be processed but not stored.</span>
+
+                        {/* ── Step header ── */}
+                        <div className="flex items-center justify-between mb-1">
+                            <h3 className="text-lg font-semibold text-white">
+                                {ocrStep === 1 ? 'Upload Result Screenshot' : 'Review OCR Results'}
+                            </h3>
+                            <div className="flex items-center gap-3">
+                                <span className="text-xs text-gray-500">Match #{selectedMatch?.matchNumber}</span>
+                                <div className="flex gap-1">
+                                    <span className={`w-2 h-2 rounded-full ${ocrStep >= 1 ? 'bg-orange-500' : 'bg-gray-600'}`} />
+                                    <span className={`w-2 h-2 rounded-full ${ocrStep >= 2 ? 'bg-orange-500' : 'bg-gray-600'}`} />
+                                </div>
+                            </div>
+                        </div>
+                        <p className="text-gray-400 text-sm mb-6">
+                            {ocrStep === 1
+                                ? 'Upload a clear BGMI results screenshot. The slot list is loaded automatically from the tournament.'
+                                : 'Review the detected data. Edit any incorrect values before applying.'}
                         </p>
 
-                        <div className="space-y-4">
-                            {/* File Input Area */}
-                            <div className="border-2 border-dashed border-gray-700 rounded-lg p-6 text-center hover:border-orange-500 transition-colors">
-                                <input
-                                    type="file"
-                                    id="screenshot-upload"
-                                    accept="image/*"
-                                    onChange={handleFileSelect}
-                                    className="hidden"
-                                />
-                                <label
-                                    htmlFor="screenshot-upload"
-                                    className="cursor-pointer flex flex-col items-center"
+                        {/* ════ STEP 1: File picker ════ */}
+                        {ocrStep === 1 && (
+                            <div className="space-y-4">
+                                <div
+                                    className="border-2 border-dashed border-gray-700 rounded-xl p-8 text-center hover:border-orange-500 transition-colors cursor-pointer"
+                                    onClick={() => document.getElementById('screenshot-upload').click()}
+                                    onDragOver={e => e.preventDefault()}
+                                    onDrop={e => {
+                                        e.preventDefault();
+                                        const files = Array.from(e.dataTransfer.files || []);
+                                        if (files.length > 0) {
+                                            const ev = { target: { files: files } };
+                                            handleFileSelect(ev);
+                                        }
+                                    }}
                                 >
-                                    <Image className="w-12 h-12 text-gray-500 mb-3" />
-                                    <span className="text-white font-medium mb-1">
-                                        {selectedFile ? selectedFile.name : 'Click to select a screenshot'}
-                                    </span>
-                                    <span className="text-gray-500 text-sm">
-                                        PNG, JPG up to 5MB
-                                    </span>
-                                </label>
-                            </div>
-
-                            {/* Preview */}
-                            {previewUrl && (
-                                <div className="bg-gray-800 rounded-lg p-4">
-                                    <p className="text-white font-medium mb-2">Preview:</p>
-                                    <img
-                                        src={previewUrl}
-                                        alt="Screenshot preview"
-                                        className="w-full h-auto max-h-96 object-contain rounded-lg"
+                                    <input
+                                        type="file"
+                                        multiple
+                                        id="screenshot-upload"
+                                        accept="image/jpeg,image/png,image/webp"
+                                        onChange={handleFileSelect}
+                                        className="hidden"
                                     />
+                                    <Image className="w-12 h-12 text-gray-500 mx-auto mb-3" />
+                                    <p className="text-white font-medium mb-1">
+                                        {selectedFiles.length > 0 ? `${selectedFiles.length} file(s) selected` : 'Click or drag to upload screenshots (up to 12)'}
+                                    </p>
+                                    <p className="text-gray-500 text-sm">JPEG · PNG · WebP · up to 5 MB each</p>
                                 </div>
-                            )}
 
-                            {/* Info Box */}
-                            <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
-                                <div className="flex items-start gap-2">
-                                    <AlertCircle className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
-                                    <div className="text-blue-400 text-xs">
-                                        <p className="font-medium mb-1">How it works:</p>
-                                        <ul className="list-disc list-inside space-y-1 text-blue-300">
-                                            <li>Upload a clear screenshot of match results</li>
-                                            <li>System will process and extract team positions and kills</li>
-                                            <li>Points will be automatically calculated and assigned</li>
-                                            <li>Review and confirm the results before finalizing</li>
-                                        </ul>
+                                {previewUrls.length > 0 && (
+                                    <div className="bg-gray-800 rounded-xl p-4">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <p className="text-white text-sm font-medium">Preview ({previewUrls.length}/12)</p>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setSelectedFiles([]);
+                                                    setPreviewUrls([]);
+                                                }}
+                                                className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                                            >
+                                                Clear All
+                                            </button>
+                                        </div>
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                            {previewUrls.map((url, i) => (
+                                                <div key={i} className="relative group aspect-[4/3]">
+                                                    <img
+                                                        src={url}
+                                                        alt={`Preview ${i + 1}`}
+                                                        className="w-full h-full object-cover rounded-lg"
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4">
+                                    <div className="flex items-start gap-2 text-blue-300 text-xs">
+                                        <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-blue-400" />
+                                        <div>
+                                            <p className="font-medium text-blue-400 mb-1">How OCR works</p>
+                                            <ul className="list-disc list-inside space-y-1">
+                                                <li>Upload a clear end-of-match result screenshot</li>
+                                                <li>Slot list is auto-loaded from the tournament phase groups</li>
+                                                <li>AWS Rekognition reads positions, player names &amp; kills</li>
+                                                <li>Review and edit results before applying</li>
+                                            </ul>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        </div>
 
-                        <div className="flex gap-3 mt-8">
-                            <button
-                                onClick={closeUploadModal}
-                                disabled={uploadingScreenshot === selectedMatch?._id}
-                                className="flex-1 px-4 py-3 bg-gray-800 text-white rounded-xl hover:bg-gray-700 transition-all font-medium disabled:opacity-50"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleUploadScreenshot}
-                                disabled={!selectedFile || uploadingScreenshot === selectedMatch?._id}
-                                className="flex-1 px-4 py-3 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition-all font-bold disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20"
-                            >
-                                {uploadingScreenshot === selectedMatch?._id ? (
-                                    <>
-                                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                        Processing...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Upload className="w-5 h-5" />
-                                        Upload & Process
-                                    </>
+                                <div className="flex gap-3 pt-2">
+                                    <button
+                                        onClick={() => { setShowUploadModal(false); setSelectedFiles([]); setPreviewUrls([]); }}
+                                        className="flex-1 px-4 py-3 bg-gray-800 text-white rounded-xl hover:bg-gray-700 transition-all font-medium"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleUploadScreenshot}
+                                        disabled={selectedFiles.length === 0 || ocrProcessing}
+                                        className="flex-1 px-4 py-3 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition-all font-bold disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20"
+                                    >
+                                        {ocrProcessing ? (
+                                            <>
+                                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                Processing…
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Upload className="w-5 h-5" />
+                                                Run OCR
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ════ STEP 2: Editable results table ════ */}
+                        {ocrStep === 2 && (
+                            <div className="space-y-4">
+                                <div className="overflow-x-auto rounded-xl border border-gray-700">
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="bg-gray-800 text-gray-400 text-xs uppercase tracking-wide">
+                                                <th className="px-4 py-3 text-left">Team</th>
+                                                <th className="px-4 py-3 text-center">Position</th>
+                                                <th className="px-4 py-3 text-center">Kills</th>
+                                                <th className="px-4 py-3 text-center">Pos Pts</th>
+                                                <th className="px-4 py-3 text-center">Kill Pts</th>
+                                                <th className="px-4 py-3 text-center">Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-700">
+                                            {ocrResults.map((row, idx) => {
+                                                const POSITION_POINTS = { 1: 10, 2: 6, 3: 5, 4: 4, 5: 3, 6: 2, 7: 1, 8: 1 };
+                                                const pos = parseInt(row.position) || null;
+                                                const kills = parseInt(row.kills) || 0;
+                                                const posPts = POSITION_POINTS[pos] || 0;
+                                                const total = posPts + kills;
+                                                return (
+                                                    <tr key={row.teamId} className="bg-gray-800/40 hover:bg-gray-700/40 transition-colors">
+                                                        <td className="px-4 py-3">
+                                                            <p className="text-white font-medium">{row.teamName}</p>
+                                                            {row.rawPlayerNames?.length > 0 && (
+                                                                <p className="text-gray-500 text-xs mt-0.5 truncate max-w-[180px]" title={row.rawPlayerNames.join(', ')}>
+                                                                    {row.rawPlayerNames.join(', ')}
+                                                                </p>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            <input
+                                                                type="number"
+                                                                value={row.position}
+                                                                min="1" max="25"
+                                                                onChange={e => setOcrResults(prev => prev.map((r, i) => i === idx ? { ...r, position: e.target.value } : r))}
+                                                                className="w-16 bg-gray-700 border border-gray-600 rounded-lg px-2 py-1 text-white text-center text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 mx-auto block"
+                                                                placeholder="1-25"
+                                                            />
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            <input
+                                                                type="number"
+                                                                value={row.kills}
+                                                                min="0"
+                                                                onChange={e => setOcrResults(prev => prev.map((r, i) => i === idx ? { ...r, kills: e.target.value } : r))}
+                                                                className="w-16 bg-gray-700 border border-gray-600 rounded-lg px-2 py-1 text-white text-center text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 mx-auto block"
+                                                            />
+                                                        </td>
+                                                        <td className="px-4 py-3 text-center text-blue-400 font-medium">{posPts}</td>
+                                                        <td className="px-4 py-3 text-center text-green-400 font-medium">{kills}</td>
+                                                        <td className="px-4 py-3 text-center text-orange-400 font-bold">{total}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {ocrResults.length === 0 && (
+                                    <div className="text-center py-8 text-gray-400 text-sm">
+                                        No team data detected. Go back and try a different screenshot.
+                                    </div>
                                 )}
-                            </button>
-                        </div>
+
+                                <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs text-amber-300 flex items-start gap-2">
+                                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                                    OCR can make mistakes. Review all values before applying. Only teams detected from the slot list are shown — manually add any missing teams after applying.
+                                </div>
+
+                                <div className="flex gap-3 pt-2">
+                                    <button
+                                        onClick={() => { setOcrStep(1); setOcrResults([]); }}
+                                        disabled={applyingOcr}
+                                        className="flex-1 px-4 py-3 bg-gray-800 text-white rounded-xl hover:bg-gray-700 transition-all font-medium disabled:opacity-50"
+                                    >
+                                        ← Back
+                                    </button>
+                                    <button
+                                        onClick={handleApplyOcrResults}
+                                        disabled={applyingOcr || ocrResults.length === 0}
+                                        className="flex-1 px-4 py-3 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition-all font-bold disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20"
+                                    >
+                                        {applyingOcr ? (
+                                            <>
+                                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                Applying…
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Save className="w-5 h-5" />
+                                                Apply Results
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
+
             {/* Delete Confirmation Modal */}
             {showDeleteModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-300">

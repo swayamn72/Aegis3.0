@@ -8,6 +8,8 @@ import Player from '../models/player.model.js';
 import Registration from '../models/registration.model.js';
 import ChatMessage from '../models/chat.model.js';
 import mongoose from 'mongoose';
+import upload from '../config/multer.js';
+import { processScreenshots } from '../services/bgmiOcr.service.js';
 
 const router = express.Router();
 
@@ -300,11 +302,19 @@ router.post('/schedule', verifyOrgToken, verifyTournamentOwnership, async (req, 
 
     await scheduledMatch.save();
 
-    // Update the tournament's phase to include this match
+    // Update the tournament's phase to include this match, and LOCK the participating groups
     if (tournament) {
-      const phase = tournament.phases?.find(p => p.name === matchData.tournamentPhase);
-      if (phase) {
-        phase.matches.push(scheduledMatch._id);
+      const phaseObj = tournament.phases?.find(p => p.name === matchData.tournamentPhase);
+      if (phaseObj) {
+        phaseObj.matches.push(scheduledMatch._id);
+
+        // Lock every group that this match uses so the org can't reshuffle teams mid-tournament
+        if (groupNames.length > 0) {
+          phaseObj.groups.forEach(g => {
+            if (groupNames.includes(g.name)) g.isLocked = true;
+          });
+        }
+
         await tournament.save();
       }
     }
@@ -508,28 +518,37 @@ router.post('/:matchId/share-credentials', verifyOrgToken, verifyMatchOwnership,
     // Import ChatMessage model
     const ChatMessage = (await import('../models/chat.model.js')).default;
 
-    // Create message content
-    const messageContent = `🎮 Room Credentials for Match #${matchNumber}
+    // Build a team→slot lookup from the group slotLists stored in the tournament doc
+    // so we can personalise the message with each player's slot number
+    const slotByTeam = {};
+    const phaseMeta = match.tournament?.phases?.find(p => p.name === match.tournamentPhase);
+    if (phaseMeta) {
+      for (const grpMeta of (phaseMeta.groups || [])) {
+        for (const entry of (grpMeta.slotList || [])) {
+          if (entry.team) slotByTeam[entry.team.toString()] = entry.slot;
+        }
+      }
+    }
 
-📋 Tournament: ${tournamentName}
-🎯 Phase: ${tournamentPhase}
+    // Batch insert messages (optimized) — each player gets their slot number personalised
+    const messages = eligiblePlayers.map(player => {
+      const teamId = player.team?.toString();
+      const slot = teamId ? slotByTeam[teamId] : undefined;
+      const slotLine = slot != null ? `\n🎰 Your Slot: ${slot}` : '';
 
-🔑 Room ID: ${roomId}
-🔐 Password: ${password}
+      const messageContent = `🎮 Room Credentials for Match #${matchNumber}\n\n📋 Tournament: ${tournamentName}\n🎯 Phase: ${tournamentPhase}${slotLine}\n\n🔑 Room ID: ${roomId}\n🔐 Password: ${password}\n\n⏰ Match starts soon. Good luck!`;
 
-⏰ Match starts soon. Good luck!`;
-
-    // Batch insert messages (optimized)
-    const messages = eligiblePlayers.map(player => ({
-      senderId: 'system',
-      receiverId: player._id,
-      message: messageContent,
-      messageType: 'system',
-      tournamentId: match.tournament?._id || match.tournament,
-      matchId: match._id,
-      timestamp: new Date(),
-      ...(tournamentLogo && { tournamentLogo })
-    }));
+      return {
+        senderId: 'system',
+        receiverId: player._id,
+        message: messageContent,
+        messageType: 'system',
+        tournamentId: match.tournament?._id || match.tournament,
+        matchId: match._id,
+        timestamp: new Date(),
+        ...(tournamentLogo && { tournamentLogo })
+      };
+    });
 
     // Insert all messages at once
     const savedMessages = await ChatMessage.insertMany(messages, { ordered: false });
@@ -736,12 +755,74 @@ router.put('/:matchId/results', verifyOrgToken, verifyMatchOwnership, async (req
   }
 });
 
+// Helper: after deleting a match, unlock groups that have zero remaining scheduled matches
+const unlockOrphanedGroups = async (tournamentId, phaseName, deletedGroupIds) => {
+  if (!deletedGroupIds || deletedGroupIds.length === 0) return;
+
+  // Fetch the tournament to read the current groups + their names
+  const tourDoc = await Tournament.findById(tournamentId)
+    .select('phases')
+    .lean();
+  if (!tourDoc) return;
+
+  const phaseDoc = tourDoc.phases?.find(p => p.name === phaseName);
+  if (!phaseDoc) return;
+
+  // Resolve the group NAMES from the stored group IDs/names used by the match
+  const groupNamesToCheck = deletedGroupIds.map(groupId => {
+    const grp = (phaseDoc.groups || []).find(g =>
+      g._id?.toString() === groupId ||
+      g.id?.toString() === groupId ||
+      g.name === groupId
+    );
+    return grp?.name;
+  }).filter(Boolean);
+
+  if (groupNamesToCheck.length === 0) return;
+
+  // For each group name, count how many remaining scheduled matches still reference it
+  // A group can only be unlocked when no remaining scheduled match uses it
+  const remainingMatches = await Match.find({
+    tournament: tournamentId,
+    tournamentPhase: phaseName,
+    status: 'scheduled',
+    participatingGroups: { $in: deletedGroupIds } // still store IDs in match
+  }).select('participatingGroups').lean();
+
+  // Build a set of group identifiers (id or name) still used by remaining matches
+  const stillUsed = new Set(remainingMatches.flatMap(m => m.participatingGroups || []));
+
+  // Determine which group names are truly orphaned (no remaining matches)
+  const groupsToUnlock = groupNamesToCheck.filter(gName => {
+    // Check both ID and name forms
+    const grp = (phaseDoc.groups || []).find(g => g.name === gName);
+    const gId = grp?._id?.toString();
+    return !stillUsed.has(gId) && !stillUsed.has(gName);
+  });
+
+  if (groupsToUnlock.length === 0) return;
+
+  // Unlock only the truly orphaned groups via arrayFilters
+  await Tournament.updateOne(
+    { _id: tournamentId, 'phases.name': phaseName },
+    { $set: { 'phases.$[phase].groups.$[grp].isLocked': false } },
+    {
+      arrayFilters: [
+        { 'phase.name': phaseName },
+        { 'grp.name': { $in: groupsToUnlock } }
+      ]
+    }
+  );
+
+  console.log(`🔓 Unlocked groups: ${groupsToUnlock.join(', ')} in phase "${phaseName}"`);
+};
+
 // Delete a match
 router.delete('/:matchId', verifyOrgToken, verifyMatchOwnership, async (req, res) => {
   try {
     const { matchId } = req.params;
 
-    const match = await Match.findById(matchId);
+    const match = await Match.findById(matchId).lean();
     if (!match) {
       return res.status(404).json({ error: 'Match not found' });
     }
@@ -752,8 +833,13 @@ router.delete('/:matchId', verifyOrgToken, verifyMatchOwnership, async (req, res
       { $pull: { 'phases.$[].matches': matchId } }
     );
 
-    // Delete the match
+    // Delete the match first
     await Match.findByIdAndDelete(matchId);
+
+    // Safe-unlock: only unlock groups that have NO other scheduled matches referencing them
+    if (match.participatingGroups?.length > 0 && match.tournamentPhase) {
+      await unlockOrphanedGroups(match.tournament, match.tournamentPhase, match.participatingGroups);
+    }
 
     console.log(`✅ Deleted match: ${matchId}`);
     res.json({ success: true, message: 'Match deleted successfully' });
@@ -768,7 +854,7 @@ router.delete('/scheduled/:matchId', verifyOrgToken, verifyMatchOwnership, async
   try {
     const { matchId } = req.params;
 
-    const match = await Match.findById(matchId);
+    const match = await Match.findById(matchId).lean();
     if (!match) {
       return res.status(404).json({ error: 'Match not found' });
     }
@@ -779,8 +865,13 @@ router.delete('/scheduled/:matchId', verifyOrgToken, verifyMatchOwnership, async
       { $pull: { 'phases.$[].matches': matchId } }
     );
 
-    // Delete the match
+    // Delete the match first
     await Match.findByIdAndDelete(matchId);
+
+    // Safe-unlock: only unlock groups that have NO other scheduled matches referencing them
+    if (match.participatingGroups?.length > 0 && match.tournamentPhase) {
+      await unlockOrphanedGroups(match.tournament, match.tournamentPhase, match.participatingGroups);
+    }
 
     console.log(`✅ Deleted scheduled match: ${matchId}`);
     res.json({ success: true, message: 'Scheduled match deleted successfully' });
@@ -818,5 +909,166 @@ router.get('/:matchId', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch match info' });
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OCR: Process up to 12 match screenshots → return structured results for review
+// POST /api/matches/:matchId/upload-result
+//
+// Auth:  verifyOrgToken + verifyMatchOwnership  (org must own the tournament)
+// Body:  multipart/form-data  |  field: screenshots (images, max 5 MB each, up to 12)
+//
+// Flow:
+//  1. Validate files
+//  2. Fetch match + tournament to get slot list
+//  3. Build slotList from groups[].slotList[] (populated with team names & rosters)
+//  4. Run OCR via processScreenshots()
+//  5. Return editable result rows — nothing is saved to DB
+//
+// The caller (frontend) reviews/edits results, then POSTs to PUT /:matchId/results
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+  '/:matchId/upload-result',
+  verifyOrgToken,
+  verifyMatchOwnership,
+  upload.array('screenshots', 12),
+  async (req, res) => {
+    try {
+      // ── 1. Validate uploaded files ────────────────────────────────────────
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: 'No image files provided. Send up to 12 images in the \'screenshots\' field.' });
+      }
+
+      const ALLOWED_MIME = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+      for (const file of req.files) {
+        if (!ALLOWED_MIME.includes(file.mimetype)) {
+          return res.status(400).json({ error: 'Unsupported file type. Upload JPEG, PNG, or WebP only.' });
+        }
+      }
+
+      const { matchId } = req.params;
+
+      // ── 2. Fetch match + tournament (only what we need) ──────────────────
+      const match = await Match.findById(matchId)
+        .select('tournament tournamentPhase participatingGroups results')
+        .lean();
+      if (!match) return res.status(404).json({ error: 'Match not found' });
+
+      const tournament = await Tournament.findById(match.tournament)
+        .select('phases status')
+        .lean();
+      if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+      if (tournament.status === 'completed') {
+        return res.status(400).json({ error: 'Tournament is concluded and locked.' });
+      }
+
+      // ── 3. Resolve slot list from tournament phases.groups.slotList ──────
+      const phase = tournament.phases?.find(p => p.name === match.tournamentPhase);
+      if (!phase) {
+        return res.status(400).json({ error: `Phase "${match.tournamentPhase}" not found in tournament.` });
+      }
+
+      // Gather all groups that participated in this match
+      const matchGroupIds = new Set((match.participatingGroups || []).map(g => g.toString()));
+
+      // Collect slot entries from all relevant groups, then populate team names
+      const rawSlotEntries = []; // { slot, teamId }
+      for (const group of (phase.groups || [])) {
+        const gId = group._id?.toString();
+        const matchesThisGroup = matchGroupIds.has(gId) || matchGroupIds.has(group.name);
+        if (!matchesThisGroup) continue;
+        for (const entry of (group.slotList || [])) {
+          if (entry.team) {
+            rawSlotEntries.push({ slot: entry.slot, teamId: entry.team.toString() });
+          }
+        }
+      }
+
+      // Fallback: if participatingGroups is empty, gather all group slot entries for the phase
+      if (rawSlotEntries.length === 0) {
+        for (const group of (phase.groups || [])) {
+          for (const entry of (group.slotList || [])) {
+            if (entry.team) rawSlotEntries.push({ slot: entry.slot, teamId: entry.team.toString() });
+          }
+        }
+      }
+
+      if (rawSlotEntries.length === 0) {
+        return res.status(400).json({
+          error: 'No slot list found for this match. Assign groups and generate the slot list before using OCR.',
+        });
+      }
+
+      // Batch-fetch team names AND rosters for the tournament
+      const uniqueTeamIds = [...new Set(rawSlotEntries.map(e => e.teamId))];
+
+      const [teams, registrations] = await Promise.all([
+        Team.find({ _id: { $in: uniqueTeamIds } }).select('teamName').lean(),
+        Registration.find({
+          tournament: match.tournament,
+          team: { $in: uniqueTeamIds },
+          status: { $in: ['approved', 'checked_in'] }
+        }).select('team roster').lean()
+      ]);
+
+      const teamNameById = Object.fromEntries(teams.map(t => [t._id.toString(), t.teamName]));
+      const rosterByTeamId = Object.fromEntries(registrations.map(r => [r.team.toString(), r.roster || []]));
+
+      const slotList = rawSlotEntries
+        .filter(e => teamNameById[e.teamId]) // skip orphaned refs
+        .map(e => ({
+          slot: e.slot,
+          teamId: e.teamId,
+          teamName: teamNameById[e.teamId],
+          roster: rosterByTeamId[e.teamId] || []
+        }))
+        .sort((a, b) => a.slot - b.slot);
+
+      if (slotList.length === 0) {
+        return res.status(400).json({ error: 'Could not resolve team names for slot list. Ensure teams are properly assigned.' });
+      }
+
+      // ── 4. Run OCR on all images ────────────────────────────────────────────
+      const imageBuffers = req.files.map(file => file.buffer);
+      // We will create `processScreenshots` in the service to handle multiple buffers
+      const ocrResults = await processScreenshots(imageBuffers, slotList);
+
+      if (ocrResults.length === 0) {
+        return res.status(422).json({
+          error: 'OCR could not detect any recognisable team data in the provided images.',
+          hint: 'Ensure the screenshots are clear BGMI match result screens.',
+        });
+      }
+
+      // ── 5. Return for frontend review ────────────────────────────────────
+      res.json({
+        ocrResults,
+        matchId,
+        slotListUsed: slotList.length,
+        detectedTeams: ocrResults.length,
+        imagesProcessed: req.files.length
+      });
+    } catch (err) {
+      console.error('❌ OCR upload-result error:', err);
+
+      // Friendly error for missing AWS credentials
+      if (err.message?.includes('AWS credentials')) {
+        return res.status(503).json({ error: 'OCR service is not configured. Contact the administrator.' });
+      }
+
+      // AWS Rekognition errors
+      if (err.name === 'InvalidImageFormatException') {
+        return res.status(400).json({ error: 'Invalid image format. Use JPEG, PNG, or WebP.' });
+      }
+      if (err.name === 'ImageTooLargeException') {
+        return res.status(400).json({ error: 'An image is too large for OCR. Try smaller screenshots (max 5 MB each).' });
+      }
+      if (err.name === 'ProvisionedThroughputExceededException' || err.name === 'ThrottlingException') {
+        return res.status(429).json({ error: 'OCR service is temporarily busy. Please try again in a few seconds.' });
+      }
+
+      res.status(500).json({ error: 'OCR processing failed. Please try again or enter results manually.' });
+    }
+  }
+);
 
 export default router;

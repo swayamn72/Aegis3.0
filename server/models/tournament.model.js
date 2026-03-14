@@ -221,6 +221,20 @@ const tournamentSchema = new mongoose.Schema(
                 ref: 'Team',
               },
             ],
+            // Locked when a scheduled match uses this group.
+            // Only unlocked when ALL scheduled matches using this group are deleted.
+            isLocked: {
+              type: Boolean,
+              default: false,
+            },
+            // Ordered slot list: slot 1 = first team, slot 2 = second, etc.
+            // Generated/updated whenever assign-groups is called.
+            slotList: [
+              {
+                slot: { type: Number },
+                team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
+              },
+            ],
             // Standings moved to Standing collection
           },
         ],

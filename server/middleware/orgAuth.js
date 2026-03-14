@@ -27,7 +27,9 @@ export const verifyApprovedOrgToken = async (req, res, next) => {
         if (decoded.role !== 'organization') {
             return res.status(403).json({ message: 'Not authorized' });
         }
-        const organization = await Organization.findById(decoded.id);
+        const organization = await Organization.findById(decoded.id)
+            .select('_id orgName approvalStatus')
+            .lean();
         if (!organization) {
             return res.status(401).json({ message: 'Organization not found' });
         }
@@ -64,7 +66,9 @@ export const verifyOrgToken = async (req, res, next) => {
         if (decoded.role !== 'organization') {
             return res.status(401).json({ message: 'Invalid token type' });
         }
-        const organization = await Organization.findById(decoded.id);
+        const organization = await Organization.findById(decoded.id)
+            .select('_id orgName approvalStatus')
+            .lean();
         if (!organization) {
             return res.status(401).json({ message: 'Organization not found' });
         }
@@ -102,7 +106,9 @@ export const optionalOrgAuth = async (req, res, next) => {
             req.user = null;
             return next();
         }
-        const organization = await Organization.findById(decoded.id);
+        const organization = await Organization.findById(decoded.id)
+            .select('_id orgName approvalStatus')
+            .lean();
         if (organization) {
             req.organization = organization;
             req.user = {

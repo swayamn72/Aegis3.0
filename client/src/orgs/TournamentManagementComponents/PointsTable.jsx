@@ -127,53 +127,50 @@ const PointsTable = ({ tournament, onUpdate }) => {
 
     const calculateFromMatches = () => {
         const teamPoints = {};
-        let relevantTeams = tournament.participatingTeams || [];
 
-        // Filter teams based on phase and group selection using Registration metadata
-        if (selectedPhase) {
-            relevantTeams = relevantTeams.filter(pt =>
-                (pt.phase || pt.currentStage) === selectedPhase
-            );
-
-            if (selectedGroup && selectedGroup !== 'overall') {
-                relevantTeams = relevantTeams.filter(pt => pt.group === selectedGroup);
-            }
-        }
-
-        relevantTeams.forEach(participatingTeam => {
-            const team = participatingTeam.team || participatingTeam;
-            const teamId = team._id || participatingTeam._id;
-            const teamName = team.teamName || team.name || participatingTeam.teamName || 'Unknown Team';
-
-            if (teamId) {
-                const participatingTeamData = tournament.participatingTeams?.find(pt => {
-                    const ptTeamId = pt.team?._id || pt.team || pt._id;
-                    return ptTeamId?.toString() === teamId.toString();
-                });
-                const teamLogo = team.logo || participatingTeamData?.team?.logo || participatingTeamData?.logo;
-
-                teamPoints[teamId.toString()] = {
-                    teamId: teamId.toString(),
-                    teamName,
-                    teamLogo,
-                    totalPositionPoints: 0,
-                    totalKillPoints: 0,
-                    totalPoints: 0,
-                    kills: 0,
-                    matchesPlayed: 0,
-                    chickenDinners: 0,
-                    averagePlacement: 0,
-                    placements: [],
-                    source: 'matches'
-                };
-            }
-        });
-
+        // 1. Filter matches first based on selected phase
         let filteredMatches = matches;
         if (selectedPhase) {
             filteredMatches = matches.filter(match => match.tournamentPhase === selectedPhase);
         }
 
+        // 2. Filter further by group if selected
+        if (selectedGroup && selectedGroup !== 'overall') {
+            filteredMatches = filteredMatches.filter(match => 
+                match.participatingGroups && match.participatingGroups.includes(selectedGroup)
+            );
+        }
+        
+        // 3. Extract unique teams from these filtered matches
+        filteredMatches.forEach(match => {
+            const matchTeams = match.results && match.results.length > 0 ? match.results : (match.teams || []);
+            
+            matchTeams.forEach(teamEntry => {
+                const team = teamEntry.team || teamEntry;
+                const teamId = team._id || team.id || teamEntry._id;
+                const teamName = team.teamName || team.name || 'Unknown Team';
+                const teamLogo = team.logo || null;
+                
+                if (teamId && !teamPoints[teamId.toString()]) {
+                    teamPoints[teamId.toString()] = {
+                        teamId: teamId.toString(),
+                        teamName,
+                        teamLogo,
+                        totalPositionPoints: 0,
+                        totalKillPoints: 0,
+                        totalPoints: 0,
+                        kills: 0,
+                        matchesPlayed: 0,
+                        chickenDinners: 0,
+                        averagePlacement: 0,
+                        placements: [],
+                        source: 'matches'
+                    };
+                }
+            });
+        });
+
+        // 4. Calculate points using the filtered matches
         filteredMatches.forEach(match => {
             match.results?.forEach(teamResult => {
                 const teamId = teamResult.team?._id || teamResult.team || teamResult._id;

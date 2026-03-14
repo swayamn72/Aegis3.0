@@ -281,15 +281,9 @@ registrationSchema.statics.bulkApprove = async function (registrationIds, adminI
 
 // --- Middleware ---
 
-registrationSchema.pre('save', function (next) {
+registrationSchema.pre('save', async function () {
   this._wasNew = this.isNew;
   this._statusModified = this.isModified('status');
-
-  // Automatically set phase/group from currentStage if not set
-  if (this.currentStage && !this.phase) {
-    // Optional parsing logic could go here
-  }
-  next();
 });
 
 // Update tournament's participatingTeamsCount and registration slots
@@ -299,7 +293,7 @@ registrationSchema.post('save', async function (doc) {
     const RegistrationModel = mongoose.model('Registration');
 
     // 1. Sync slots.registered (total registrations including pending)
-    if (this._wasNew) {
+    if (doc._wasNew) {
       await Tournament.updateOne(
         { _id: doc.tournament },
         { $inc: { 'slots.registered': 1 } }
@@ -307,8 +301,7 @@ registrationSchema.post('save', async function (doc) {
     }
 
     // 2. Sync participatingTeamsCount (only approved/checked_in teams)
-    // Always sync on new document (if approved) or status change
-    if (this._wasNew || this._statusModified) {
+    if (doc._wasNew || doc._statusModified) {
       const activeCount = await RegistrationModel.countDocuments({
         tournament: doc.tournament,
         status: { $in: ['approved', 'checked_in'] }
@@ -330,13 +323,11 @@ registrationSchema.post('remove', async function (doc) {
     const Tournament = mongoose.model('Tournament');
     const RegistrationModel = mongoose.model('Registration');
 
-    // Decrement total registrations
     await Tournament.updateOne(
       { _id: doc.tournament },
       { $inc: { 'slots.registered': -1 } }
     );
 
-    // Sync active participant count
     const activeCount = await RegistrationModel.countDocuments({
       tournament: doc.tournament,
       status: { $in: ['approved', 'checked_in'] }

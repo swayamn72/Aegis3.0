@@ -31,6 +31,7 @@ const TournamentManagementPageOrg = () => {
     const [selectedPhase, setSelectedPhase] = useState('');
     const [lockLoading, setLockLoading] = useState(false);
     const [lockResult, setLockResult] = useState(null); // result from lock-registrations
+    const [showLockConfirm, setShowLockConfirm] = useState(false);
 
     // Teams tab state
     const [teamsList, setTeamsList] = useState([]);
@@ -490,14 +491,49 @@ const TournamentManagementPageOrg = () => {
                                     {/* Lock Registrations — assigns all approved teams to phase 1.
                                         Must be done before group assignment is possible. */}
                                     {tournament.status !== 'completed' && tournament.phases?.length > 0 && (
-                                        <button
-                                            onClick={handleLockRegistrations}
-                                            disabled={lockLoading}
-                                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                            <Lock className="w-4 h-4" />
-                                            {lockLoading ? 'Locking…' : 'Lock Registrations'}
-                                        </button>
+                                        (() => {
+                                            const activeTeamsCount = tournament?.stats?.activeTeams || 0;
+                                            const assignedTeamsCount = tournament?.phases?.reduce((acc, phase) => acc + (phase.teamCount || 0), 0) || 0;
+                                            const unassignedTeamsCount = Math.max(0, activeTeamsCount - assignedTeamsCount);
+                                            
+                                            // 1. No active teams at all
+                                            if (activeTeamsCount === 0) {
+                                                return (
+                                                    <button
+                                                        disabled
+                                                        className="px-4 py-2 bg-gray-700 text-gray-500 rounded-lg flex items-center gap-2 cursor-not-allowed"
+                                                    >
+                                                        <Lock className="w-4 h-4" />
+                                                        No Teams Approved
+                                                    </button>
+                                                );
+                                            }
+                                            
+                                            // 2. All teams are assigned AND registration is closed
+                                            if (unassignedTeamsCount === 0 && tournament.status === 'registration_closed') {
+                                                return (
+                                                    <button
+                                                        disabled
+                                                        className="px-4 py-2 bg-green-500/10 text-green-500 border border-green-500/20 rounded-lg flex items-center gap-2 cursor-not-allowed"
+                                                    >
+                                                        <Lock className="w-4 h-4" />
+                                                        Registrations Locked
+                                                    </button>
+                                                );
+                                            }
+
+                                            // 3. Unassigned teams exist or registration is still open
+                                            return (
+                                                <button
+                                                    onClick={() => setShowLockConfirm(true)}
+                                                    disabled={lockLoading}
+                                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    <Lock className="w-4 h-4" />
+                                                    {lockLoading ? 'Locking…' : `Lock Registrations ${unassignedTeamsCount > 0 ? `(${unassignedTeamsCount})` : ''}`}
+                                                </button>
+                                            );
+                                        })()
                                     )}
                                     <button
                                         onClick={() => setIsPhaseManagerOpen(true)}
@@ -508,6 +544,42 @@ const TournamentManagementPageOrg = () => {
                                     </button>
                                 </div>
                             </div>
+
+                            {/* Lock Registrations confirmation dialog */}
+                            {showLockConfirm && (
+                                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                                    <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl p-7 max-w-md w-full mx-4">
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <div className="w-11 h-11 rounded-xl bg-blue-500/20 flex items-center justify-center flex-shrink-0">
+                                                <Lock className="w-5 h-5 text-blue-400" />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-white font-bold text-lg">Lock Registrations?</h3>
+                                                <p className="text-gray-400 text-sm">This will assign all approved teams to the first phase.</p>
+                                            </div>
+                                        </div>
+                                        <ul className="text-sm text-gray-400 space-y-1.5 mb-6 pl-1">
+                                            <li className="flex items-start gap-2"><span className="text-yellow-400 mt-0.5">⚠</span> Teams still <strong className="text-white">pending</strong> approval won't be assigned.</li>
+                                            <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">ℹ</span> You can still approve/reject registrations afterwards, but you'll need to manually add them to a phase.</li>
+                                        </ul>
+                                        <div className="flex items-center gap-3 justify-end">
+                                            <button
+                                                onClick={() => setShowLockConfirm(false)}
+                                                className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg transition-all"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                onClick={() => { setShowLockConfirm(false); handleLockRegistrations(); }}
+                                                className="px-5 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all flex items-center gap-2"
+                                            >
+                                                <Lock className="w-4 h-4" />
+                                                Yes, Lock Registrations
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Lock result banner */}
                             {lockResult && (

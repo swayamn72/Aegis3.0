@@ -6,6 +6,8 @@ dotenv.config();
 import express from "express";
 import { createServer } from 'http';
 import cors from "cors";
+import helmet from "helmet";
+import compression from "compression";
 import cookieParser from "cookie-parser";
 import rateLimit from 'express-rate-limit';
 import serverless from 'serverless-http';
@@ -46,6 +48,11 @@ app.set('io', io);
 connectDB();
 
 // MIDDLEWARES
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' }, // allow images/assets to load cross-origin
+  contentSecurityPolicy: false, // disable CSP — the frontend manages its own CSP
+}));
+app.use(compression());
 app.use(cors({
   origin: [
     'http://localhost:5173',
