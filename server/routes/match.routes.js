@@ -747,6 +747,14 @@ router.put('/:matchId/results', verifyOrgToken, verifyMatchOwnership, async (req
     await match.populate('results.kills.breakdown.player', 'username inGameName profilePicture');
     await match.populate('matchStats.mostKillsPlayer.player', 'username inGameName profilePicture');
 
+    // Fire-and-forget: keep player+team stats counters in sync (never blocks response)
+    const teamIdsForStats = match.results.map(r => r.team?._id || r.team).filter(Boolean);
+    if (teamIdsForStats.length > 0) {
+      recalculateStatsForTeams(teamIdsForStats).catch(err =>
+        console.warn('⚠️ Stats recalculation failed (non-critical):', err.message)
+      );
+    }
+
     console.log('✅ Updated match results and stats:', match._id);
     res.json(match);
   } catch (error) {
@@ -754,6 +762,136 @@ router.put('/:matchId/results', verifyOrgToken, verifyMatchOwnership, async (req
     res.status(500).json({ error: 'Failed to update match results' });
   }
 });
+
+// ============================================================================
+// STATS RECALCULATION HELPER (fire-and-forget after match result saves)
+// ============================================================================
+
+/**
+ * Recalculates and persists player + team statistics counters based on
+ * completed Match documents. Called asynchronously — never blocks a response.
+ * @param {ObjectId[]} teamIds
+ */
+const recalculateStatsForTeams = async (teamIds) => {
+  if (!teamIds || teamIds.length === 0) return;
+
+  // Aggregate match stats per team in one pass
+  const teamStats = await Match.aggregate([
+    {
+      $match: {
+        'results.team': { $in: teamIds },
+        status: 'completed',
+      },
+    },
+    { $unwind: '$results' },
+    {
+      $match: { 'results.team': { $in: teamIds } },
+    },
+    {
+      $group: {
+        _id: '$results.team',
+        matchesPlayed: { $sum: 1 },
+        matchesWon: {
+          $sum: { $cond: [{ $eq: ['$results.finalPosition', 1] }, 1, 0] },
+        },
+        totalKills: { $sum: { $ifNull: ['$results.kills.total', 0] } },
+        positionSum: { $sum: { $ifNull: ['$results.finalPosition', 0] } },
+        positionCount: {
+          $sum: {
+            $cond: [{ $gt: ['$results.finalPosition', 0] }, 1, 0],
+          },
+        },
+      },
+    },
+  ]);
+
+  // Update Team statistics
+  const teamBulkOps = teamStats.map(stat => {
+    const winRate =
+      stat.matchesPlayed > 0
+        ? Math.round((stat.matchesWon / stat.matchesPlayed) * 100)
+        : 0;
+    const avgPlacement =
+      stat.positionCount > 0
+        ? Math.round((stat.positionSum / stat.positionCount) * 10) / 10
+        : 0;
+    return {
+      updateOne: {
+        filter: { _id: stat._id },
+        update: {
+          $set: {
+            'statistics.matchesPlayed': stat.matchesPlayed,
+            'statistics.totalKills': stat.totalKills,
+            'statistics.winRate': winRate,
+            'statistics.averagePlacement': avgPlacement,
+          },
+        },
+      },
+    };
+  });
+
+  if (teamBulkOps.length > 0) {
+    await Team.bulkWrite(teamBulkOps, { ordered: false });
+  }
+
+  // Update Player statistics for all players in these teams
+  const teams = await Team.find({ _id: { $in: teamIds } })
+    .select('players')
+    .lean();
+  const allPlayerIds = teams.flatMap(t => t.players || []);
+
+  if (allPlayerIds.length === 0) return;
+
+  // Aggregate stats at player level (via kill breakdown)
+  const playerStats = await Match.aggregate([
+    {
+      $match: {
+        'results.team': { $in: teamIds },
+        status: 'completed',
+      },
+    },
+    { $unwind: '$results' },
+    {
+      $match: { 'results.team': { $in: teamIds } },
+    },
+    { $unwind: { path: '$results.kills.breakdown', preserveNullAndEmptyArrays: true } },
+    {
+      $group: {
+        _id: '$results.kills.breakdown.player',
+        totalKills: { $sum: { $ifNull: ['$results.kills.breakdown.kills', 0] } },
+        matchesPlayed: { $sum: 1 },
+        matchesWon: {
+          $sum: { $cond: [{ $eq: ['$results.finalPosition', 1] }, 1, 0] },
+        },
+      },
+    },
+    { $match: { _id: { $ne: null } } },
+  ]);
+
+  const playerBulkOps = playerStats.map(stat => {
+    const winRate =
+      stat.matchesPlayed > 0
+        ? Math.round((stat.matchesWon / stat.matchesPlayed) * 100)
+        : 0;
+    return {
+      updateOne: {
+        filter: { _id: stat._id },
+        update: {
+          $set: {
+            'statistics.totalKills': stat.totalKills,
+            'statistics.matchesWon': stat.matchesWon,
+            'statistics.winRate': winRate,
+          },
+          $inc: { 'statistics.matchesPlayed': 0 }, // touch only, matchesPlayed managed below
+        },
+      },
+    };
+  });
+
+  if (playerBulkOps.length > 0) {
+    await Player.bulkWrite(playerBulkOps, { ordered: false });
+  }
+};
 
 // Helper: after deleting a match, unlock groups that have zero remaining scheduled matches
 const unlockOrphanedGroups = async (tournamentId, phaseName, deletedGroupIds) => {

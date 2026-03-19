@@ -295,7 +295,7 @@ router.get('/dashboard-data', auth, async (req, res) => {
       // Query 3: Get recent matches (only if player has teams)
       const matches = await Match.find({
         'results.team': { $in: teamIds },
-        status: 'completed'
+        status: { $in: ['completed', 'in_progress'] }
       })
         .select('results map actualEndTime scheduledStartTime tournament')
         .sort({ actualEndTime: -1 })
@@ -481,7 +481,7 @@ router.get('/recent3matches', auth, async (req, res) => {
 
     const matches = await Match.find({
       'participatingTeams.team': { $in: teamIds },
-      status: 'completed'
+      status: { $in: ['completed', 'in_progress'] }
     })
       .select('participatingTeams map actualEndTime scheduledStartTime tournament')
       .sort({ actualEndTime: -1 })
@@ -549,39 +549,172 @@ router.get('/recent3matches', auth, async (req, res) => {
 router.get('/:id/matches', async (req, res) => {
   try {
     const { id } = req.params;
-    const limit = parseInt(req.query.limit) || 5;
-    const skip = parseInt(req.query.skip) || 0;
+    const limit = Math.min(parseInt(req.query.limit) || 10, 20);
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const skip = (page - 1) * limit;
 
-    // Verify player exists
-    const player = await Player.findById(id);
+    // Verify player exists (lean for speed)
+    const player = await Player.findById(id).select('_id previousTeams').lean();
     if (!player) {
       return res.status(404).json({ message: 'Player not found' });
     }
 
-    // Find player's team
-    const team = await Team.findOne({ players: id }).select('_id');
+    // Collect all team IDs: current + previous teams
+    const currentTeams = await Team.find({ players: id }).select('_id').lean();
+    const currentTeamIds = currentTeams.map(t => t._id);
+    const previousTeamIds = (player.previousTeams || [])
+      .map(pt => pt.team)
+      .filter(Boolean);
+    const allTeamIds = [...currentTeamIds, ...previousTeamIds];
 
-    if (!team) {
-      // Player has no team, return empty matches
-      return res.json({ matches: [] });
+    if (allTeamIds.length === 0) {
+      return res.json({ matches: [], total: 0, page, totalPages: 0 });
     }
 
-    // Find matches where the player's team participated
-    const matches = await Match.find({
-      $or: [
-        { 'team1._id': team._id },
-        { 'team2._id': team._id }
-      ]
-    })
-      .populate('tournament', 'name game')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean();
+    // Use the correct schema field: results[].team (has an existing index)
+    const filter = {
+      'results.team': { $in: allTeamIds },
+      status: { $in: ['completed', 'in_progress'] },
+      visibility: 'public',
+    };
 
-    res.json({ matches });
+    const [total, matches] = await Promise.all([
+      Match.countDocuments(filter),
+      Match.find(filter)
+        .select('map tournamentPhase scheduledStartTime results tournament matchNumber')
+        .sort({ scheduledStartTime: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate('tournament', 'tournamentName shortName media')
+        .populate('results.team', 'teamName teamTag logo')
+        .lean(),
+    ]);
+
+    // Strip results down to only the player's team entry per match
+    const allTeamIdStrings = new Set(allTeamIds.map(t => t.toString()));
+    const formattedMatches = matches.map(match => {
+      const teamResult = (match.results || []).find(
+        r => r.team && allTeamIdStrings.has(r.team._id.toString())
+      );
+      return {
+        _id: match._id,
+        matchNumber: match.matchNumber,
+        map: match.map,
+        tournamentPhase: match.tournamentPhase,
+        scheduledStartTime: match.scheduledStartTime,
+        tournament: match.tournament,
+        teamResult: teamResult
+          ? {
+              team: teamResult.team,
+              finalPosition: teamResult.finalPosition,
+              kills: teamResult.kills?.total || 0,
+              placementPoints: teamResult.points?.placementPoints || 0,
+              killPoints: teamResult.points?.killPoints || 0,
+              totalPoints: teamResult.points?.totalPoints || 0,
+              chickenDinner: teamResult.chickenDinner || false,
+            }
+          : null,
+      };
+    });
+
+    res.json({
+      matches: formattedMatches,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    });
   } catch (error) {
     console.error('Error fetching player matches:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// GET /api/players/:id/tournaments - Get player's tournament history with pagination
+router.get('/:id/tournaments', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const limit = Math.min(parseInt(req.query.limit) || 5, 20);
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const skip = (page - 1) * limit;
+
+    const player = await Player.findById(id).select('_id previousTeams').lean();
+    if (!player) {
+      return res.status(404).json({ message: 'Player not found' });
+    }
+
+    // Collect all team IDs (current + previous)
+    const currentTeams = await Team.find({ players: id }).select('_id').lean();
+    const currentTeamIds = currentTeams.map(t => t._id);
+    const previousTeamIds = (player.previousTeams || [])
+      .map(pt => pt.team)
+      .filter(Boolean);
+    const allTeamIds = [...currentTeamIds, ...previousTeamIds];
+
+    if (allTeamIds.length === 0) {
+      return res.json({ tournaments: [], total: 0, page, totalPages: 0 });
+    }
+
+    // Registration is the single source of truth for team <-> tournament participation
+    const filter = {
+      team: { $in: allTeamIds },
+      status: { $in: ['approved', 'checked_in', 'disqualified', 'withdrawn'] },
+    };
+
+    const [total, registrations] = await Promise.all([
+      Registration.countDocuments(filter),
+      Registration.find(filter)
+        .select('team status finalPosition prizeWon totalTournamentPoints totalTournamentKills matchesPlayed registeredAt')
+        .sort({ registeredAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate({
+          path: 'tournament',
+          select: 'tournamentName shortName gameTitle tier region status startDate endDate prizePool media finalStandings',
+        })
+        .populate('team', 'teamName teamTag logo')
+        .lean(),
+    ]);
+
+    const tournaments = registrations
+      .filter(reg => reg.tournament)
+      .map(reg => {
+        const standing = (reg.tournament.finalStandings || []).find(
+          s => s.team && s.team.toString() === reg.team?._id?.toString()
+        );
+        return {
+          _id: reg.tournament._id,
+          registrationId: reg._id,
+          tournamentName: reg.tournament.tournamentName,
+          shortName: reg.tournament.shortName,
+          gameTitle: reg.tournament.gameTitle,
+          tier: reg.tournament.tier,
+          region: reg.tournament.region,
+          status: reg.tournament.status,
+          startDate: reg.tournament.startDate,
+          endDate: reg.tournament.endDate,
+          prizePool: reg.tournament.prizePool?.total || 0,
+          currency: reg.tournament.prizePool?.currency || 'INR',
+          media: reg.tournament.media,
+          team: reg.team,
+          registrationStatus: reg.status,
+          finalPosition: standing?.position || reg.finalPosition || null,
+          prizeWon: reg.prizeWon?.amount || standing?.prize?.amount || 0,
+          stats: {
+            totalPoints: reg.totalTournamentPoints || 0,
+            totalKills: reg.totalTournamentKills || 0,
+            matchesPlayed: reg.matchesPlayed || 0,
+          },
+        };
+      });
+
+    res.json({
+      tournaments,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    });
+  } catch (error) {
+    console.error('Error fetching player tournament history:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });

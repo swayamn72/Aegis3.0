@@ -54,3 +54,9 @@ export const recruitmentKeys = {
         filters.role || 'all'
     ],
 };
+
+export const profileKeys = {
+    matches: (playerId) => ['playerMatches', playerId],
+    tournaments: (playerId) => ['playerTournaments', playerId],
+};
+

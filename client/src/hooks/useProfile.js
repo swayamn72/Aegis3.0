@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import {
     getConnections,
     getTeam,
@@ -6,67 +6,89 @@ import {
     updatePost,
     deletePost
 } from '../api/profile';
+import { fetchPlayerMatches, fetchPlayerTournaments } from '../api/playerMatches';
 
-// Connections Hook
+// ─── Connections ──────────────────────────────────────────────────────────────
+
 export const useConnections = () => {
     return useQuery({
         queryKey: ['connections'],
         queryFn: getConnections,
-        staleTime: 5 * 60 * 1000, // 5 minutes
-        cacheTime: 10 * 60 * 1000, // 10 minutes
+        staleTime: 5 * 60 * 1000,
+        gcTime: 10 * 60 * 1000,
     });
 };
 
-// Team Hook
+// ─── Team ─────────────────────────────────────────────────────────────────────
+
 export const useTeam = (teamId) => {
     return useQuery({
         queryKey: ['team', teamId],
         queryFn: () => getTeam(teamId),
         enabled: !!teamId,
-        staleTime: 10 * 60 * 1000, // 10 minutes
-        cacheTime: 15 * 60 * 1000, // 15 minutes
+        staleTime: 10 * 60 * 1000,
+        gcTime: 15 * 60 * 1000,
     });
 };
 
-// Posts Hook
+// ─── Posts ────────────────────────────────────────────────────────────────────
+
 export const usePosts = (playerId) => {
     return useQuery({
         queryKey: ['posts', playerId],
         queryFn: () => getPlayerPosts({ playerId, includeMedia: true }),
         enabled: !!playerId,
-        staleTime: 2 * 60 * 1000, // 2 minutes
-        cacheTime: 5 * 60 * 1000, // 5 minutes
+        staleTime: 2 * 60 * 1000,
+        gcTime: 5 * 60 * 1000,
     });
 };
 
-// Update Post Mutation
+// ─── Match History (infinite / paginated) ─────────────────────────────────────
+
+export const usePlayerMatches = (playerId, limit = 10) => {
+    return useInfiniteQuery({
+        queryKey: ['playerMatches', playerId],
+        queryFn: ({ pageParam = 1 }) =>
+            fetchPlayerMatches({ playerId, page: pageParam, limit }),
+        getNextPageParam: (lastPage) =>
+            lastPage.page < lastPage.totalPages ? lastPage.page + 1 : undefined,
+        enabled: !!playerId,
+        staleTime: 2 * 60 * 1000,   // 2 min — matches can update while tab is open
+        gcTime: 10 * 60 * 1000,
+    });
+};
+
+// ─── Tournament History (infinite / paginated) ────────────────────────────────
+
+export const usePlayerTournaments = (playerId, limit = 5) => {
+    return useInfiniteQuery({
+        queryKey: ['playerTournaments', playerId],
+        queryFn: ({ pageParam = 1 }) =>
+            fetchPlayerTournaments({ playerId, page: pageParam, limit }),
+        getNextPageParam: (lastPage) =>
+            lastPage.page < lastPage.totalPages ? lastPage.page + 1 : undefined,
+        enabled: !!playerId,
+        staleTime: 5 * 60 * 1000,   // 5 min — tournament history changes infrequently
+        gcTime: 15 * 60 * 1000,
+    });
+};
+
+// ─── Post mutations ───────────────────────────────────────────────────────────
+
 export const useUpdatePost = () => {
     const queryClient = useQueryClient();
-
     return useMutation({
         mutationFn: updatePost,
-        onSuccess: () => {
-            // Invalidate and refetch posts
-            queryClient.invalidateQueries({ queryKey: ['posts'] });
-        },
-        onError: (error) => {
-            console.error('Error updating post:', error);
-        }
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['posts'] }),
+        onError: (error) => console.error('Error updating post:', error),
     });
 };
 
-// Delete Post Mutation
 export const useDeletePost = () => {
     const queryClient = useQueryClient();
-
     return useMutation({
         mutationFn: deletePost,
-        onSuccess: () => {
-            // Invalidate and refetch posts
-            queryClient.invalidateQueries({ queryKey: ['posts'] });
-        },
-        onError: (error) => {
-            console.error('Error deleting post:', error);
-        }
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['posts'] }),
+        onError: (error) => console.error('Error deleting post:', error),
     });
 };
