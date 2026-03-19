@@ -279,6 +279,10 @@ router.post("/send-notification", auth, async (req, res) => {
       return res.status(400).json({ message: 'Receiver ID is required' });
     }
 
+    if (receiverId === 'system') {
+      return res.status(400).json({ message: 'Cannot send messages to system' });
+    }
+
     // Allow system messages if senderId is 'system', otherwise use req.user.id
     const actualSenderId = senderId === 'system' ? 'system' : req.user.id;
 

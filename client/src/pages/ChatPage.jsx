@@ -37,6 +37,7 @@ export default function ChatPage() {
   const [onlineUsers, setOnlineUsers] = useState(new Set());
   const [showApplications, setShowApplications] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
+  const isInitialLoadRef = useRef(false); // tracks when we just switched chats
   const [showMobileSidebar, setShowMobileSidebar] = useState(true);
 
   // Refs
@@ -129,9 +130,9 @@ export default function ChatPage() {
     setAutoScroll(isAtBottom);
   }, []);
 
-  const scrollToBottom = useCallback(() => {
-    if (autoScroll) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const scrollToBottom = useCallback((instant = false) => {
+    if (autoScroll || instant) {
+      messagesEndRef.current?.scrollIntoView({ behavior: instant ? "instant" : "smooth" });
     }
   }, [autoScroll]);
 
@@ -161,9 +162,23 @@ export default function ChatPage() {
     }
   }, [connections, selectedUserId, selectedChat]);
 
-  // Scroll to bottom when messages change
+  // Mark that we need an instant scroll when the selected chat changes
   useEffect(() => {
-    scrollToBottom();
+    if (!selectedChat) return;
+    isInitialLoadRef.current = true;
+    setAutoScroll(true);
+  }, [selectedChat?._id]); // Only re-run when the chat ID changes
+
+  // Handle scrolling when messages update
+  useEffect(() => {
+    if (isInitialLoadRef.current) {
+      // Initial load of a newly-selected chat: jump instantly to bottom
+      messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
+      isInitialLoadRef.current = false;
+    } else {
+      // Subsequent new messages: smooth scroll only if already near bottom
+      scrollToBottom();
+    }
   }, [messages, scrollToBottom]);
 
   // ✅ OPTIMIZED: Unified message sending
@@ -804,6 +819,13 @@ export default function ChatPage() {
                   <AlertCircle className="w-8 h-8 text-zinc-500 mx-auto mb-2" />
                   <p className="text-zinc-400 text-sm">
                     This tryout has ended. No new messages can be sent.
+                  </p>
+                </div>
+              ) : selectedChat._id === 'system' ? (
+                <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-3 md:p-4 text-center">
+                  <Bell className="w-6 h-6 text-orange-400 mx-auto mb-2 opacity-50" />
+                  <p className="text-zinc-400 text-sm italic">
+                    This is a system-only channel. You cannot reply to system messages.
                   </p>
                 </div>
               ) : (

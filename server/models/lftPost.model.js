@@ -44,6 +44,8 @@ const lftPostSchema = new mongoose.Schema({
 lftPostSchema.index({ game: 1, region: 1, roles: 1, status: 1 });
 lftPostSchema.index({ player: 1, status: 1 });
 lftPostSchema.index({ createdAt: -1 });
+lftPostSchema.index({ updatedAt: 1 }, { expireAfterSeconds: 2592000 }); // Expire after 30 days of inactivity
+
 
 const LFTPost = mongoose.model('LFTPost', lftPostSchema);
 

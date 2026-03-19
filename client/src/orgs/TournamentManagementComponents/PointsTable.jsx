@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { Trophy, Medal, Award, Download, AlertCircle, ChevronDown, Image as ImageIcon, CheckCircle, ArrowRight, X } from 'lucide-react';
+import { Trophy, Medal, Award, Download, AlertCircle, ChevronDown, Image as ImageIcon, CheckCircle, ArrowRight, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { toast } from 'react-toastify';
 
@@ -20,6 +20,8 @@ const PointsTable = ({ tournament, onUpdate }) => {
     const [advancePreview, setAdvancePreview] = useState(null);
     const [isConcluding, setIsConcluding] = useState(false);
     const [showConcludeDialog, setShowConcludeDialog] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const ITEMS_PER_PAGE = 20;
 
     const calculationTimeoutRef = useRef(null);
     const lastCalculationKeyRef = useRef('');
@@ -29,6 +31,10 @@ const PointsTable = ({ tournament, onUpdate }) => {
             fetchMatches();
         }
     }, [tournament?._id]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [selectedPhase, selectedGroup]);
 
     const calculatePointsTable = useCallback(() => {
         if (!tournament) {
@@ -513,6 +519,9 @@ const PointsTable = ({ tournament, onUpdate }) => {
         ? ['overall', ...selectedPhaseObj.groups.filter(g => g.name !== 'overall').map(g => g.name)]
         : [];
 
+    const totalPages = Math.ceil(pointsTable.length / ITEMS_PER_PAGE);
+    const paginatedPointsTable = pointsTable.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
     if (loading) {
         return (
             <div className="flex items-center justify-center py-12">
@@ -673,7 +682,7 @@ const PointsTable = ({ tournament, onUpdate }) => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-700">
-                            {pointsTable.map((team, index) => (
+                            {paginatedPointsTable.map((team, index) => (
                                 <tr key={team.teamId} className="hover:bg-zinc-800/30">
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div className="flex items-center gap-2">
@@ -709,6 +718,59 @@ const PointsTable = ({ tournament, onUpdate }) => {
                     </table>
                 </div>
             </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+                <div className="flex items-center justify-between pt-4 border-t border-zinc-700/60 flex-wrap gap-4">
+                    <div className="text-sm text-zinc-400">
+                        Showing <span className="text-white font-medium">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to{' '}
+                        <span className="text-white font-medium">
+                            {Math.min(currentPage * ITEMS_PER_PAGE, pointsTable.length)}
+                        </span> of{' '}
+                        <span className="text-white font-medium">{pointsTable.length}</span> teams
+                    </div>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => { setCurrentPage(p => Math.max(1, p - 1)); }}
+                            disabled={currentPage === 1}
+                            className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-700 transition-colors"
+                        >
+                            <ChevronLeft className="w-5 h-5" />
+                        </button>
+                        {[...Array(totalPages)].map((_, i) => {
+                            // Only show a few pages around current page
+                            if (
+                                i === 0 || 
+                                i === totalPages - 1 || 
+                                (i >= currentPage - 2 && i <= currentPage)
+                            ) {
+                                return (
+                                    <button
+                                        key={i}
+                                        onClick={() => { setCurrentPage(i + 1); }}
+                                        className={`w-10 h-10 rounded-lg border transition-all font-medium ${currentPage === i + 1
+                                            ? 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20'
+                                            : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700 hover:text-white'
+                                            }`}
+                                    >
+                                        {i + 1}
+                                    </button>
+                                );
+                            }
+                            if (i === 1 && currentPage > 3) return <span key={i} className="text-zinc-500 self-end pb-2">...</span>;
+                            if (i === totalPages - 2 && currentPage < totalPages - 2) return <span key={i} className="text-zinc-500 self-end pb-2">...</span>;
+                            return null;
+                        })}
+                        <button
+                            onClick={() => { setCurrentPage(p => Math.min(totalPages, p + 1)); }}
+                            disabled={currentPage === totalPages}
+                            className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-700 transition-colors"
+                        >
+                            <ChevronRight className="w-5 h-5" />
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {pointsTable.length === 0 && !loading && (
                 <div className="text-center py-12">

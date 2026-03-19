@@ -1415,6 +1415,7 @@ router.put('/:tournamentId', verifyApprovedOrgToken, upload.fields([
 // ============================================================================
 
 router.get('/:tournamentId/phase-teams', verifyApprovedOrgToken, async (req, res) => {
+  console.log(`[API] GET /phase-teams?phase=${req.query.phase}&page=${req.query.page}&limit=${req.query.limit}`);
   try {
     const { tournamentId } = req.params;
     const { phase } = req.query;
@@ -1472,18 +1473,21 @@ router.get('/:tournamentId/phase-teams', verifyApprovedOrgToken, async (req, res
       total,
       page: isAll ? 1 : parseInt(page),
       limit: isAll ? total : parseInt(limit),
-      teams: registrations.map(r => ({
-        _id: r.team._id,
-        teamName: r.team.teamName,
-        teamTag: r.team.teamTag,
-        logo: r.team.logo,
-        group: r.group || null,
-        status: r.status,
-        registrationId: r._id
-      }))
+      teams: registrations
+        .filter(r => r.team) // Safely ignore broken references
+        .map(r => ({
+          _id: r.team._id,
+          teamName: r.team.teamName,
+          teamTag: r.team.teamTag,
+          logo: r.team.logo,
+          group: r.group || null,
+          status: r.status,
+          registrationId: r._id
+        }))
     });
   } catch (err) {
     console.error('Error fetching phase teams:', err);
+    require('fs').writeFileSync('api-error.log', err.message + '\n' + err.stack);
     res.status(500).json({ error: 'Failed to fetch phase teams' });
   }
 });

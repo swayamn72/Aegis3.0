@@ -6,6 +6,8 @@ import TryoutChat from '../models/tryoutChat.model.js';
 import Team from '../models/team.model.js';
 import Player from '../models/player.model.js';
 import auth from '../middleware/auth.js';
+import { deactivateLFTPost, deactivateLFPPost } from '../utils/recruitmentHelpers.js';
+
 
 const router = express.Router();
 
@@ -318,6 +320,15 @@ router.post('/:applicationId/accept', auth, async (req, res) => {
         },
       });
     }
+
+    // Deactivate any active LFT posts for the player who joined
+    await deactivateLFTPost(application.player._id);
+
+    // If team roster is now full (5 players), deactivate their LFP post
+    if (application.team.players.length >= 5) {
+      await deactivateLFPPost(application.team._id);
+    }
+
 
     res.json({
       message: 'Player accepted successfully',

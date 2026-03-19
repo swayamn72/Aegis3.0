@@ -104,8 +104,11 @@ router.post('/approach-player/:playerId', auth, async (req, res) => {
       return res.status(400).json({ error: 'Player is already in your team' });
     }
 
-    // Optional: prevent approaching players who are already in *any* team
-    // if (targetPlayer.team) return res.status(400).json({ error: 'Player is already in another team' });
+    // Prevent approaching players who are already in *any* team
+    if (targetPlayer.team) {
+      return res.status(400).json({ error: 'Player is already in another team' });
+    }
+
 
     // Optional: prevent if team full
     if (Array.isArray(team.players) && team.players.length >= MAX_TEAM_PLAYERS) {

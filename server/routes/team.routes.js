@@ -12,6 +12,8 @@ import auth from '../middleware/auth.js';
 import upload from '../config/multer.js';
 import cloudinary from '../config/cloudinary.js';
 import mongoose from 'mongoose';
+import { deactivateLFTPost } from '../utils/recruitmentHelpers.js';
+
 
 
 const router = express.Router();
@@ -206,6 +208,10 @@ router.post('/', auth, async (req, res) => {
       teamStatus: 'in a team'
     });
 
+    // Deactivate any active LFT posts for the new captain
+    await deactivateLFTPost(req.user.id);
+
+
     await newTeam.populate('captain', 'username profilePicture primaryGame');
     await newTeam.populate('players', 'username profilePicture primaryGame');
 
@@ -286,6 +292,10 @@ router.post('/invitations/:id/accept', auth, async (req, res) => {
       team: team._id,
       teamStatus: 'in a team',
     });
+
+    // Deactivate any active LFT posts for the player who joined
+    await deactivateLFTPost(req.user.id);
+
 
     // Update invitation status
     invitation.status = 'accepted';
