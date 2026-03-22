@@ -156,14 +156,16 @@ router.get('/tournament/:tournamentId', async (req, res) => {
     const {
       status,
       phase,
-      limit = 20,  // Reduced from 50
-      offset = 0,  // NEW: For pagination
-      mobile = 'false' // NEW: Mobile flag
+      group,
+      limit = 20,
+      offset = 0,
+      mobile = 'false'
     } = req.query;
 
     const filter = { tournament: tournamentId };
     if (status) filter.status = status;
     if (phase) filter.tournamentPhase = phase;
+    if (group) filter.participatingGroups = group;
 
     // Count total matches for pagination
     const totalMatches = await Match.countDocuments(filter);
@@ -192,32 +194,36 @@ router.get('/tournament/:tournamentId', async (req, res) => {
 
     const matches = await matchQuery.lean();
 
-    // For each match, if results is empty (scheduled match), fetch teams from participatingGroups
+    // For each match, enhance with group names and teams (if results empty)
     const enhancedMatches = await Promise.all(matches.map(async (match) => {
+      const phase = match.tournament?.phases?.find(p => p.name === match.tournamentPhase);
+      
+      // Always resolve group names from IDs for display
+      if (phase && match.participatingGroups?.length > 0) {
+        match.groupNames = match.participatingGroups.map(groupId => {
+          const group = phase.groups?.find(g =>
+            g?._id?.toString() === groupId ||
+            g?.id?.toString?.() === groupId ||
+            g?.name === groupId
+          );
+          return group?.name;
+        }).filter(Boolean);
+      } else {
+        match.groupNames = [];
+      }
+
+      // If results is empty (live/scheduled), fetch teams from participatingGroups via Registration
       if (!match.results || match.results.length === 0) {
-        // Fetch teams from participatingGroups via Registration
-        const phase = match.tournament?.phases?.find(p => p.name === match.tournamentPhase);
-        if (phase && match.participatingGroups?.length > 0) {
-          const groupNames = match.participatingGroups.map(groupId => {
-            const group = phase.groups?.find(g =>
-              g?._id?.toString() === groupId ||
-              g?.id?.toString?.() === groupId ||
-              g?.name === groupId
-            );
-            return group?.name;
-          }).filter(Boolean);
+        if (phase && match.groupNames?.length > 0) {
+          const registrations = await Registration.find({
+            tournament: match.tournament._id || match.tournament,
+            phase: match.tournamentPhase,
+            group: { $in: match.groupNames },
+            status: { $in: ['approved', 'checked_in'] }
+          }).populate('team', 'teamName teamTag logo').lean();
 
-          if (groupNames.length > 0) {
-            const registrations = await Registration.find({
-              tournament: match.tournament._id,
-              phase: match.tournamentPhase,
-              group: { $in: groupNames },
-              status: { $in: ['approved', 'checked_in'] }
-            }).populate('team', 'teamName teamTag logo').lean();
-
-            // Add teams to match object
-            match.teams = registrations.map(reg => reg.team);
-          }
+          // Add teams to match object
+          match.teams = registrations.map(reg => reg.team);
         }
       }
       return match;
@@ -313,6 +319,16 @@ router.post('/schedule', verifyOrgToken, verifyTournamentOwnership, async (req, 
           phaseObj.groups.forEach(g => {
             if (groupNames.includes(g.name)) g.isLocked = true;
           });
+        }
+
+        // --- NEW: Automated Phase Transition ---
+        // "No Overlap" Rule: Only flip to in_progress if no other phase is currently in_progress
+        const anyOtherPhaseInProgress = tournament.phases.some(
+          p => p.status === 'in_progress' && p.name !== matchData.tournamentPhase
+        );
+        if (phaseObj.status === 'upcoming' && !anyOtherPhaseInProgress) {
+          phaseObj.status = 'in_progress';
+          console.log(`🚀 Automated Phase Transition: "${phaseObj.name}" set to in_progress`);
         }
 
         await tournament.save();
@@ -508,6 +524,29 @@ router.post('/:matchId/share-credentials', verifyOrgToken, verifyMatchOwnership,
         }
       }
     );
+
+    // --- NEW: Automated Phase Transition (Secondary trigger) ---
+    // "No Overlap" Rule: Flip to in_progress if no other phase is currently active
+    try {
+      const anyOtherPhaseInProgress = match.tournament?.phases?.some(
+        p => p.status === 'in_progress' && p.name !== match.tournamentPhase
+      );
+
+      if (match.tournamentPhase && !anyOtherPhaseInProgress) {
+        const tournamentId = match.tournament?._id || match.tournament;
+        await Tournament.updateOne(
+          {
+            _id: tournamentId,
+            'phases.name': match.tournamentPhase,
+            'phases.status': 'upcoming'
+          },
+          { $set: { 'phases.$.status': 'in_progress' } }
+        );
+        console.log(`🚀 Automated Phase Transition (Credentials): "${match.tournamentPhase}" set to in_progress`);
+      }
+    } catch (phaseError) {
+      console.warn('⚠️ Automated phase transition failed (non-critical):', phaseError.message);
+    }
 
     // Prepare notification data
     const tournamentName = match.tournament?.tournamentName || 'Unknown Tournament';
@@ -748,11 +787,18 @@ router.put('/:matchId/results', verifyOrgToken, verifyMatchOwnership, async (req
     await match.populate('matchStats.mostKillsPlayer.player', 'username inGameName profilePicture');
 
     // Fire-and-forget: keep player+team stats counters in sync (never blocks response)
-    const teamIdsForStats = match.results.map(r => r.team?._id || r.team).filter(Boolean);
+    const teamIdsForStats = match.results.map(r => r.team._id || r.team).filter(Boolean);
     if (teamIdsForStats.length > 0) {
+      // 1. Recalculate basic team/player stats
       recalculateStatsForTeams(teamIdsForStats).catch(err =>
         console.warn('⚠️ Stats recalculation failed (non-critical):', err.message)
       );
+
+      // 2. Recalculate Phase Standings (The Points Table)
+      const PhaseStanding = mongoose.model('PhaseStanding');
+      PhaseStanding.getOrCreate(match.tournament, match.tournamentPhase)
+        .then(ps => ps.recalculate())
+        .catch(err => console.warn('⚠️ Phase Standing recalculation failed:', err.message));
     }
 
     console.log('✅ Updated match results and stats:', match._id);
@@ -772,20 +818,22 @@ router.put('/:matchId/results', verifyOrgToken, verifyMatchOwnership, async (req
  * completed Match documents. Called asynchronously — never blocks a response.
  * @param {ObjectId[]} teamIds
  */
-const recalculateStatsForTeams = async (teamIds) => {
+export const recalculateStatsForTeams = async (teamIds) => {
   if (!teamIds || teamIds.length === 0) return;
 
-  // Aggregate match stats per team in one pass
+  const teamOids = teamIds.map(id => new mongoose.Types.ObjectId(id));
+
+  // --- 1. Total Team Stats (Career) ---
   const teamStats = await Match.aggregate([
     {
       $match: {
-        'results.team': { $in: teamIds },
-        status: 'completed',
+        'results.team': { $in: teamOids },
+        status: { $in: ['completed', 'in_progress'] },
       },
     },
     { $unwind: '$results' },
     {
-      $match: { 'results.team': { $in: teamIds } },
+      $match: { 'results.team': { $in: teamOids } },
     },
     {
       $group: {
@@ -797,24 +845,15 @@ const recalculateStatsForTeams = async (teamIds) => {
         totalKills: { $sum: { $ifNull: ['$results.kills.total', 0] } },
         positionSum: { $sum: { $ifNull: ['$results.finalPosition', 0] } },
         positionCount: {
-          $sum: {
-            $cond: [{ $gt: ['$results.finalPosition', 0] }, 1, 0],
-          },
+          $sum: { $cond: [{ $gt: ['$results.finalPosition', 0] }, 1, 0] },
         },
       },
     },
   ]);
 
-  // Update Team statistics
   const teamBulkOps = teamStats.map(stat => {
-    const winRate =
-      stat.matchesPlayed > 0
-        ? Math.round((stat.matchesWon / stat.matchesPlayed) * 100)
-        : 0;
-    const avgPlacement =
-      stat.positionCount > 0
-        ? Math.round((stat.positionSum / stat.positionCount) * 10) / 10
-        : 0;
+    const winRate = stat.matchesPlayed > 0 ? Math.round((stat.matchesWon / stat.matchesPlayed) * 100) : 0;
+    const avgPlacement = stat.positionCount > 0 ? Math.round((stat.positionSum / stat.positionCount) * 10) / 10 : 0;
     return {
       updateOne: {
         filter: { _id: stat._id },
@@ -830,29 +869,67 @@ const recalculateStatsForTeams = async (teamIds) => {
     };
   });
 
-  if (teamBulkOps.length > 0) {
-    await Team.bulkWrite(teamBulkOps, { ordered: false });
-  }
+  if (teamBulkOps.length > 0) await Team.bulkWrite(teamBulkOps, { ordered: false });
 
-  // Update Player statistics for all players in these teams
-  const teams = await Team.find({ _id: { $in: teamIds } })
-    .select('players')
-    .lean();
-  const allPlayerIds = teams.flatMap(t => t.players || []);
-
-  if (allPlayerIds.length === 0) return;
-
-  // Aggregate stats at player level (via kill breakdown)
-  const playerStats = await Match.aggregate([
+  // --- 2. Registration Sync (For Profile Tournament History) ---
+  const registrationStats = await Match.aggregate([
     {
       $match: {
-        'results.team': { $in: teamIds },
-        status: 'completed',
+        'results.team': { $in: teamOids },
+        status: { $in: ['completed', 'in_progress'] },
       },
     },
     { $unwind: '$results' },
     {
-      $match: { 'results.team': { $in: teamIds } },
+      $match: { 'results.team': { $in: teamOids } },
+    },
+    {
+      $group: {
+        _id: {
+          team: '$results.team',
+          tournament: '$tournament'
+        },
+        totalPoints: { $sum: { $ifNull: ['$results.points.totalPoints', 0] } },
+        totalKills: { $sum: { $ifNull: ['$results.kills.total', 0] } },
+        matchesPlayed: { $sum: 1 }
+      }
+    }
+  ]);
+
+  const regBulkOps = registrationStats.map(stat => ({
+    updateOne: {
+      filter: {
+        team: stat._id.team,
+        tournament: stat._id.tournament,
+        status: { $in: ['approved', 'checked_in', 'completed'] }
+      },
+      update: {
+        $set: {
+          totalTournamentPoints: stat.totalPoints,
+          totalTournamentKills: stat.totalKills,
+          matchesPlayed: stat.matchesPlayed
+        }
+      }
+    }
+  }));
+
+  if (regBulkOps.length > 0) await Registration.bulkWrite(regBulkOps, { ordered: false });
+
+  // --- 3. Player Stats (Career) ---
+  const teams = await Team.find({ _id: { $in: teamIds } }).select('players').lean();
+  const allPlayerIds = teams.flatMap(t => t.players || []);
+  if (allPlayerIds.length === 0) return;
+
+  const playerStats = await Match.aggregate([
+    {
+      $match: {
+        'results.team': { $in: teamOids },
+        status: { $in: ['completed', 'in_progress'] },
+      },
+    },
+    { $unwind: '$results' },
+    {
+      $match: { 'results.team': { $in: teamOids } },
     },
     { $unwind: { path: '$results.kills.breakdown', preserveNullAndEmptyArrays: true } },
     {
@@ -868,29 +945,21 @@ const recalculateStatsForTeams = async (teamIds) => {
     { $match: { _id: { $ne: null } } },
   ]);
 
-  const playerBulkOps = playerStats.map(stat => {
-    const winRate =
-      stat.matchesPlayed > 0
-        ? Math.round((stat.matchesWon / stat.matchesPlayed) * 100)
-        : 0;
-    return {
-      updateOne: {
-        filter: { _id: stat._id },
-        update: {
-          $set: {
-            'statistics.totalKills': stat.totalKills,
-            'statistics.matchesWon': stat.matchesWon,
-            'statistics.winRate': winRate,
-          },
-          $inc: { 'statistics.matchesPlayed': 0 }, // touch only, matchesPlayed managed below
+  const playerBulkOps = playerStats.map(stat => ({
+    updateOne: {
+      filter: { _id: stat._id },
+      update: {
+        $set: {
+          'statistics.totalKills': stat.totalKills,
+          'statistics.matchesWon': stat.matchesWon,
+          'statistics.matchesPlayed': stat.matchesPlayed,
+          'statistics.winRate': stat.matchesPlayed > 0 ? Math.round((stat.matchesWon / stat.matchesPlayed) * 100) : 0,
         },
       },
-    };
-  });
+    },
+  }));
 
-  if (playerBulkOps.length > 0) {
-    await Player.bulkWrite(playerBulkOps, { ordered: false });
-  }
+  if (playerBulkOps.length > 0) await Player.bulkWrite(playerBulkOps, { ordered: false });
 };
 
 // Helper: after deleting a match, unlock groups that have zero remaining scheduled matches
@@ -979,6 +1048,12 @@ router.delete('/:matchId', verifyOrgToken, verifyMatchOwnership, async (req, res
       await unlockOrphanedGroups(match.tournament, match.tournamentPhase, match.participatingGroups);
     }
 
+    // 3. Trigger Phase Standing recalculation
+    const PhaseStanding = mongoose.model('PhaseStanding');
+    PhaseStanding.getOrCreate(match.tournament, match.tournamentPhase)
+      .then(ps => ps.recalculate())
+      .catch(err => console.warn('⚠️ Phase Standing recalculation failed after delete:', err.message));
+
     console.log(`✅ Deleted match: ${matchId}`);
     res.json({ success: true, message: 'Match deleted successfully' });
   } catch (error) {
@@ -1010,6 +1085,12 @@ router.delete('/scheduled/:matchId', verifyOrgToken, verifyMatchOwnership, async
     if (match.participatingGroups?.length > 0 && match.tournamentPhase) {
       await unlockOrphanedGroups(match.tournament, match.tournamentPhase, match.participatingGroups);
     }
+
+    // 3. Trigger Phase Standing recalculation
+    const PhaseStanding = mongoose.model('PhaseStanding');
+    PhaseStanding.getOrCreate(match.tournament, match.tournamentPhase)
+      .then(ps => ps.recalculate())
+      .catch(err => console.warn('⚠️ Phase Standing recalculation failed after delete:', err.message));
 
     console.log(`✅ Deleted scheduled match: ${matchId}`);
     res.json({ success: true, message: 'Scheduled match deleted successfully' });

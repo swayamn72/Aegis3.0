@@ -4,11 +4,92 @@ import Team from '../models/team.model.js';
 import Tournament from '../models/tournament.model.js';
 import Registration from '../models/registration.model.js';
 import Match from '../models/match.model.js';
+import RatingEvent from '../models/ratingEvent.model.js';
 import auth from '../middleware/auth.js';
 import upload from '../config/multer.js';
 import cloudinary from '../config/cloudinary.js';
+import bcrypt from 'bcrypt';
+import { AUTH_CONSTANTS } from '../config/constants.js';
+
+// ============================================================================
+// PHASE STATUS HELPER (mirrors team.routes.js)
+// ============================================================================
+function computePhaseStatus(registration, tournament) {
+   const { phase: teamPhase, status: regStatus, finalPosition } = registration;
+   const tStatus = tournament.status;
+   const phases  = tournament.phases || [];
+ 
+   if (regStatus === 'disqualified') return { label: 'Disqualified', type: 'eliminated' };
+   if (regStatus === 'withdrawn')    return { label: 'Withdrawn',    type: 'neutral'   };
+ 
+   if (tStatus === 'completed') {
+     if (finalPosition) return { label: `#${finalPosition} Final`, type: 'completed' };
+     return { label: 'Completed', type: 'completed' };
+   }
+ 
+   // Active tournament — derive current competition phase
+   const teamPhaseDoc  = phases.find(p => p.name === teamPhase);
+   const activePhase   = phases.find(p => p.status === 'in_progress');
+   const startedPhases = phases.filter(p => p.status !== 'upcoming');
+   const lastPhase     = startedPhases[startedPhases.length - 1];
+ 
+   // SCALABILITY OPTIMIZATION for 1 Lakh+ users:
+   // We use the indexed registration.phase string instead of scanning phase.teams[].
+   const isTeamInActivePhase = teamPhaseDoc?.status === 'in_progress';
+ 
+   if (isTeamInActivePhase) return { label: `In Phase: ${teamPhase}`, type: 'active' };
+ 
+   if (teamPhaseDoc?.status === 'upcoming') {
+     return { label: `Phase: ${teamPhase}`, type: 'pending' };
+   }
+ 
+   if (activePhase) {
+     const isLastPhase = lastPhase && teamPhase && lastPhase.name === teamPhase;
+     if (isLastPhase) {
+       if (finalPosition) return { label: `#${finalPosition} Final`, type: 'completed' };
+       return { label: `Phase: ${teamPhase}`, type: 'pending' };
+     }
+     const eliminatedAt = teamPhase || 'Qualifiers';
+     return { label: `Eliminated: ${eliminatedAt}`, type: 'eliminated' };
+   }
+
+  if (tStatus === 'in_progress') {
+    if (teamPhase) return { label: `Phase: ${teamPhase}`, type: 'pending' };
+    return { label: 'In Progress', type: 'pending' };
+  }
+
+  return { label: tStatus?.replace(/_/g, ' ') || 'Unknown', type: 'neutral' };
+}
 
 const router = express.Router();
+
+// ============================================================================
+// AEGIS RATING ENDPOINTS (must be before /:id catch-all)
+// ============================================================================
+
+// GET /api/players/leaderboard/aegis — Paginated Aegis Rating leaderboard
+router.get('/leaderboard/aegis', async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 25, 100);
+    const skip = (page - 1) * limit;
+
+    const [total, players] = await Promise.all([
+      Player.countDocuments({ aegisMatchesRated: { $gt: 0 } }),
+      Player.find({ aegisMatchesRated: { $gt: 0 } })
+        .select('username profilePicture aegisRating aegisRatingPeak aegisIsProvisional aegisMatchesRated team primaryGame inGameRole verified')
+        .populate('team', 'teamName teamTag logo')
+        .sort({ aegisRating: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+    ]);
+    res.json({ players, total, page, totalPages: Math.ceil(total / limit) });
+  } catch (error) {
+    console.error('Error fetching Aegis leaderboard:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
 // Get current user profile
 router.get("/me", auth, async (req, res) => {
@@ -20,7 +101,7 @@ router.get("/me", auth, async (req, res) => {
       .select(
         [
           // User fields
-          "_id", "realName", "age", "location", "bio", "languages", "profilePicture", "gameIds", "earnings", "inGameRole", "teamStatus", "availability", "discordTag", "twitch", "youtube", "profileVisibility", "cardTheme", "username", "country", "aegisRating", "verified", "createdAt", "previousTeams", "team", "primaryGame", "tournamentsPlayed", "matchesPlayed"
+          "_id", "realName", "age", "location", "bio", "languages", "profilePicture", "gameIds", "earnings", "inGameRole", "teamStatus", "availability", "discordTag", "instagram", "youtube", "profileVisibility", "cardTheme", "username", "country", "aegisRating", "aegisRatingPeak", "aegisMatchesRated", "aegisIsProvisional", "sChampionships", "aChampionships", "sTopThree", "verified", "createdAt", "previousTeams", "team", "primaryGame", "tournamentsPlayed", "matchesPlayed"
         ].join(" ")
       )
       .populate({
@@ -170,6 +251,53 @@ router.post("/upload-pfp", auth, upload.single('profilePicture'), async (req, re
     if (error.message === 'Only image files are allowed') {
       return res.status(400).json({ message: error.message });
     }
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// --- Change Password Route ---
+router.post("/change-password", auth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.user.id;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: "Current and new passwords are required" });
+    }
+
+    // Find player and include password for comparison
+    const player = await Player.findById(userId).select("+password");
+    if (!player) {
+      return res.status(404).json({ message: "Player not found" });
+    }
+
+    // Check if player has a password (might be Google OAuth only)
+    if (!player.password) {
+      return res.status(400).json({ 
+        message: "Your account uses Google login. Please use 'Forgot Password' to set a local password first." 
+      });
+    }
+
+    // Verify current password
+    const isMatch = await bcrypt.compare(currentPassword, player.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Incorrect current password" });
+    }
+
+    // Hash and update new password
+    const hashedPassword = await bcrypt.hash(newPassword, AUTH_CONSTANTS.BCRYPT_SALT_ROUNDS || 10);
+    player.password = hashedPassword;
+    
+    // Ensure 'local' is in authProvider if not already
+    if (!player.authProvider.includes('local')) {
+      player.authProvider.push('local');
+    }
+
+    await player.save();
+
+    res.status(200).json({ message: "Password updated successfully" });
+  } catch (error) {
+    console.error("Change password error:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -663,13 +791,13 @@ router.get('/:id/tournaments', async (req, res) => {
     const [total, registrations] = await Promise.all([
       Registration.countDocuments(filter),
       Registration.find(filter)
-        .select('team status finalPosition prizeWon totalTournamentPoints totalTournamentKills matchesPlayed registeredAt')
+        .select('team status phase currentStage finalPosition prizeWon totalTournamentPoints totalTournamentKills matchesPlayed registeredAt')
         .sort({ registeredAt: -1 })
         .skip(skip)
         .limit(limit)
         .populate({
           path: 'tournament',
-          select: 'tournamentName shortName gameTitle tier region status startDate endDate prizePool media finalStandings',
+          select: 'tournamentName shortName gameTitle tier region status startDate endDate prizePool media finalStandings phases.name phases.status',
         })
         .populate('team', 'teamName teamTag logo')
         .lean(),
@@ -699,6 +827,8 @@ router.get('/:id/tournaments', async (req, res) => {
           registrationStatus: reg.status,
           finalPosition: standing?.position || reg.finalPosition || null,
           prizeWon: reg.prizeWon?.amount || standing?.prize?.amount || 0,
+          teamPhase: reg.phase,
+          phaseStatus: computePhaseStatus(reg, reg.tournament),
           stats: {
             totalPoints: reg.totalTournamentPoints || 0,
             totalKills: reg.totalTournamentKills || 0,
@@ -724,7 +854,7 @@ router.get('/:id/profile', async (req, res) => {
   try {
     const { id } = req.params;
     const player = await Player.findById(id)
-      .select('_id username gameIds realName profilePicture verified primaryGame country location age teamStatus inGameRole team bio languages previousTeams createdAt discordTag twitch youtube twitter')
+      .select('_id username gameIds realName profilePicture verified primaryGame country location age teamStatus inGameRole team bio languages previousTeams createdAt discordTag instagram youtube twitter aegisRating aegisRatingPeak aegisRatingFloor aegisPrestigeFloor aegisMatchesRated aegisIsProvisional aegisLastRatedMatchAt sChampionships aChampionships sTopThree')
       .populate({
         path: 'team',
         select: '_id teamName teamTag logo primaryGame region players captain',
@@ -749,6 +879,35 @@ router.get('/:id/profile', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching player profile:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// GET /api/players/:id/rating-history — Paginated Aegis Rating history
+router.get('/:id/rating-history', async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+    const skip = (page - 1) * limit;
+
+    const [player, total, events] = await Promise.all([
+      Player.findById(req.params.id)
+        .select('aegisRating aegisRatingPeak aegisRatingFloor aegisPrestigeFloor aegisMatchesRated aegisIsProvisional aegisLastRatedMatchAt sChampionships aChampionships sTopThree')
+        .lean(),
+      RatingEvent.countDocuments({ player: req.params.id }),
+      RatingEvent.find({ player: req.params.id })
+        .sort({ date: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate('match', 'matchNumber map tournamentPhase')
+        .populate('tournament', 'tournamentName tier')
+        .lean(),
+    ]);
+
+    if (!player) return res.status(404).json({ message: 'Player not found' });
+    res.json({ ...player, events, total, page, totalPages: Math.ceil(total / limit) });
+  } catch (error) {
+    console.error('Error fetching rating history:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });

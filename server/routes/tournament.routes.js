@@ -397,13 +397,12 @@ router.get('/:id', async (req, res) => {
           phase.groups.forEach(group => {
             const groupKey = group.name?.replace('Group ', '') || '1';
 
-            // Find matching standings for this group from phaseStandings array
-            const standingDoc = phaseStandings.find(ps =>
-              ps.phase === phase.name && ps.group === group.name
-            );
+            // Find the master standing document for this phase
+            const phaseStandingDoc = phaseStandings.find(ps => ps.phase === phase.name);
 
             groupsData[phase.name][groupKey] = {
-              standings: (standingDoc?.topTeams || [])
+              standings: (phaseStandingDoc?.topTeams || [])
+                .filter(s => !group.name || s.group === group.name) // Filter by group if specific group requested
                 .slice()
                 .sort((a, b) => a.position - b.position)
                 .map(s => ({
@@ -416,6 +415,8 @@ router.get('/:id', async (req, res) => {
                   position: s.position,
                   matchesPlayed: s.matchesPlayed || 0,
                   points: s.points || 0,
+                  killPoints: s.killPoints || 0,
+                  positionPoints: s.positionPoints || 0,
                   kills: s.kills || 0,
                   chickenDinners: s.chickenDinners || 0
                 }))
@@ -431,7 +432,19 @@ router.get('/:id', async (req, res) => {
       groupsData,
       tournamentStats: tournamentData.statistics,
       streamLinks: tournamentData.streamLinks,
-      phaseStandings: phaseStandings // Include phase summaries
+      // Map teamName to name and teamTag to tag for frontend consistency
+      phaseStandings: phaseStandings.map(ps => ({
+        ...ps,
+        topTeams: ps.topTeams?.map(s => ({
+          ...s,
+          team: s.team ? {
+            _id: s.team._id,
+            name: s.team.teamName,
+            tag: s.team.teamTag,
+            logo: s.team.logo
+          } : null
+        }))
+      }))
     });
 
   } catch (error) {
@@ -444,7 +457,7 @@ router.get('/:id', async (req, res) => {
 router.get('/:id/teams', async (req, res) => {
   try {
     const { id } = req.params;
-    const { phase, group, page = 1, limit = 12 } = req.query;
+    const { phase, group, page = 1, limit = 24 } = req.query;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ error: 'Invalid tournament ID' });
@@ -454,33 +467,106 @@ router.get('/:id/teams', async (req, res) => {
     const pageLimit = parseInt(limit);
     const skip = (currentPage - 1) * pageLimit;
 
-    // Build query - Registration is the authority
-    const query = {
-      tournament: id,
-      phase,
-      status: { $nin: ['rejected', 'withdrawn', 'pending'] } // Only show approved teams in public view
-    };
+    // 1. Fetch tournament to check for slotList (historical accuracy)
+    const tournament = await Tournament.findById(id).select('phases').lean();
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
 
-    // For groups, we need to handle "Group X" naming
-    if (group) {
-      query.group = group.startsWith('Group ') ? group : `Group ${group}`;
+    let teamIdsFromSlots = [];
+    let slotMap = {}; // teamId -> slotNumber
+
+    if (phase && tournament.phases) {
+      const phaseDoc = tournament.phases.find(p => p.name === phase);
+      if (phaseDoc && phaseDoc.groups) {
+        // If a specific group is requested
+        if (group && group !== 'All') {
+          const groupNum = group.replace('Group ', '').trim();
+          const targetGroup = phaseDoc.groups.find(g => {
+            const gNum = g.name?.replace('Group ', '').trim();
+            return gNum === groupNum || g.name === group;
+          });
+
+          if (targetGroup?.slotList?.length > 0) {
+            targetGroup.slotList.forEach(s => {
+              if (s.team) {
+                const tId = s.team.toString();
+                teamIdsFromSlots.push(s.team);
+                slotMap[tId] = s.slot;
+              }
+            });
+          }
+        } 
+        // If "All Groups" or no group specified for the phase
+        else {
+          phaseDoc.groups.forEach(g => {
+            if (g.slotList?.length > 0) {
+              g.slotList.forEach(s => {
+                if (s.team) {
+                  const tId = s.team.toString();
+                  // Avoid duplicates if a team is somehow in multiple groups
+                  if (!slotMap[tId]) {
+                    teamIdsFromSlots.push(s.team);
+                    slotMap[tId] = s.slot;
+                  }
+                }
+              });
+            }
+          });
+        }
+      }
     }
 
-    const [registrations, total] = await Promise.all([
-      Registration.find(query)
-        .populate('team', 'teamName teamTag logo')
-        .skip(skip)
-        .limit(pageLimit)
-        .lean(),
-      Registration.countDocuments(query)
-    ]);
+    let registrations = [];
+    let total = 0;
+
+    // 2. If we have slot-based team IDs, use them (Preserves History)
+    if (teamIdsFromSlots.length > 0) {
+      total = teamIdsFromSlots.length;
+      const paginatedIds = teamIdsFromSlots.slice(skip, skip + pageLimit);
+      
+      registrations = await Registration.find({
+        tournament: id,
+        team: { $in: paginatedIds },
+        status: { $nin: ['rejected', 'withdrawn', 'pending'] }
+      })
+      .populate('team', 'teamName teamTag logo')
+      .lean();
+
+      // Sort registrations to match the slotList order
+      registrations.sort((a, b) => {
+        const slotA = slotMap[a.team?._id?.toString()] || 999;
+        const slotB = slotMap[b.team?._id?.toString()] || 999;
+        return slotA - slotB;
+      });
+    } 
+    // 3. Fallback: Query Registration (Dynamic current roster)
+    else {
+      const query = {
+        tournament: id,
+        phase,
+        status: { $nin: ['rejected', 'withdrawn', 'pending'] }
+      };
+
+      if (group && group !== 'All') {
+        query.group = group.startsWith('Group ') ? group : `Group ${group}`;
+      }
+
+      [registrations, total] = await Promise.all([
+        Registration.find(query)
+          .populate('team', 'teamName teamTag logo')
+          .skip(skip)
+          .limit(pageLimit)
+          .lean(),
+        Registration.countDocuments(query)
+      ]);
+    }
 
     res.json({
       teams: registrations.map(reg => ({
         _id: reg.team?._id,
         name: reg.team?.teamName || 'Unknown Team',
         tag: reg.team?.teamTag || '',
-        logo: reg.team?.logo || null
+        logo: reg.team?.logo || null,
+        slot: slotMap[reg.team?._id?.toString()] || null
       })),
       total,
       page: currentPage,

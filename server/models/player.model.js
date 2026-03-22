@@ -179,8 +179,17 @@ const playerSchema = new mongoose.Schema(
     ],
     aegisRating: {
       type: Number,
-      default: 0,
+      default: 1000,
     },
+    aegisRatingPeak: { type: Number, default: 1000 },
+    aegisRatingFloor: { type: Number, default: 0 },
+    aegisPrestigeFloor: { type: Number, default: 0 },
+    aegisMatchesRated: { type: Number, default: 0 },
+    aegisIsProvisional: { type: Boolean, default: true },
+    aegisLastRatedMatchAt: { type: Date, default: null },
+    sChampionships: { type: Number, default: 0 },
+    aChampionships: { type: Number, default: 0 },
+    sTopThree: { type: Number, default: 0 },
     tournamentsPlayed: {
       type: Number,
       default: 0,
@@ -238,7 +247,7 @@ const playerSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
-    twitch: {
+    instagram: {
       type: String,
       trim: true,
       default: '',

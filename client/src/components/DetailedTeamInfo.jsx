@@ -6,12 +6,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Users, Trophy, Calendar, MapPin, Shield,
   Award, Star, Target, TrendingUp, Share2, MessageCircle,
-  Check, Gamepad2, Briefcase, Copy, Twitter, Youtube,
-  Twitch, Lock, Edit, UserPlus, Upload,
-  Search, X, Send, Crown, AlertCircle, User, Medal
+  Check, Gamepad2, Briefcase, Copy, Twitter, Youtube, Instagram, Lock, Edit, UserPlus, Upload,
+  Search, X, Send, Crown, AlertCircle, User, Medal, Globe, Save, ChevronDown, Loader2, Zap
 } from 'lucide-react';
 import { FaDiscord } from "react-icons/fa";
-
+import axiosInstance from '../utils/axiosConfig';
+import { fetchTeamMatches, fetchTeamTournaments } from '../api/teamMatches';
+import { teamKeys } from '../hooks/queryKeys';
 const API_URL = import.meta.env.VITE_BACKEND_URL;
 
 // Fetch function for team data
@@ -39,8 +40,20 @@ const DetailedTeamInfo = () => {
 
   const [activeTab, setActiveTab] = useState('matches');
 
+  // Pagination state for "Load more" — 0 means not triggered yet (uses cache data)
+  const [matchPage, setMatchPage] = useState(0);
+  const [tournamentPage, setTournamentPage] = useState(0);
+  // Accumulated extra items fetched via Load more
+  const [extraMatches, setExtraMatches] = useState([]);
+  const [extraTournaments, setExtraTournaments] = useState([]);
+
   // Captain functionality states
   const [showEditLogoModal, setShowEditLogoModal] = useState(false);
+  const [showEditTeamModal, setShowEditTeamModal] = useState(false);
+  const [editTeamForm, setEditTeamForm] = useState({
+    bio: '',
+    socials: { discord: '', twitter: '', instagram: '', youtube: '', website: '' }
+  });
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -77,6 +90,56 @@ const DetailedTeamInfo = () => {
   const teamData = teamDataResponse?.team || null;
   const isPrivate = error?.isPrivate || false;
 
+  // Initial data comes FREE from the existing team query — zero extra requests
+  const initialMatches     = teamDataResponse?.recentMatches     ?? [];
+  const initialOngoing     = teamDataResponse?.ongoingTournaments ?? [];
+  const initialTournaments = teamDataResponse?.recentTournaments  ?? [];
+
+  // ── Paginated match query (only fires when user clicks "Load more") ──────────
+  const {
+    data: moreMatchData,
+    isFetching: loadingMoreMatches,
+  } = useQuery({
+    queryKey: teamKeys.matches(id, matchPage),
+    queryFn: () => fetchTeamMatches({ teamId: id, page: matchPage, limit: 10 }),
+    enabled: matchPage > 1,          // only runs after first "Load more" click
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    onSuccess: (data) => {
+      setExtraMatches(prev => [...prev, ...(data?.matches ?? [])]);
+    },
+  });
+
+  // ── Paginated tournament query (only fires when user clicks "Load more") ─────
+  const {
+    data: moreTournamentData,
+    isFetching: loadingMoreTournaments,
+  } = useQuery({
+    queryKey: teamKeys.tournaments(id, tournamentPage),
+    queryFn: () => fetchTeamTournaments({ teamId: id, page: tournamentPage, limit: 10 }),
+    enabled: tournamentPage > 1,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    onSuccess: (data) => {
+      setExtraTournaments(prev => [...prev, ...(data?.tournaments ?? [])]);
+    },
+  });
+
+  const hasMoreMatches     = moreMatchData     ? matchPage     < moreMatchData.totalPages     : true;
+  const hasMoreTournaments = moreTournamentData ? tournamentPage < moreTournamentData.totalPages : true;
+
+  const handleLoadMoreMatches = () => {
+    const next = matchPage < 2 ? 2 : matchPage + 1;
+    setMatchPage(next);
+  };
+
+  const handleLoadMoreTournaments = () => {
+    const next = tournamentPage < 2 ? 2 : tournamentPage + 1;
+    setTournamentPage(next);
+  };
+
   // Check if current user is the captain
   const isCaptain = user && teamData && teamData.captain && user._id === teamData.captain._id;
 
@@ -106,6 +169,52 @@ const DetailedTeamInfo = () => {
       toast.error(error.message || 'Failed to upload logo');
     },
   });
+
+  // Mutation: Edit Team
+  const editTeamMutation = useMutation({
+    mutationFn: async (formData) => {
+      const response = await fetch(`${API_URL}/api/teams/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(formData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to update team details');
+      }
+
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast.success('Team details updated successfully!');
+      setShowEditTeamModal(false);
+      queryClient.invalidateQueries({ queryKey: ['teamData', id] });
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to update team details');
+    },
+  });
+
+  const openEditTeamModal = () => {
+    setEditTeamForm({
+      bio: teamData?.bio || '',
+      socials: {
+        discord: teamData?.socials?.discord || '',
+        twitter: teamData?.socials?.twitter || '',
+        instagram: teamData?.socials?.instagram || '',
+        youtube: teamData?.socials?.youtube || '',
+        website: teamData?.socials?.website || '',
+      }
+    });
+    setShowEditTeamModal(true);
+  };
+
+  const handleEditTeamSubmit = (e) => {
+    e.preventDefault();
+    editTeamMutation.mutate(editTeamForm);
+  };
 
   // Mutation: Send Invitation
   const sendInvitationMutation = useMutation({
@@ -240,7 +349,43 @@ const DetailedTeamInfo = () => {
     });
   };
 
+  // ── Phase Status Pill ────────────────────────────────────────────────────────
+  const PhaseStatusPill = ({ phaseStatus, tournamentStatus }) => {
+    if (!phaseStatus) {
+      const fallbacks = {
+        completed:   { cls: 'bg-zinc-700/50 text-zinc-400 border-zinc-600/30', text: 'Completed' },
+        in_progress: { cls: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/25', text: 'Live' },
+        cancelled:   { cls: 'bg-red-500/15 text-red-400 border-red-500/25', text: 'Cancelled' },
+      };
+      const fb = fallbacks[tournamentStatus];
+      if (!fb) return null;
+      return <span className={`text-xs px-2 py-0.5 rounded-full border ${fb.cls}`}>{fb.text}</span>;
+    }
+    const styleMap = {
+      active:    'bg-green-500/15 text-green-400 border-green-500/25',
+      eliminated:'bg-red-500/15 text-red-400 border-red-500/25',
+      completed: 'bg-amber-500/15 text-amber-400 border-amber-500/25',
+      pending:   'bg-blue-500/15 text-blue-400 border-blue-500/25',
+      neutral:   'bg-zinc-700/50 text-zinc-400 border-zinc-600/30',
+    };
+    const iconMap = {
+      active:    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />,
+      eliminated:<span>✕</span>,
+      completed: <span>🏆</span>,
+      pending:   <span>⏳</span>,
+      neutral:   null,
+    };
+    const cls = styleMap[phaseStatus.type] || styleMap.neutral;
+    return (
+      <span className={`text-xs px-2 py-0.5 rounded-full border flex items-center gap-1 ${cls}`}>
+        {iconMap[phaseStatus.type]}
+        {phaseStatus.label}
+      </span>
+    );
+  };
+
   const StatBox = ({ icon: Icon, label, value, color = "cyan" }) => (
+
     <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
       <div className="flex items-center gap-3 mb-2">
         <div className={`p-2 bg-${color}-500/10 rounded-lg`}>
@@ -327,7 +472,34 @@ const DetailedTeamInfo = () => {
     </div>
   );
 
+  const SocialLinkCard = ({ icon: Icon, platform, value, color }) => {
+    const colorMap = {
+      indigo: { bg: 'bg-indigo-600/20', border: 'border-indigo-500/30', text: 'text-indigo-400', hover: 'hover:bg-indigo-600/30' },
+      pink:   { bg: 'bg-pink-600/20',   border: 'border-pink-500/30',   text: 'text-pink-400',   hover: 'hover:bg-pink-600/30'   },
+      blue:   { bg: 'bg-blue-600/20',   border: 'border-blue-500/30',   text: 'text-blue-400',   hover: 'hover:bg-blue-600/30'   },
+      red:    { bg: 'bg-red-600/20',    border: 'border-red-500/30',    text: 'text-red-400',    hover: 'hover:bg-red-600/30'    },
+    };
+    const c = colorMap[color] || colorMap.blue;
+    return (
+      <div className={`${c.bg} border ${c.border} rounded-xl p-5 flex flex-col items-center gap-3 ${value ? c.hover : 'opacity-40 cursor-not-allowed'} transition-colors`}>
+        <Icon className={`w-8 h-8 ${c.text}`} />
+        <div className="text-center">
+          <div className="text-white font-semibold mb-1">{platform}</div>
+          {value ? (
+            <a href={value.startsWith('http') ? value : `https://${value}`} target="_blank" rel="noopener noreferrer"
+              className={`text-sm ${c.text} hover:underline break-all`}>
+              {value}
+            </a>
+          ) : (
+            <span className="text-zinc-600 text-sm">Not linked</span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   if (loading) {
+
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center pt-24">
         <div className="text-center">
@@ -412,6 +584,14 @@ const DetailedTeamInfo = () => {
           {isCaptain && (
             <div className="flex gap-3">
               <button
+                onClick={openEditTeamModal}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors flex items-center gap-2"
+                title="Edit Team Details"
+              >
+                <Edit className="w-4 h-4" />
+                <span className="hidden sm:inline">Edit Details</span>
+              </button>
+              <button
                 onClick={() => setShowEditLogoModal(true)}
                 className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors flex items-center gap-2"
                 title="Edit Team Logo"
@@ -467,11 +647,11 @@ const DetailedTeamInfo = () => {
                     )}
                   </div>
 
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-3">
-                      <h1 className="text-3xl font-bold text-white">{teamData.teamName}</h1>
+                  <div className="flex-1 w-full md:w-auto text-center md:text-left">
+                    <div className="flex flex-col md:flex-row items-center gap-3 mb-4 md:mb-3">
+                      <h1 className="text-2xl md:text-4xl font-bold text-white mb-2 md:mb-0">{teamData.teamName}</h1>
                       {teamData.teamTag && (
-                        <span className="bg-cyan-500/20 border border-cyan-500/30 rounded-lg px-3 py-1 text-cyan-400 font-bold">
+                        <span className="bg-cyan-500/20 border border-cyan-500/30 rounded-lg px-3 py-1 text-cyan-400 font-bold text-sm md:text-base">
                           [{teamData.teamTag}]
                         </span>
                       )}
@@ -516,7 +696,7 @@ const DetailedTeamInfo = () => {
 
                     {/* Bio */}
                     {teamData.bio && (
-                      <div className="bg-zinc-800/30 rounded-lg p-3 mb-4">
+                      <div className="bg-zinc-800/30 rounded-lg p-3 mb-4 max-w-2xl mx-auto md:mx-0">
                         <p className="text-zinc-300 text-sm">{teamData.bio}</p>
                       </div>
                     )}
@@ -541,10 +721,10 @@ const DetailedTeamInfo = () => {
                           YouTube
                         </button>
                       )}
-                      {teamData.socials?.twitch && (
-                        <button className="flex items-center gap-2 bg-purple-600/20 border border-purple-500/30 rounded-lg px-3 py-2 text-purple-400 hover:bg-purple-600/30 transition-colors text-sm">
-                          <Twitch className="w-4 h-4" />
-                          Twitch
+                      {teamData.socials?.instagram && (
+                        <button className="flex items-center gap-2 bg-pink-600/20 border border-pink-500/30 rounded-lg px-3 py-2 text-pink-400 hover:bg-pink-600/30 transition-colors text-sm">
+                          <Instagram className="w-4 h-4" />
+                          Instagram
                         </button>
                       )}
                     </div>
@@ -661,18 +841,18 @@ const DetailedTeamInfo = () => {
         </div>
 
         {/* Navigation Tabs */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-1 mb-6">
-          <div className="flex gap-1">
-            {['matches', 'tournaments', 'achievements'].map(tab => (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-1 mb-6 sticky top-20 z-30 shadow-2xl backdrop-blur-xl bg-zinc-900/80">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide pb-0.5 mask-fade-right">
+            {['matches', 'tournaments', 'social'].map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`flex-1 px-6 py-2.5 rounded-lg font-medium transition-colors ${activeTab === tab
-                  ? 'bg-cyan-600 text-white'
+                className={`flex-1 px-4 md:px-6 py-2.5 rounded-lg font-medium transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === tab
+                  ? 'bg-cyan-600 text-white shadow-lg'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
                   }`}
               >
-                {tab === 'matches' ? 'Match History' : tab === 'tournaments' ? 'Tournaments' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {tab === 'matches' ? 'Match History' : tab === 'tournaments' ? 'Tournaments' : 'Social'}
               </button>
             ))}
           </div>
@@ -682,258 +862,291 @@ const DetailedTeamInfo = () => {
         <div className="min-h-[500px]">
           {activeTab === 'matches' && (
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-              <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
-                <Target className="w-6 h-6 text-cyan-400" />
-                Recent Match History
-              </h2>
-              <div className="space-y-3">
-                {[
-                  { map: 'Erangel', date: '2 days ago', tournament: 'BGMI Pro League', phase: 'Week 4', kills: 18, placement: 1, points: 28, chickenDinner: true },
-                  { map: 'Miramar', date: '3 days ago', tournament: 'BGMI Masters', phase: 'Finals', kills: 15, placement: 2, points: 23, chickenDinner: false },
-                  { map: 'Sanhok', date: '5 days ago', tournament: 'BMOC', phase: 'Semi-Finals', kills: 12, placement: 8, points: 14, chickenDinner: false },
-                  { map: 'Vikendi', date: '1 week ago', tournament: 'Skyesports Championship', phase: 'Grand Finals', kills: 16, placement: 1, points: 26, chickenDinner: true },
-                  { map: 'Erangel', date: '1 week ago', tournament: 'ESL India Premiership', phase: 'Playoffs', kills: 9, placement: 12, points: 9, chickenDinner: false },
-                  { map: 'Miramar', date: '2 weeks ago', tournament: 'NODWIN Invitational', phase: 'Group Stage', kills: 14, placement: 3, points: 20, chickenDinner: false },
-                  { map: 'Sanhok', date: '2 weeks ago', tournament: 'BGMI Masters', phase: 'Qualifiers', kills: 11, placement: 5, points: 15, chickenDinner: false },
-                ].map((match, idx) => (
-                  <div key={idx} className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4 hover:border-zinc-600 transition-colors">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      <div className="flex items-center gap-4 flex-1">
-                        <div className={`w-16 h-16 rounded-lg flex items-center justify-center font-bold ${match.placement <= 3
-                          ? 'bg-green-500/20 text-green-400 border-2 border-green-500/50'
-                          : match.placement <= 10
-                            ? 'bg-blue-500/20 text-blue-400 border-2 border-blue-500/50'
-                            : 'bg-red-500/20 text-red-400 border-2 border-red-500/50'
-                          }`}>
-                          <div className="text-center">
-                            <div className="text-xs text-zinc-400">Rank</div>
-                            <div className="text-xl">#{match.placement}</div>
-                          </div>
-                        </div>
-
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="text-white font-semibold text-lg">{match.map}</h3>
-                            {match.chickenDinner && (
-                              <span className="bg-amber-500/20 text-amber-400 text-xs font-bold px-2 py-1 rounded border border-amber-500/50">
-                                🍗 WINNER
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-3 text-sm text-zinc-400">
-                            <span className="flex items-center gap-1">
-                              <Trophy className="w-3 h-3" />
-                              {match.tournament}
-                            </span>
-                            <span>•</span>
-                            <span className="text-cyan-400 font-medium">{match.phase}</span>
-                            <span>•</span>
-                            <span>{match.date}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-3 text-center">
-                        <div className="bg-zinc-900/50 rounded-lg px-4 py-2 border border-zinc-700">
-                          <div className="text-xl font-bold text-red-400">{match.kills}</div>
-                          <div className="text-xs text-zinc-500">Kills</div>
-                        </div>
-                        <div className="bg-zinc-900/50 rounded-lg px-4 py-2 border border-zinc-700">
-                          <div className="text-xl font-bold text-purple-400">#{match.placement}</div>
-                          <div className="text-xs text-zinc-500">Position</div>
-                        </div>
-                        <div className="bg-zinc-900/50 rounded-lg px-4 py-2 border border-zinc-700">
-                          <div className="text-xl font-bold text-cyan-400">{match.points}</div>
-                          <div className="text-xs text-zinc-500">Points</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                  <Target className="w-6 h-6 text-cyan-400" />
+                  Match History
+                </h2>
+                <span className="text-zinc-500 text-sm">{initialMatches.length + extraMatches.length} matches</span>
               </div>
+
+              {/* Empty state */}
+              {initialMatches.length === 0 && extraMatches.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="w-20 h-20 mx-auto mb-6 bg-zinc-900 border border-zinc-800 rounded-full flex items-center justify-center">
+                    <Target className="w-10 h-10 text-zinc-600" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-white mb-2">No Matches Yet</h3>
+                  <p className="text-zinc-400">This team hasn't played any recorded matches yet.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-3">
+                    {[...initialMatches, ...extraMatches].map((match, idx) => {
+                      const pos = match.position;
+                      const placementColor = pos <= 3
+                        ? 'bg-green-500/20 text-green-400 border-2 border-green-500/50'
+                        : pos <= 10
+                          ? 'bg-blue-500/20 text-blue-400 border-2 border-blue-500/50'
+                          : 'bg-red-500/20 text-red-400 border-2 border-red-500/50';
+                      const matchDate = match.date
+                        ? new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(match.date))
+                        : '—';
+                      const tournamentName = match.tournament?.tournamentName || match.tournament?.shortName || '—';
+                      return (
+                        <div key={match._id ?? idx} className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4 hover:border-zinc-600 transition-colors">
+                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div className="flex items-center gap-4 flex-1">
+                              <div className={`w-16 h-16 rounded-lg flex items-center justify-center font-bold flex-shrink-0 ${pos ? placementColor : 'bg-zinc-700/50 text-zinc-400 border-2 border-zinc-600'}`}>
+                                <div className="text-center">
+                                  <div className="text-xs text-zinc-400">Rank</div>
+                                  <div className="text-xl">{pos ? `#${pos}` : '—'}</div>
+                                </div>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                  <h3 className="text-white font-semibold text-lg">{match.map || 'Unknown Map'}</h3>
+                                  {match.matchType && (
+                                    <span className="bg-cyan-500/10 text-cyan-400 text-xs px-2 py-0.5 rounded border border-cyan-500/20">
+                                      {match.matchType}
+                                    </span>
+                                  )}
+                                  {match.chickenDinner && (
+                                    <span className="bg-amber-500/20 text-amber-400 text-xs font-bold px-2 py-1 rounded border border-amber-500/50">
+                                      🍗 WINNER
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-3 text-sm text-zinc-400 flex-wrap">
+                                  <span className="flex items-center gap-1">
+                                    <Trophy className="w-3 h-3" />
+                                    {tournamentName}
+                                  </span>
+                                  <span>•</span>
+                                  <span>{matchDate}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex gap-3 text-center flex-shrink-0">
+                              <div className="bg-zinc-900/50 rounded-lg px-4 py-2 border border-zinc-700">
+                                <div className="text-xl font-bold text-red-400">{match.kills ?? 0}</div>
+                                <div className="text-xs text-zinc-500">Kills</div>
+                              </div>
+                              {pos && (
+                                <div className="bg-zinc-900/50 rounded-lg px-4 py-2 border border-zinc-700">
+                                  <div className="text-xl font-bold text-purple-400">#{pos}</div>
+                                  <div className="text-xs text-zinc-500">Position</div>
+                                </div>
+                              )}
+                              <div className="bg-zinc-900/50 rounded-lg px-4 py-2 border border-zinc-700">
+                                <div className="text-xl font-bold text-cyan-400">{match.points ?? 0}</div>
+                                <div className="text-xs text-zinc-500">Points</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Load more */}
+                  {(hasMoreMatches || loadingMoreMatches) && (
+                    <div className="mt-6 text-center">
+                      <button
+                        onClick={handleLoadMoreMatches}
+                        disabled={loadingMoreMatches}
+                        className="px-6 py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-300 hover:text-white transition-colors flex items-center gap-2 mx-auto disabled:opacity-50"
+                      >
+                        {loadingMoreMatches
+                          ? <><Loader2 className="w-4 h-4 animate-spin" />Loading...</>
+                          : <><ChevronDown className="w-4 h-4" />Load more matches</>}
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
 
           {activeTab === 'tournaments' && (
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-              <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
-                <Trophy className="w-6 h-6 text-amber-400" />
-                Tournament History
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                  {
-                    name: 'BGMI Masters Series',
-                    phase: 'Season 3 Finals',
-                    placement: '1st',
-                    prize: '₹25,00,000',
-                    date: 'Jan 2026',
-                    participants: 24,
-                    kills: 156,
-                    matches: 18,
-                    chickenDinners: 7,
-                    avgPlacement: 3.2,
-                    eliminated: 'Champions'
-                  },
-                  {
-                    name: 'BMOC',
-                    phase: 'Grand Finals',
-                    placement: '2nd',
-                    prize: '₹12,50,000',
-                    date: 'Dec 2025',
-                    participants: 32,
-                    kills: 142,
-                    matches: 15,
-                    chickenDinners: 5,
-                    avgPlacement: 4.1,
-                    eliminated: 'Grand Finals'
-                  },
-                  {
-                    name: 'Skyesports Championship',
-                    phase: 'Winter Series',
-                    placement: '3rd',
-                    prize: '₹8,00,000',
-                    date: 'Nov 2025',
-                    participants: 20,
-                    kills: 98,
-                    matches: 12,
-                    chickenDinners: 3,
-                    avgPlacement: 5.8,
-                    eliminated: 'Finals'
-                  },
-                  {
-                    name: 'ESL India Premiership',
-                    phase: 'Winter Finals',
-                    placement: '1st',
-                    prize: '₹20,00,000',
-                    date: 'Oct 2025',
-                    participants: 24,
-                    kills: 203,
-                    matches: 21,
-                    chickenDinners: 9,
-                    avgPlacement: 2.8,
-                    eliminated: 'Champions'
-                  },
-                  {
-                    name: 'NODWIN Gaming Invitational',
-                    phase: 'Playoffs',
-                    placement: '4th',
-                    prize: '₹4,50,000',
-                    date: 'Sep 2025',
-                    participants: 16,
-                    kills: 87,
-                    matches: 10,
-                    chickenDinners: 2,
-                    avgPlacement: 7.2,
-                    eliminated: 'Semi-Finals'
-                  },
-                  {
-                    name: 'Pro League India',
-                    phase: 'Stage 2',
-                    placement: '2nd',
-                    prize: '₹15,00,000',
-                    date: 'Aug 2025',
-                    participants: 20,
-                    kills: 178,
-                    matches: 14,
-                    chickenDinners: 6,
-                    avgPlacement: 3.9,
-                    eliminated: 'Finals'
-                  },
-                ].map((tournament, idx) => (
-                  <div key={idx} className="bg-gradient-to-br from-zinc-800/80 to-zinc-800/40 border border-zinc-700 rounded-lg p-5 hover:border-amber-500/50 transition-all group">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <h3 className="text-white font-bold text-lg mb-1 group-hover:text-cyan-400 transition-colors">
-                          {tournament.name}
-                        </h3>
-                        <div className="text-sm text-cyan-400 font-medium mb-2">{tournament.phase}</div>
-                        <div className="flex items-center gap-2 text-sm text-zinc-400 mb-1">
-                          <Calendar className="w-4 h-4" />
-                          {tournament.date}
-                        </div>
-                        <div className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded ${tournament.eliminated === 'Champions'
-                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                          : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                          }`}>
-                          {tournament.eliminated === 'Champions' ? '🏆 Champions' : `❌ Eliminated: ${tournament.eliminated}`}
-                        </div>
-                      </div>
-                      <div className={`px-4 py-2 rounded-lg font-bold text-lg ${tournament.placement === '1st'
-                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/50'
-                        : tournament.placement === '2nd'
-                          ? 'bg-zinc-400/20 text-zinc-300 border border-zinc-400/50'
-                          : tournament.placement === '3rd'
-                            ? 'bg-orange-500/20 text-orange-400 border border-orange-500/50'
-                            : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
-                        }`}>
-                        {tournament.placement}
-                      </div>
-                    </div>
-
-                    <div className="bg-zinc-900/50 rounded-lg p-3 mb-3 border border-zinc-700">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-zinc-400 text-sm">Prize Money</span>
-                        <span className="text-green-400 font-bold text-lg">{tournament.prize}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-zinc-400 text-sm">Participants</span>
-                        <span className="text-white font-medium">{tournament.participants} teams</span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="bg-zinc-900/50 rounded-lg p-2 text-center border border-zinc-700">
-                        <div className="text-xl font-bold text-red-400">{tournament.kills}</div>
-                        <div className="text-xs text-zinc-500">Kills</div>
-                      </div>
-                      <div className="bg-zinc-900/50 rounded-lg p-2 text-center border border-zinc-700">
-                        <div className="text-xl font-bold text-amber-400">{tournament.chickenDinners}</div>
-                        <div className="text-xs text-zinc-500">Dinners</div>
-                      </div>
-                      <div className="bg-zinc-900/50 rounded-lg p-2 text-center border border-zinc-700">
-                        <div className="text-xl font-bold text-cyan-400">{tournament.avgPlacement}</div>
-                        <div className="text-xs text-zinc-500">Avg Rank</div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                  <Trophy className="w-6 h-6 text-amber-400" />
+                  Tournament History
+                </h2>
+                <span className="text-zinc-500 text-sm">
+                  {initialOngoing.length + initialTournaments.length + extraTournaments.length} tournaments
+                </span>
               </div>
+
+              {/* Empty state */}
+              {initialOngoing.length === 0 && initialTournaments.length === 0 && extraTournaments.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="w-20 h-20 mx-auto mb-6 bg-zinc-900 border border-zinc-800 rounded-full flex items-center justify-center">
+                    <Trophy className="w-10 h-10 text-zinc-600" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-white mb-2">No Tournaments Yet</h3>
+                  <p className="text-zinc-400">This team hasn't participated in any tournaments yet.</p>
+                </div>
+              ) : (
+                <>
+                  {/* Ongoing tournaments */}
+                  {initialOngoing.length > 0 && (
+                    <div className="mb-6">
+                      <div className="flex items-center gap-2 mb-4">
+                        <Zap className="w-4 h-4 text-green-400" />
+                        <span className="text-green-400 text-sm font-semibold uppercase tracking-wider">Currently Active</span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {initialOngoing.map((t, idx) => {
+                          const startDate = t.startDate ? new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(t.startDate)) : '—';
+                          return (
+                            <div key={t._id ?? idx} className="bg-gradient-to-br from-green-900/20 to-zinc-800/40 border border-green-700/40 rounded-lg p-5 hover:border-green-500/50 transition-all group">
+                              <div className="flex items-start justify-between mb-3">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                    <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                                      LIVE
+                                    </span>
+                                    {t.phaseStatus && (
+                                      <PhaseStatusPill phaseStatus={t.phaseStatus} tournamentStatus={t.status} />
+                                    )}
+                                  </div>
+                                  <h3 className="text-white font-bold text-lg group-hover:text-cyan-400 transition-colors truncate">
+                                    {t.tournamentName || t.shortName || 'Tournament'}
+                                  </h3>
+                                  {t.shortName && t.shortName !== t.tournamentName && (
+                                    <div className="text-sm text-cyan-400 font-medium">{t.shortName}</div>
+                                  )}
+                                  <div className="flex items-center gap-2 text-sm text-zinc-400 mt-1">
+                                    <Calendar className="w-3 h-3" />
+                                    Started {startDate}
+                                  </div>
+                                </div>
+                                {t.tier && (
+                                  <span className="text-xs font-bold px-2 py-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 ml-2 flex-shrink-0">
+                                    {t.tier}
+                                  </span>
+                                )}
+                              </div>
+                              {t.prizePool?.totalPrizePool > 0 && (
+                                <div className="bg-zinc-900/50 rounded-lg p-2 text-center border border-zinc-700">
+                                  <div className="text-xs text-zinc-400 mb-0.5">Prize Pool</div>
+                                  <div className="text-green-400 font-bold">₹{t.prizePool.totalPrizePool.toLocaleString('en-IN')}</div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Past tournaments */}
+                  {(initialTournaments.length > 0 || extraTournaments.length > 0) && (
+                    <div>
+                      {initialOngoing.length > 0 && (
+                        <div className="flex items-center gap-2 mb-4">
+                          <Trophy className="w-4 h-4 text-zinc-500" />
+                          <span className="text-zinc-500 text-sm font-semibold uppercase tracking-wider">Past Tournaments</span>
+                        </div>
+                      )}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {[...initialTournaments, ...extraTournaments].map((t, idx) => {
+                          const endDate = t.endDate ? new Intl.DateTimeFormat('en-IN', { month: 'short', year: 'numeric' }).format(new Date(t.endDate)) : '—';
+                          return (
+                            <div key={t._id ?? idx} className="bg-gradient-to-br from-zinc-800/80 to-zinc-800/40 border border-zinc-700 rounded-lg p-5 hover:border-amber-500/50 transition-all group">
+                              <div className="flex items-start justify-between mb-3">
+                                <div className="flex-1 min-w-0">
+                                  <h3 className="text-white font-bold text-lg mb-1 group-hover:text-cyan-400 transition-colors truncate">
+                                    {t.tournamentName || t.shortName || 'Tournament'}
+                                  </h3>
+                                  {t.shortName && t.shortName !== t.tournamentName && (
+                                    <div className="text-sm text-cyan-400 font-medium mb-1">{t.shortName}</div>
+                                  )}
+                                  <div className="flex items-center gap-2 text-sm text-zinc-400">
+                                    <Calendar className="w-3 h-3" />
+                                    {endDate}
+                                  </div>
+                                </div>
+                                <div className="flex flex-col items-end gap-2 ml-2 flex-shrink-0">
+                                  {t.tier && (
+                                    <span className="text-xs font-bold px-2 py-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                                      {t.tier}
+                                    </span>
+                                  )}
+                                  <PhaseStatusPill phaseStatus={t.phaseStatus} tournamentStatus={t.status} />
+                                </div>
+                              </div>
+
+                              {t.prizePool?.totalPrizePool > 0 && (
+                                <div className="bg-zinc-900/50 rounded-lg p-3 border border-zinc-700">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-zinc-400 text-sm">Prize Pool</span>
+                                    <span className="text-green-400 font-bold">₹{t.prizePool.totalPrizePool.toLocaleString('en-IN')}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Load more */}
+                  {(hasMoreTournaments || loadingMoreTournaments) && (
+                    <div className="mt-6 text-center">
+                      <button
+                        onClick={handleLoadMoreTournaments}
+                        disabled={loadingMoreTournaments}
+                        className="px-6 py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-300 hover:text-white transition-colors flex items-center gap-2 mx-auto disabled:opacity-50"
+                      >
+                        {loadingMoreTournaments
+                          ? <><Loader2 className="w-4 h-4 animate-spin" />Loading...</>
+                          : <><ChevronDown className="w-4 h-4" />Load more tournaments</>}
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
 
-          {activeTab === 'achievements' && (
+          {activeTab === 'social' && (
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-              <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
-                <Award className="w-6 h-6 text-amber-400" />
-                Achievements & Awards
+              <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
+                <Globe className="w-5 h-5 text-cyan-400" />
+                Social Media & Community
               </h2>
-
-              {(!teamData.qualifiedEvents || teamData.qualifiedEvents.length === 0) ? (
-                <div className="text-center py-16">
-                  <div className="w-20 h-20 mx-auto mb-6 bg-zinc-900 border border-zinc-800 rounded-full flex items-center justify-center">
-                    <Award className="w-10 h-10 text-zinc-600" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">No achievements yet</h3>
-                  <p className="text-zinc-400">Team achievements and awards will be displayed here</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {teamData.qualifiedEvents.map((event, index) => (
-                    <div key={index} className="bg-zinc-800/50 border border-amber-500/30 rounded-lg p-4 hover:border-amber-500/50 transition-colors">
-                      <div className="flex items-center gap-3 mb-2">
-                        <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-amber-600 rounded-lg flex items-center justify-center">
-                          <Trophy className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <h3 className="text-white font-semibold">{event}</h3>
-                          <p className="text-zinc-400 text-sm">Qualified Event</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <SocialLinkCard 
+                  icon={FaDiscord} 
+                  platform="Discord" 
+                  value={teamData.socials?.discord} 
+                  color="indigo" 
+                />
+                <SocialLinkCard 
+                  icon={Instagram} 
+                  platform="Instagram" 
+                  value={teamData.socials?.instagram} 
+                  color="pink" 
+                />
+                <SocialLinkCard 
+                  icon={Twitter} 
+                  platform="Twitter" 
+                  value={teamData.socials?.twitter} 
+                  color="blue" 
+                />
+                <SocialLinkCard 
+                  icon={Youtube} 
+                  platform="YouTube" 
+                  value={teamData.socials?.youtube} 
+                  color="red" 
+                />
+              </div>
             </div>
           )}
         </div>
@@ -983,57 +1196,64 @@ const DetailedTeamInfo = () => {
                 </div>
 
                 <div className="space-y-4">
-                  <div className="text-center">
-                    <div className="w-24 h-24 mx-auto mb-4 bg-zinc-800/50 rounded-xl flex items-center justify-center border border-zinc-700 overflow-hidden">
+                  <div className="flex flex-col items-center">
+                    <div className="w-32 h-32 bg-zinc-800 rounded-xl flex items-center justify-center overflow-hidden mb-4 border border-zinc-700">
                       {selectedFile ? (
-                        <img
-                          src={URL.createObjectURL(selectedFile)}
-                          alt="Preview"
-                          className="w-full h-full object-contain"
-                        />
+                        <img src={URL.createObjectURL(selectedFile)} alt="Preview" className="w-full h-full object-cover" />
                       ) : (
-                        <Upload className="w-8 h-8 text-zinc-400" />
+                        <Upload className="w-12 h-12 text-zinc-600" />
                       )}
                     </div>
-                    <p className="text-zinc-400 text-sm mb-4">
-                      Upload a new logo for your team (PNG, JPG, max 5MB)
-                    </p>
-                  </div>
-
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setSelectedFile(e.target.files[0])}
-                    className="w-full p-3 bg-zinc-800 border border-zinc-700 rounded-lg text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-cyan-600 file:text-white hover:file:bg-cyan-700"
-                  />
-
-                  <div className="flex gap-3 pt-4">
-                    <button
-                      onClick={() => {
-                        setShowEditLogoModal(false);
-                        setSelectedFile(null);
-                      }}
-                      className="flex-1 px-4 py-3 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white rounded-lg transition-colors"
+                    <input
+                      type="file"
+                      id="team-logo-edit-input"
+                      accept="image/*"
+                      onChange={(e) => setSelectedFile(e.target.files[0])}
+                      className="hidden"
+                    />
+                    <label
+                      htmlFor="team-logo-edit-input"
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg cursor-pointer transition-all active:scale-95 mb-6"
                     >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleLogoUpload}
-                      disabled={!selectedFile || uploadLogoMutation.isLoading}
-                      className="flex-1 px-4 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                      {uploadLogoMutation.isLoading ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          Uploading...
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="w-4 h-4" />
-                          Upload Logo
-                        </>
-                      )}
-                    </button>
+                      <Upload className="w-4 h-4" />
+                      {selectedFile ? 'Change Image' : 'Select Image'}
+                    </label>
+                    
+                    {selectedFile && (
+                      <div className="w-full flex gap-3">
+                        <button
+                          onClick={() => setSelectedFile(null)}
+                          className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg transition-colors border border-zinc-700"
+                        >
+                          Clear
+                        </button>
+                        <button
+                          onClick={() => {
+                            const formData = new FormData();
+                            formData.append('logo', selectedFile);
+                            uploadLogoMutation.mutate(formData, {
+                              onSuccess: () => {
+                                setSelectedFile(null);
+                                setShowEditLogoModal(false);
+                              }
+                            });
+                          }}
+                          disabled={uploadLogoMutation.isLoading}
+                          className="flex-[2] py-3 bg-zinc-100 hover:bg-white text-black font-bold rounded-lg transition-all disabled:opacity-50"
+                        >
+                          {uploadLogoMutation.isLoading ? 'Uploading...' : 'Confirm Upload'}
+                        </button>
+                      </div>
+                    )}
+
+                    {!selectedFile && (
+                      <button
+                        onClick={() => setShowEditLogoModal(false)}
+                        className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg transition-colors border border-zinc-700"
+                      >
+                        Cancel
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1263,6 +1483,82 @@ const DetailedTeamInfo = () => {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Team Modal */}
+        {showEditTeamModal && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-zinc-800 flex justify-between items-center sticky top-0 bg-zinc-900 z-10">
+                <div className="flex items-center gap-3">
+                  <Edit className="w-6 h-6 text-cyan-400" />
+                  <h2 className="text-xl font-bold">Edit Team Details</h2>
+                </div>
+                <button onClick={() => setShowEditTeamModal(false)} className="text-zinc-400 hover:text-white transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <form onSubmit={handleEditTeamSubmit} className="p-6 space-y-6">
+                <div>
+                  <label className="block text-zinc-300 text-sm font-medium mb-2">Team Bio</label>
+                  <textarea
+                    value={editTeamForm.bio}
+                    onChange={(e) => setEditTeamForm(prev => ({ ...prev, bio: e.target.value }))}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-500 transition-colors resize-none"
+                    placeholder="Tell us about your team..."
+                    rows={4}
+                    maxLength={500}
+                  />
+                  <p className="text-zinc-500 text-xs mt-1">{editTeamForm.bio.length}/500</p>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <Globe className="w-5 h-5 text-cyan-400" />
+                    Social Links
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-zinc-400 text-sm mb-1 flex items-center gap-2">
+                        <FaDiscord className="w-4 h-4 text-indigo-400" /> Discord
+                      </label>
+                      <input type="text" value={editTeamForm.socials.discord} onChange={(e) => setEditTeamForm(prev => ({ ...prev, socials: { ...prev.socials, discord: e.target.value } }))} placeholder="Discord Server URL" className="w-full p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500" />
+                    </div>
+                    <div>
+                      <label className="block text-zinc-400 text-sm mb-1 flex items-center gap-2">
+                        <Twitter className="w-4 h-4 text-blue-400" /> Twitter
+                      </label>
+                      <input type="text" value={editTeamForm.socials.twitter} onChange={(e) => setEditTeamForm(prev => ({ ...prev, socials: { ...prev.socials, twitter: e.target.value } }))} placeholder="Twitter Profile URL" className="w-full p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-zinc-400 text-sm mb-1 flex items-center gap-2">
+                        <Instagram className="w-4 h-4 text-pink-400" /> Instagram
+                      </label>
+                      <input type="text" value={editTeamForm.socials.instagram} onChange={(e) => setEditTeamForm(prev => ({ ...prev, socials: { ...prev.socials, instagram: e.target.value } }))} placeholder="Instagram Profile URL" className="w-full p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:border-pink-500" />
+                    </div>
+                    <div>
+                      <label className="block text-zinc-400 text-sm mb-1 flex items-center gap-2">
+                        <Youtube className="w-4 h-4 text-red-400" /> YouTube
+                      </label>
+                      <input type="text" value={editTeamForm.socials.youtube} onChange={(e) => setEditTeamForm(prev => ({ ...prev, socials: { ...prev.socials, youtube: e.target.value } }))} placeholder="YouTube Channel URL" className="w-full p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:border-red-500" />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-zinc-400 text-sm mb-1 flex items-center gap-2">
+                        <Globe className="w-4 h-4 text-zinc-400" /> Website
+                      </label>
+                      <input type="text" value={editTeamForm.socials.website} onChange={(e) => setEditTeamForm(prev => ({ ...prev, socials: { ...prev.socials, website: e.target.value } }))} placeholder="Team Website URL" className="w-full p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:border-zinc-500" />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-3 pt-4 border-t border-zinc-800">
+                  <button type="button" onClick={() => setShowEditTeamModal(false)} className="flex-1 px-4 py-3 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white rounded-lg transition-colors">Cancel</button>
+                  <button type="submit" disabled={editTeamMutation.isLoading} className="flex-1 px-4 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg transition-colors disabled:opacity-50 flex justify-center items-center gap-2">
+                    {editTeamMutation.isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    {editTeamMutation.isLoading ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

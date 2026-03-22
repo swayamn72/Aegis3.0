@@ -193,97 +193,105 @@ phaseStandingSchema.virtual('isStale').get(function () {
 
 // Recalculate phase standings from Standing collection
 phaseStandingSchema.methods.recalculate = async function () {
-  const Standing = mongoose.model('Standing');
+  const Match = mongoose.model('Match');
 
-  // Get all standings for this phase
-  const standings = await Standing.find({
-    tournament: this.tournament,
-    phase: this.phase,
-  })
-    .populate('team', 'teamName logo')
-    .sort({ points: -1, kills: -1 });
+  // Aggregate results from ALL matches in this phase
+  const stats = await Match.aggregate([
+    {
+      $match: {
+        tournament: this.tournament,
+        tournamentPhase: this.phase,
+        status: 'completed'
+      }
+    },
+    { $unwind: '$results' },
+    {
+      $group: {
+        _id: '$results.team',
+        matchesPlayed: { $sum: 1 },
+        chickenDinners: { $sum: { $cond: ['$results.chickenDinner', 1, 0] } },
+        killPoints: { $sum: { $ifNull: ['$results.points.killPoints', 0] } },
+        placementPoints: { $sum: { $ifNull: ['$results.points.placementPoints', 0] } },
+        totalPoints: { $sum: { $ifNull: ['$results.points.totalPoints', 0] } },
+        totalKills: { $sum: { $ifNull: ['$results.kills.total', 0] } },
+        // Track unique groups this team played in during this phase
+        groups: { $addToSet: { $arrayElemAt: ['$participatingGroups', 0] } } 
+      }
+    },
+    {
+      $lookup: {
+        from: 'teams',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'teamInfo'
+      }
+    },
+    { $unwind: '$teamInfo' },
+    {
+      // Final Sorting: total points > chicken > position > kill points > name
+      $sort: {
+        totalPoints: -1,
+        chickenDinners: -1,
+        placementPoints: -1,
+        killPoints: -1,
+        'teamInfo.teamName': 1
+      }
+    }
+  ]);
 
-  if (standings.length === 0) {
+  if (stats.length === 0) {
     return this;
   }
 
-  // Calculate statistics
-  const totalTeams = standings.length;
-  const totalPoints = standings.reduce((sum, s) => sum + s.points, 0);
-  const totalKills = standings.reduce((sum, s) => sum + s.kills, 0);
-  const totalChickenDinners = standings.reduce((sum, s) => sum + s.chickenDinners, 0);
-  const totalMatches = standings.reduce((sum, s) => sum + s.matchesPlayed, 0);
+  // Update statistics summary
+  const totalTeams = stats.length;
+  const totalPoints = stats.reduce((sum, s) => sum + s.totalPoints, 0);
+  const totalKills = stats.reduce((sum, s) => sum + s.totalKills, 0);
+  const totalWins = stats.reduce((sum, s) => sum + s.chickenDinners, 0);
+  const totalMatchesCount = await Match.countDocuments({ 
+    tournament: this.tournament, 
+    tournamentPhase: this.phase, 
+    status: 'completed' 
+  });
 
-  // Update statistics
   this.statistics = {
     totalTeams,
-    totalMatches,
+    totalMatches: totalMatchesCount,
     totalPoints,
     totalKills,
-    totalChickenDinners,
+    totalChickenDinners: totalWins,
     averagePointsPerTeam: totalTeams > 0 ? totalPoints / totalTeams : 0,
     averageKillsPerTeam: totalTeams > 0 ? totalKills / totalTeams : 0,
   };
 
-  // Update top teams (top 20)
-  this.topTeams = standings.slice(0, 20).map((s, index) => ({
+  // Update top teams (all of them for a full points table, or at least many)
+  this.topTeams = stats.map((s, index) => ({
     position: index + 1,
-    team: s.team._id,
-    points: s.points,
-    kills: s.kills,
+    team: s._id,
+    points: s.totalPoints,
+    killPoints: s.killPoints,
+    positionPoints: s.placementPoints,
+    kills: s.totalKills,
     chickenDinners: s.chickenDinners,
     matchesPlayed: s.matchesPlayed,
+    group: s.groups[0] || '' 
   }));
 
   // Update leaders
-  const sortedByKills = [...standings].sort((a, b) => b.kills - a.kills);
-  const sortedByWins = [...standings].sort((a, b) => b.chickenDinners - a.chickenDinners);
-  const sortedByAvgPos = [...standings].sort((a, b) => a.averagePosition - b.averagePosition);
-
   this.leaders = {
     mostPoints: {
-      team: standings[0]?.team._id,
-      value: standings[0]?.points || 0,
+      team: stats[0]?._id,
+      value: stats[0]?.totalPoints || 0,
     },
     mostKills: {
-      team: sortedByKills[0]?.team._id,
-      value: sortedByKills[0]?.kills || 0,
+      team: [...stats].sort((a,b) => b.totalKills - a.totalKills)[0]?._id,
+      value: [...stats].sort((a,b) => b.totalKills - a.totalKills)[0]?.totalKills || 0,
     },
     mostChickenDinners: {
-      team: sortedByWins[0]?.team._id,
-      value: sortedByWins[0]?.chickenDinners || 0,
-    },
-    bestAveragePosition: {
-      team: sortedByAvgPos[0]?.team._id,
-      value: sortedByAvgPos[0]?.averagePosition || 0,
-    },
+      team: [...stats].sort((a,b) => b.chickenDinners - a.chickenDinners)[0]?._id,
+      value: [...stats].sort((a,b) => b.chickenDinners - a.chickenDinners)[0]?.chickenDinners || 0,
+    }
   };
-
-  // Update group summaries if groups exist
-  const groups = [...new Set(standings.map((s) => s.group).filter(Boolean))];
-  this.groupSummaries = await Promise.all(
-    groups.map(async (groupName) => {
-      const groupStandings = standings.filter((s) => s.group === groupName);
-      const groupLeader = groupStandings[0];
-
-      return {
-        groupName,
-        teamsCount: groupStandings.length,
-        matchesPlayed: groupStandings.reduce((sum, s) => sum + s.matchesPlayed, 0),
-        leader: {
-          team: groupLeader?.team._id,
-          points: groupLeader?.points || 0,
-        },
-      };
-    })
-  );
-
-  // Update qualification info
-  const qualifiedTeams = standings.filter((s) => s.isQualified).map((s) => s.team._id);
-  const eliminatedTeams = standings.filter((s) => s.isEliminated).map((s) => s.team._id);
-
-  this.qualification.qualifiedTeams = qualifiedTeams;
-  this.qualification.eliminatedTeams = eliminatedTeams;
 
   this.lastCalculated = new Date();
   this.calculatedBy = 'auto';

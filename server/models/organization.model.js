@@ -20,7 +20,7 @@ const organizationSchema = new mongoose.Schema(
       facebook: { type: String, trim: true, default: '' },
       linkedin: { type: String, trim: true, default: '' },
       youtube: { type: String, trim: true, default: '' },
-      twitch: { type: String, trim: true, default: '' },
+
       website: { type: String, trim: true, default: '' },
     },
     ownerSocial: {
@@ -29,7 +29,7 @@ const organizationSchema = new mongoose.Schema(
       facebook: { type: String, trim: true, default: '' },
       linkedin: { type: String, trim: true, default: '' },
       youtube: { type: String, trim: true, default: '' },
-      twitch: { type: String, trim: true, default: '' },
+
       website: { type: String, trim: true, default: '' },
     },
     email: {

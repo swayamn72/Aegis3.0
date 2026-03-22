@@ -5,17 +5,20 @@ import {
   User, Shield, HelpCircle,
   Bug, MessageSquare, Trash2, ExternalLink,
   Save, X, Check, AlertTriangle, Globe,
-  Lock, Key, Upload
+  Lock, Key, Upload, ChevronRight, Camera, Image as ImageIcon
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import axiosInstance from '../utils/axiosConfig';
 
+
+
 const SettingsComponent = () => {
   const [activeSection, setActiveSection] = useState('profile');
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [savedMessage, setSavedMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
+
+
 
   // New state for support form
   const [supportSubject, setSupportSubject] = useState('');
@@ -28,6 +31,32 @@ const SettingsComponent = () => {
   const [bugSteps, setBugSteps] = useState('');
   const [bugPriority, setBugPriority] = useState('Low');
   const [isSubmittingBug, setIsSubmittingBug] = useState(false);
+
+  // Password update state
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
+  // FAQ state
+  const [openFaq, setOpenFaq] = useState(null);
+
+  const faqData = [
+    {
+      question: "How do I join a tournament?",
+      answer: "To join a tournament, navigate to the 'Tournaments' page from the sidebar, select a tournament that is currently open for registration, and click the 'Join Tournament' button. Make sure your team meets the eligibility requirements."
+    },
+    {
+      question: "How can I change my team?",
+      answer: "You can manage your team by clicking on your profile and selecting 'My Team'. From there, you can view your current team, leave it, or join a new one if you're not already in one."
+    },
+    {
+      question: "How do I report a bug or issue?",
+      answer: "Use the 'Support & Help' section in Settings to send a direct message to our support team or submit a detailed bug report using the 'Report a Bug' form."
+    }
+  ];
 
   const { user } = useAuth(); // get user from AuthContext
 
@@ -66,7 +95,7 @@ const SettingsComponent = () => {
 
     // Social & Contact
     discordTag: '',
-    twitch: '',
+    instagram: '',
     YouTube: '',
     profileVisibility: 'public',
 
@@ -114,7 +143,7 @@ const SettingsComponent = () => {
         teamStatus: user.teamStatus || '',
         availability: user.availability || '',
         discordTag: user.discordTag || '',
-        twitch: user.twitch || '',
+        instagram: user.instagram || '',
         YouTube: user.YouTube || user.youtube || '', // fallback for both
         profileVisibility: user.profileVisibility || 'public',
         cardTheme: user.cardTheme || 'orange',
@@ -192,18 +221,42 @@ const SettingsComponent = () => {
     </button>
   );
 
-  const handleForgotPassword = async () => {
-    const email = document.getElementById('forgotEmail').value.trim();
-    if (!email) {
-      alert('Please enter your registered email.');
+  const handleUpdatePassword = async () => {
+    const { currentPassword, newPassword, confirmPassword } = passwordForm;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      toast.error('Please fill in all password fields');
       return;
     }
 
+    if (newPassword !== confirmPassword) {
+      toast.error('New passwords do not match');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      toast.error('New password must be at least 6 characters long');
+      return;
+    }
+
+    setIsUpdatingPassword(true);
     try {
-      const response = await axiosInstance.post('/api/forgot-password', { email });
-      alert(response.data.message);
-    } catch (err) {
-      alert(err?.error || err?.message || 'Server error.');
+      const response = await axiosInstance.post('/api/players/change-password', {
+        currentPassword,
+        newPassword
+      });
+
+      toast.success(response.data.message || 'Password updated successfully');
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      });
+    } catch (error) {
+      const msg = error.response?.data?.message || error.message || 'Failed to update password';
+      toast.error(msg);
+    } finally {
+      setIsUpdatingPassword(false);
     }
   };
 
@@ -304,13 +357,6 @@ const SettingsComponent = () => {
                   title="Support & Help"
                   icon={HelpCircle}
                   isActive={activeSection === 'support'}
-                  onClick={setActiveSection}
-                />
-                <SettingsSection
-                  id="danger"
-                  title="Account Deletion"
-                  icon={Trash2}
-                  isActive={activeSection === 'danger'}
                   onClick={setActiveSection}
                 />
               </nav>
@@ -601,12 +647,12 @@ const SettingsComponent = () => {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
-                        <label className="block text-zinc-300 font-medium mb-2">Twitch</label>
+                        <label className="block text-zinc-300 font-medium mb-2">Instagram</label>
                         <input
                           type="text"
-                          value={profileSettings.twitch}
-                          onChange={(e) => setProfileSettings({ ...profileSettings, twitch: e.target.value })}
-                          placeholder="twitch.tv/username"
+                          value={profileSettings.instagram}
+                          onChange={(e) => setProfileSettings({ ...profileSettings, instagram: e.target.value })}
+                          placeholder="instagram.com/username"
                           className="w-full px-4 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white focus:border-orange-500 focus:outline-none"
                         />
                       </div>
@@ -679,6 +725,8 @@ const SettingsComponent = () => {
 
             {/* Removed Notifications Section */}
 
+
+
             {/* Privacy & Security Section */}
             {activeSection === 'privacy' && (
               <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
@@ -697,58 +745,39 @@ const SettingsComponent = () => {
                       <input
                         type="password"
                         placeholder="Current Password"
+                        value={passwordForm.currentPassword}
+                        onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
                         className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-4 py-2 text-white focus:border-orange-500 focus:outline-none"
                       />
                       <input
                         type="password"
                         placeholder="New Password"
+                        value={passwordForm.newPassword}
+                        onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
                         className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-4 py-2 text-white focus:border-orange-500 focus:outline-none"
                       />
                       <input
                         type="password"
                         placeholder="Confirm New Password"
+                        value={passwordForm.confirmPassword}
+                        onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
                         className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-4 py-2 text-white focus:border-orange-500 focus:outline-none"
-                      />
-                      <button className="bg-amber-500 hover:bg-amber-600 text-black font-medium px-4 py-2 rounded-lg transition-colors">
-                        Update Password
-                      </button>
-                    </div>
-                  </div>
-
-                  {/*Forgot Passwrod section*/}
-                  <div className="bg-zinc-800/50 border border-amber-400/30 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold text-amber-400 mb-3 flex items-center gap-2">
-                      <Key className="w-5 h-5" />
-                      Forgot Password
-                    </h3>
-                    <div className="space-y-4">
-                      <input
-                        type="email"
-                        placeholder="Enter your registered email"
-                        className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-4 py-2 text-white focus:border-orange-500 focus:outline-none"
-                        id="forgotEmail"
                       />
                       <button
-                        onClick={handleForgotPassword}
-                        className="bg-amber-500 hover:bg-amber-600 text-black font-medium px-4 py-2 rounded-lg transition-colors"
+                        onClick={handleUpdatePassword}
+                        disabled={isUpdatingPassword}
+                        className={`bg-amber-500 hover:bg-amber-600 text-black font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${isUpdatingPassword ? 'opacity-75 cursor-not-allowed' : ''}`}
                       >
-                        Send Reset Link
+                        {isUpdatingPassword ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                            Updating...
+                          </>
+                        ) : 'Update Password'}
                       </button>
                     </div>
                   </div>
 
-                  <div className="bg-zinc-800/50 border border-blue-400/30 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold text-blue-400 mb-3 flex items-center gap-2">
-                      <Lock className="w-5 h-5" />
-                      Two-Factor Authentication
-                    </h3>
-                    <p className="text-zinc-400 text-sm mb-4">
-                      Add an extra layer of security to your account with 2FA
-                    </p>
-                    <button className="bg-blue-500 hover:bg-blue-600 text-white font-medium px-4 py-2 rounded-lg transition-colors">
-                      Enable 2FA
-                    </button>
-                  </div>
 
                   <div className="bg-zinc-800/50 rounded-lg p-4">
                     <h3 className="text-lg font-semibold text-white mb-3">Privacy Controls</h3>
@@ -939,161 +968,43 @@ const SettingsComponent = () => {
                     </div>
                   </div>
 
-                  {/* Help Resources */}
                   <div className="bg-zinc-800/50 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold text-white mb-4">Help Resources</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <a
-                        href="#"
-                        className="flex items-center gap-3 p-3 bg-zinc-700/50 hover:bg-zinc-600/50 rounded-lg transition-colors group"
-                      >
-                        <HelpCircle className="w-5 h-5 text-orange-400" />
-                        <div>
-                          <div className="text-white font-medium group-hover:text-orange-400 transition-colors">FAQ</div>
-                          <div className="text-zinc-400 text-sm">Frequently asked questions</div>
-                        </div>
-                      </a>
-
-                      <a
-                        href="#"
-                        className="flex items-center gap-3 p-3 bg-zinc-700/50 hover:bg-zinc-600/50 rounded-lg transition-colors group"
-                      >
-                        <Globe className="w-5 h-5 text-blue-400" />
-                        <div>
-                          <div className="text-white font-medium group-hover:text-blue-400 transition-colors">Help Center</div>
-                          <div className="text-zinc-400 text-sm">Complete documentation</div>
-                        </div>
-                      </a>
-
-                      <a
-                        href="#"
-                        className="flex items-center gap-3 p-3 bg-zinc-700/50 hover:bg-zinc-600/50 rounded-lg transition-colors group"
-                      >
-                        <MessageSquare className="w-5 h-5 text-green-400" />
-                        <div>
-                          <div className="text-white font-medium group-hover:text-green-400 transition-colors">Community</div>
-                          <div className="text-zinc-400 text-sm">Join our Discord server</div>
-                        </div>
-                      </a>
-
-                      <a
-                        href="#"
-                        className="flex items-center gap-3 p-3 bg-zinc-700/50 hover:bg-zinc-600/50 rounded-lg transition-colors group"
-                      >
-                        <ExternalLink className="w-5 h-5 text-purple-400" />
-                        <div>
-                          <div className="text-white font-medium group-hover:text-purple-400 transition-colors">Status Page</div>
-                          <div className="text-zinc-400 text-sm">Service status updates</div>
-                        </div>
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Account Deletion Section */}
-            {activeSection === 'danger' && (
-              <div className="bg-zinc-900/50 border border-red-500/50 rounded-xl p-6">
-                <h2 className="text-2xl font-bold text-red-400 mb-6 flex items-center gap-3">
-                  <Trash2 className="w-6 h-6" />
-                  Danger Zone
-                </h2>
-
-                <div className="space-y-6">
-                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-6">
-                    <div className="flex items-center gap-3 mb-4">
-                      <AlertTriangle className="w-6 h-6 text-red-400" />
-                      <h3 className="text-xl font-semibold text-red-400">Delete Account</h3>
-                    </div>
-
-                    <div className="space-y-4 mb-6">
-                      <p className="text-zinc-300">
-                        Once you delete your account, there is no going back. This action cannot be undone.
-                      </p>
-
-                      <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4">
-                        <h4 className="text-red-400 font-medium mb-2">This will permanently delete:</h4>
-                        <ul className="text-zinc-300 text-sm space-y-1 list-disc list-inside">
-                          <li>Your profile and all personal information</li>
-                          <li>All match history and statistics</li>
-                          <li>Tournament participation records</li>
-                          <li>Friend connections and messages</li>
-                          <li>Achievement progress and rewards</li>
-                          <li>Any premium features or subscriptions</li>
-                        </ul>
-                      </div>
-                    </div>
-
-                    {!showDeleteConfirm ? (
-                      <button
-                        onClick={() => setShowDeleteConfirm(true)}
-                        className="bg-red-600 hover:bg-red-700 text-white font-medium px-6 py-3 rounded-lg transition-colors flex items-center gap-2"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        Delete My Account
-                      </button>
-                    ) : (
-                      <div className="space-y-4">
-                        <div className="bg-red-800/50 border border-red-500/50 rounded-lg p-4">
-                          <p className="text-red-300 font-medium mb-3">
-                            Are you absolutely sure? This action cannot be undone.
-                          </p>
-                          <div className="mb-4">
-                            <label className="block text-red-300 text-sm font-medium mb-2">
-                              Type "DELETE" to confirm:
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="DELETE"
-                              className="w-full bg-red-900/50 border border-red-500/50 rounded-lg px-4 py-2 text-white focus:border-red-400 focus:outline-none"
+                    <h3 className="text-lg font-semibold text-white mb-4">FAQ</h3>
+                    <div className="space-y-4">
+                      {faqData.map((faq, index) => (
+                        <div key={index} className="border-b border-zinc-700 pb-4 last:border-0 last:pb-0">
+                          <button
+                            onClick={() => setOpenFaq(openFaq === index ? null : index)}
+                            className="w-full flex items-center justify-between text-left group"
+                          >
+                            <span className="text-white font-medium group-hover:text-orange-400 transition-colors">
+                              {faq.question}
+                            </span>
+                            <ChevronRight
+                              className={`w-5 h-5 text-zinc-500 transition-transform duration-200 ${openFaq === index ? 'rotate-90 text-orange-400' : ''}`}
                             />
-                          </div>
-                          <div className="flex gap-3">
-                            <button className="bg-red-600 hover:bg-red-700 text-white font-medium px-6 py-2 rounded-lg transition-colors flex items-center gap-2">
-                              <Trash2 className="w-4 h-4" />
-                              Permanently Delete Account
-                            </button>
-                            <button
-                              onClick={() => setShowDeleteConfirm(false)}
-                              className="bg-zinc-600 hover:bg-zinc-500 text-white font-medium px-6 py-2 rounded-lg transition-colors flex items-center gap-2"
-                            >
-                              <X className="w-4 h-4" />
-                              Cancel
-                            </button>
+                          </button>
+                          <div
+                            className={`overflow-hidden transition-all duration-300 ${openFaq === index ? 'max-h-40 mt-3' : 'max-h-0'}`}
+                          >
+                            <p className="text-zinc-400 text-sm leading-relaxed">
+                              {faq.answer}
+                            </p>
                           </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
-                    <h4 className="text-amber-400 font-medium mb-2 flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4" />
-                      Alternative Options
-                    </h4>
-                    <p className="text-amber-300 text-sm mb-3">
-                      Before deleting your account permanently, consider these alternatives:
-                    </p>
-                    <div className="space-y-2">
-                      <button className="w-full bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30 font-medium px-4 py-2 rounded-lg transition-colors text-left">
-                        Temporarily Deactivate Account
-                      </button>
-                      <button className="w-full bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30 font-medium px-4 py-2 rounded-lg transition-colors text-left">
-                        Download Account Data First
-                      </button>
-                      <button className="w-full bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30 font-medium px-4 py-2 rounded-lg transition-colors text-left">
-                        Contact Support for Help
-                      </button>
+                      ))}
                     </div>
                   </div>
                 </div>
               </div>
             )}
+
 
           </div>
         </div>
       </div>
+
+
     </div>
   );
 };

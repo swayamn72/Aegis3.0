@@ -50,6 +50,12 @@ const tournamentSchema = new mongoose.Schema(
       default: 'Community',
       index: true,
     },
+    importanceScore: {
+      type: Number,
+      min: 1,
+      max: 100,
+      default: 50,
+    },
     region: {
       type: String,
       enum: [
@@ -379,7 +385,7 @@ const tournamentSchema = new mongoose.Schema(
           type: String,
           enum: [
             'YouTube',
-            'Twitch',
+            'Instagram',
             'Facebook Gaming',
             'Loco',
             'Rooter',
@@ -607,6 +613,35 @@ tournamentSchema.pre('save', async function () {
     if (finalPhases.length > 1) {
       throw new Error('A tournament can only have ONE phase of type "final_stage".');
     }
+  }
+
+  // --- Aegis Rating: track which phases just became 'completed' ---
+  this._newlyCompletedPhases = [];
+  if (this.isModified('phases') && this.phases) {
+    for (let i = 0; i < this.phases.length; i++) {
+      const statusPath = `phases.${i}.status`;
+      if (this.isModified(statusPath) && this.phases[i].status === 'completed') {
+        this._newlyCompletedPhases.push(this.phases[i].name);
+      }
+    }
+  }
+});
+
+// --- Aegis Rating: fire-and-forget after phase completion ---
+tournamentSchema.post('save', async function (doc) {
+  try {
+    const newlyCompleted = doc._newlyCompletedPhases || [];
+    if (newlyCompleted.length === 0) return;
+
+    const { processPhaseCompletion } = await import('../services/aegisRating.js');
+    for (const phaseName of newlyCompleted) {
+      console.log(`📊 Aegis Rating: Processing phase "${phaseName}" for tournament ${doc._id}`);
+      processPhaseCompletion(doc, phaseName).catch(err =>
+        console.error(`❌ Aegis rating batch failed for phase "${phaseName}":`, err)
+      );
+    }
+  } catch (err) {
+    console.error('❌ Aegis rating post-save hook error:', err);
   }
 });
 

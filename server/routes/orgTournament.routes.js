@@ -11,6 +11,7 @@ import upload from '../config/multer.js';
 import { verifyApprovedOrgToken } from '../middleware/orgAuth.js';
 import TournamentAnnouncement from '../models/tournamentAnnouncement.model.js';
 import ChatMessage from '../models/chat.model.js';
+import { recalculateStatsForTeams } from './match.routes.js';
 
 const router = express.Router();
 
@@ -172,6 +173,28 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
       .lean();
 
     const phaseTeamIds = phaseRegistrations.map(r => r.team.toString());
+
+    // **AUTOMATION: Mark all matches in this phase as completed**
+    // This ensures that "in_progress" or "scheduled" matches are finalized when advancing.
+    await Match.updateMany(
+      {
+        tournament: tournamentId,
+        tournamentPhase: phaseName,
+        status: { $ne: 'completed' }
+      },
+      { $set: { status: 'completed' } }
+    );
+
+    // **AUTOMATION: Mark all matches in this phase as completed**
+    // This ensures that "in_progress" or "scheduled" matches are finalized when advancing.
+    await Match.updateMany(
+      {
+        tournament: tournamentId,
+        tournamentPhase: phaseName,
+        status: { $ne: 'completed' }
+      },
+      { $set: { status: 'completed' } }
+    );
 
     // Build a group map from registrations for later group assignment
     const registrationGroupMap = {};
@@ -465,24 +488,14 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
         }
       );
 
-      // Set final positions in registrations — single bulkWrite instead of N sequential queries
+      // Set final positions in registrations
       const finalPosBulkOps = overallStandings.map((standing, i) => ({
         updateOne: {
-          filter: {
-            tournament: tournamentId,
-            team: standing.teamId
-          },
-          update: {
-            $set: {
-              finalPosition: i + 1,
-              totalTournamentPoints: standing.points,
-              totalTournamentKills: standing.kills
-            }
-          }
+          filter: { tournament: tournamentId, team: standing.teamId },
+          update: { $set: { finalPosition: i + 1 } }
         }
       }));
-
-      await Registration.bulkWrite(finalPosBulkOps, { ordered: false });
+      if (finalPosBulkOps.length > 0) await Registration.bulkWrite(finalPosBulkOps, { ordered: false });
 
       console.log('✅ Updated final standings and registrations');
     } else {
@@ -533,6 +546,14 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
     // Save tournament
     await tournament.save();
     console.log('✅ Tournament saved successfully');
+
+    // **AUTOMATION: Refresh all statistics (Player, Team, and Registration)**
+    // This ensures that tournament history stats are synced even for preliminary phases.
+    if (phaseTeamIds.length > 0) {
+      recalculateStatsForTeams(phaseTeamIds).catch(err =>
+        console.warn('⚠️ Automated stats recalculation failed (non-critical):', err.message)
+      );
+    }
 
     // Prepare response with standings
     const response = {
@@ -708,21 +729,21 @@ router.post('/:tournamentId/conclude', verifyApprovedOrgToken, async (req, res) 
 
     await tournament.save();
 
-    // Update registrations
+    // Update registrations (Final Stage: just set Stage to Completed and set Final Position)
     const finalPosBulkOps = overallStandings.map((standing, i) => ({
       updateOne: {
         filter: { tournament: tournamentId, team: standing.teamId },
-        update: {
-          $set: {
-            finalPosition: i + 1,
-            totalTournamentPoints: standing.points,
-            totalTournamentKills: standing.kills,
-            currentStage: 'Completed'
-          }
-        }
+        update: { $set: { finalPosition: i + 1, currentStage: 'Completed' } }
       }
     }));
     if (finalPosBulkOps.length > 0) await Registration.bulkWrite(finalPosBulkOps, { ordered: false });
+
+    // Refresh all statistics
+    if (phaseTeamIds.length > 0) {
+      recalculateStatsForTeams(phaseTeamIds).catch(err =>
+        console.warn('⚠️ Stats recalculation failed in conclude:', err.message)
+      );
+    }
 
     // Update PhaseStanding summary
     try {
@@ -1255,8 +1276,14 @@ router.put('/:tournamentId', verifyApprovedOrgToken, upload.fields([
     }
 
     // STRICTLY filter allowed fields for this generic update route
-    // Only allow media and phases (for the separate phase manager)
-    const allowedFields = ['media', 'phases'];
+    const allowedFields = [
+      'tournamentName', 'shortName', 'description', 'gameTitle', 
+      'region', 'tier', 'startDate', 'endDate', 'isOpenForAll', 
+      'requiresApproval', 'registrationStartDate', 'registrationEndDate', 
+      'slots', 'prizePool', 'rulesetDocument', 'websiteLink', 
+      'gameSettings', 'streamLinks', 'socialMedia', 'format', 'formatDetails',
+      'media', 'phases'
+    ];
     const updateData = {};
 
     allowedFields.forEach(field => {

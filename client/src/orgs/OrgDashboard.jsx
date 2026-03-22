@@ -27,8 +27,8 @@ const fetchTournaments = async () => {
 
 const OrgDashboard = () => {
     const [activeTab, setActiveTab] = useState('overview');
-    const [uploading, setUploading] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [uploading, setUploading] = useState(false);
     const fileInputRef = useRef(null);
     const navigate = useNavigate();
     const { logout } = useAuth();
@@ -106,11 +106,15 @@ const OrgDashboard = () => {
         if (!file) return;
 
         setUploading(true);
-        const formData = new FormData();
-        formData.append('logo', file);
-
         try {
-            await uploadLogoMutation.mutateAsync(formData);
+            const uploadFormData = new FormData();
+            uploadFormData.append('logo', file);
+
+            await uploadLogoMutation.mutateAsync(uploadFormData);
+            toast.success('Organization logo updated!');
+        } catch (error) {
+            console.error('Error uploading logo:', error);
+            toast.error(error.response?.data?.message || 'Failed to upload logo');
         } finally {
             setUploading(false);
         }
@@ -248,6 +252,7 @@ const OrgDashboard = () => {
                 // Pass additional props as needed
                 />
             )}
+
         </div>
     );
 };

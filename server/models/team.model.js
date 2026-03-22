@@ -70,11 +70,10 @@ const teamSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
-    aegisRating: { // Team-level rating
+    aegisRating: { // Team-level rating (computed as roster mean)
       type: Number,
       default: 0,
       min: 0,
-      max: 3000,
     },
 
     // Tournament and match statistics
@@ -121,7 +120,7 @@ const teamSchema = new mongoose.Schema(
     socials: {
       discord: { type: String, trim: true, default: '' },
       twitter: { type: String, trim: true, default: '' },
-      twitch: { type: String, trim: true, default: '' },
+      instagram: { type: String, trim: true, default: '' },
       youtube: { type: String, trim: true, default: '' },
       website: { type: String, trim: true, default: '' },
     },

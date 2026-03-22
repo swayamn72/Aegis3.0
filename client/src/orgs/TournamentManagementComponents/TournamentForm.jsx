@@ -252,14 +252,23 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
       // Create FormData for file uploads
       const formDataToSend = new FormData();
 
+      // Clean up prize pool data
+      const cleanedPrizePool = {
+        ...formData.prizePool,
+        individualAwards: formData.prizePool?.individualAwards?.filter(award =>
+          award && award.name && award.name.trim() !== ''
+        ) || []
+      };
+
       if (isEditing) {
-        // Only allow updating media when editing
+        // Send full update payload
         const updatePayload = {
-          media: {
-            ...formData.media
-          }
+          ...formData,
+          prizePool: cleanedPrizePool
         };
 
+        // Don't overwrite the original media object if no new files were uploaded
+        // This is handled by the backend route (it merges media)
         formDataToSend.append('tournamentData', JSON.stringify(updatePayload));
       } else {
         // Full tournament creation logic
@@ -271,12 +280,7 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
             totalTournamentPoints: 0,
             totalTournamentKills: 0
           })) || [],
-          prizePool: {
-            ...formData.prizePool,
-            individualAwards: formData.prizePool?.individualAwards?.filter(award =>
-              award && award.name && award.name.trim() !== ''
-            ) || []
-          }
+          prizePool: cleanedPrizePool
         };
         formDataToSend.append('tournamentData', JSON.stringify(cleanedFormData));
       }

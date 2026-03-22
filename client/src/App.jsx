@@ -28,6 +28,7 @@ import DetailedTournamentInfoPage from './pages/DetailedTournamentInfoPage';
 import DetailedMatchInfoPage from './pages/DetailedMatchInfoPage';
 import TournamentManagementPageOrg from "./orgs/TournamentManagementPageOrg";
 import DetailedPlayerProfilePage from "./pages/DetailedPlayerProfilePage";
+import AegisLeaderboard from "./components/AegisLeaderboard";
 
 import AegisOrgPendingApproval from "./orgs/OrgPendingApproval";
 import OrgDashboard from "./orgs/OrgDashboard";
@@ -59,6 +60,7 @@ function AppContent() {
           <Route path="/org-profile-setup" element={<OrgProfileSetup />} />
           <Route path="/detailed/:id" element={<DetailedPlayerProfilePage />} />
           <Route path="/matches/:id" element={<DetailedMatchInfoPage />} />
+          <Route path="/leaderboard" element={<AegisLeaderboard />} />
 
           {/* Organization Routes */}
           <Route

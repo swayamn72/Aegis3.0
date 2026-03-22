@@ -14,7 +14,69 @@ import cloudinary from '../config/cloudinary.js';
 import mongoose from 'mongoose';
 import { deactivateLFTPost } from '../utils/recruitmentHelpers.js';
 
+// ============================================================================
+// PHASE STATUS HELPER
+// Computes a rich phaseStatus label from a Registration + populated Tournament.
+// Rules:
+//  - disqualified / withdrawn  → show that
+//  - tournament completed + finalPosition → '#N Final'
+//  - active tournament + team in activePhase.teams → 'In Phase: X'
+//  - active tournament + team NOT in activePhase.teams + team's last phase was
+//    the LAST phase in the tournament → show rank (#N) rather than Eliminated
+//  - otherwise → 'Eliminated: <lastPhase>'
+// ============================================================================
+function computePhaseStatus(registration, tournament) {
+  const { phase: teamPhase, status: regStatus, finalPosition } = registration;
+  const tStatus = tournament.status;
+  const phases  = tournament.phases || [];
+ 
+   if (regStatus === 'disqualified') return { label: 'Disqualified', type: 'eliminated' };
+   if (regStatus === 'withdrawn')    return { label: 'Withdrawn',    type: 'neutral'   };
+ 
+   // Completed tournament
+   if (tStatus === 'completed') {
+     if (finalPosition) return { label: `#${finalPosition} Final`, type: 'completed' };
+     return { label: 'Completed', type: 'completed' };
+   }
+ 
+   // Active tournament — derive current competition phase
+   const teamPhaseDoc  = phases.find(p => p.name === teamPhase);
+   const activePhase   = phases.find(p => p.status === 'in_progress');
+   const startedPhases = phases.filter(p => p.status !== 'upcoming');
+   const lastPhase     = startedPhases[startedPhases.length - 1];
+ 
+   // SCALABILITY OPTIMIZATION for 1 Lakh+ users:
+   // Instead of scanning tournament.phases[].teams (which could be 100k long),
+   // we compare against the indexed registration.phase string.
+   const isTeamInActivePhase = teamPhaseDoc?.status === 'in_progress';
+ 
+   if (isTeamInActivePhase) {
+     return { label: `In Phase: ${teamPhase}`, type: 'active' };
+   }
+ 
+   if (teamPhaseDoc?.status === 'upcoming') {
+     return { label: `Phase: ${teamPhase}`, type: 'pending' };
+   }
+ 
+   if (activePhase) {
+     // Team not in active phase — were they eliminated or did they finish?
+     const isLastPhase = lastPhase && teamPhase && lastPhase.name === teamPhase;
+     if (isLastPhase) {
+       if (finalPosition) return { label: `#${finalPosition} Final`, type: 'completed' };
+       return { label: `Phase: ${teamPhase}`, type: 'pending' };
+     }
+     const eliminatedAt = teamPhase || 'Qualifiers';
+     return { label: `Eliminated: ${eliminatedAt}`, type: 'eliminated' };
+   }
 
+  // No active phase but tournament is in_progress (between phases)
+  if (tStatus === 'in_progress') {
+    if (teamPhase) return { label: `Phase: ${teamPhase}`, type: 'pending' };
+    return { label: 'In Progress', type: 'pending' };
+  }
+
+  return { label: tStatus?.replace(/_/g, ' ') || 'Unknown', type: 'neutral' };
+}
 
 const router = express.Router();
 
@@ -30,7 +92,7 @@ router.get('/:id', auth, async (req, res) => {
     const team = await Team.findById(teamId)
       .populate({
         path: 'captain',
-        select: 'username profilePicture primaryGame realName age country aegisRating statistics inGameRole discordTag twitch youtube twitter verified'
+        select: 'username profilePicture primaryGame realName age country aegisRating statistics inGameRole discordTag instagram youtube twitter verified'
       })
       .populate({
         path: 'players',
@@ -80,22 +142,29 @@ router.get('/:id', auth, async (req, res) => {
       };
     });
 
-    // NEW: Get tournaments from Registration collection instead
+    // Get tournaments from Registration collection — include phase data
     const registrations = await Registration.find({
       team: team._id,
-      status: { $in: ['approved', 'checked_in'] }
+      status: { $in: ['approved', 'checked_in', 'disqualified', 'withdrawn'] }
     })
+      .select('team status phase currentStage finalPosition registeredAt')
       .populate({
         path: 'tournament',
-        select: 'tournamentName shortName startDate endDate status prizePool media tier'
+        select: 'tournamentName shortName startDate endDate status prizePool media tier phases.name phases.status'
       })
       .sort({ registeredAt: -1 })
       .limit(10)
       .lean();
 
     const tournaments = registrations
-      .filter(r => r.tournament) // Filter out null tournaments
-      .map(r => r.tournament);
+      .filter(r => r.tournament)
+      .map(r => ({
+        ...r.tournament,
+        phaseStatus:      computePhaseStatus(r, r.tournament),
+        registrationStatus: r.status,
+        finalPosition:    r.finalPosition,
+        teamPhase:        r.phase,
+      }));
 
     // Separate ongoing and past tournaments
     const now = new Date();
@@ -115,6 +184,105 @@ router.get('/:id', auth, async (req, res) => {
   } catch (error) {
     console.error('Error fetching team:', error);
     res.status(500).json({ message: 'Server error fetching team' });
+  }
+});
+
+// ============================================================================
+// GET /api/teams/:id/matches?page=1&limit=10  — Paginated match history
+// ============================================================================
+router.get('/:id/matches', auth, async (req, res) => {
+  try {
+    const teamId = req.params.id.trim();
+    const page  = Math.max(1, parseInt(req.query.page,  10) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
+    const skip  = (page - 1) * limit;
+
+    // Validate team exists (quick check, no full populate needed)
+    const teamExists = await Team.exists({ _id: teamId });
+    if (!teamExists) return res.status(404).json({ message: 'Team not found' });
+
+    const filter = { 'results.team': new mongoose.Types.ObjectId(teamId), status: 'completed' };
+
+    const [matches, total] = await Promise.all([
+      Match.find(filter)
+        .sort({ actualEndTime: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate('tournament', 'tournamentName shortName')
+        .select('matchNumber matchType map actualEndTime results tournament')
+        .lean(),
+      Match.countDocuments(filter),
+    ]);
+
+    const formatted = matches.map(match => {
+      const td = match.results?.find(pt => pt.team.toString() === teamId);
+      return {
+        _id: match._id,
+        matchNumber: match.matchNumber,
+        matchType:   match.matchType,
+        map:         match.map,
+        date:        match.actualEndTime,
+        tournament:  match.tournament,
+        position:    td?.finalPosition  ?? null,
+        kills:       td?.kills?.total   ?? 0,
+        points:      td?.points?.totalPoints ?? 0,
+        chickenDinner: td?.chickenDinner ?? false,
+      };
+    });
+
+    res.json({ matches: formatted, total, page, totalPages: Math.ceil(total / limit) });
+  } catch (error) {
+    console.error('Error fetching team matches:', error);
+    res.status(500).json({ message: 'Server error fetching team matches' });
+  }
+});
+
+// ============================================================================
+// GET /api/teams/:id/tournaments?page=1&limit=10  — Paginated tournament history
+// ============================================================================
+router.get('/:id/tournaments', auth, async (req, res) => {
+  try {
+    const teamId = req.params.id.trim();
+    const page  = Math.max(1, parseInt(req.query.page,  10) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
+    const skip  = (page - 1) * limit;
+
+    const teamExists = await Team.exists({ _id: teamId });
+    if (!teamExists) return res.status(404).json({ message: 'Team not found' });
+
+    const filter = {
+      team:   new mongoose.Types.ObjectId(teamId),
+      status: { $in: ['approved', 'checked_in', 'disqualified', 'withdrawn'] },
+    };
+
+    const [registrations, total] = await Promise.all([
+      Registration.find(filter)
+        .select('team status phase currentStage finalPosition registeredAt')
+        .sort({ registeredAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate({
+          path: 'tournament',
+          select: 'tournamentName shortName startDate endDate status prizePool media tier phases.name phases.status',
+        })
+        .lean(),
+      Registration.countDocuments(filter),
+    ]);
+
+    const tournaments = registrations
+      .filter(r => r.tournament)
+      .map(r => ({
+        ...r.tournament,
+        phaseStatus:        computePhaseStatus(r, r.tournament),
+        registrationStatus: r.status,
+        finalPosition:      r.finalPosition,
+        teamPhase:          r.phase,
+      }));
+
+    res.json({ tournaments, total, page, totalPages: Math.ceil(total / limit) });
+  } catch (error) {
+    console.error('Error fetching team tournaments:', error);
+    res.status(500).json({ message: 'Server error fetching team tournaments' });
   }
 });
 

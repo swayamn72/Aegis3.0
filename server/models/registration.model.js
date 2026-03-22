@@ -43,6 +43,11 @@ const registrationSchema = new mongoose.Schema(
       index: true,
     },
 
+    // --- Direct Invite Seeding (Aegis Rating) ---
+    isDirectInvite: { type: Boolean, default: false },
+    seedPhase: { type: String, default: null },      // e.g. 'Semi Finals'
+    seedRating: { type: Number, default: null },     // org-set seed, or null → dynamic
+
     // --- Tournament Progress ---
     currentStage: {
       type: String,

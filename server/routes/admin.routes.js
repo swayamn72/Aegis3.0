@@ -918,4 +918,36 @@ router.patch('/organizations/:id/reject', verifyAdminToken, orgActionLimiter, as
   }
 });
 
+// ==================== AEGIS RATING ADMIN ROUTES ====================
+
+// Recalculate ratings for a tournament phase (reverse + reprocess)
+router.post('/tournaments/:tournamentId/phases/:phaseName/recalculate-ratings', verifyAdminToken, async (req, res) => {
+  try {
+    const { tournamentId, phaseName } = req.params;
+
+    if (!validateObjectId(tournamentId)) {
+      return res.status(400).json({ error: 'Invalid tournament ID format' });
+    }
+
+    const tournament = await Tournament.findById(tournamentId);
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+
+    const { reversePhaseRating, processPhaseCompletion } = await import('../services/aegisRating.js');
+
+    const reversed = await reversePhaseRating(tournamentId, phaseName);
+    console.log(`🔄 Admin recalculate: Reversed ${reversed} rating events for phase "${phaseName}"`);
+
+    await processPhaseCompletion(tournament, phaseName);
+
+    res.json({
+      success: true,
+      reversed,
+      message: `Phase "${phaseName}" ratings recalculated.`,
+    });
+  } catch (error) {
+    console.error('Error recalculating phase ratings:', error);
+    res.status(500).json({ error: 'Failed to recalculate ratings' });
+  }
+});
+
 export default router;

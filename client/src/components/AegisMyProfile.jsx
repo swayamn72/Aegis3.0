@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTeam, usePlayerMatches, usePlayerTournaments } from '../hooks/useProfile';
+import { getRatingBadge } from '../utils/aegisRatingUtils';
 import {
   User, MapPin, Calendar, Globe, Users, Trophy, Target,
   TrendingUp, Award, Gamepad2, Settings, Share2, Edit,
   Clock, Zap, Medal, ChevronRight, Hash, Activity,
   ExternalLink, Check, X, Shield, Eye,
-  BarChart3, Sword, Crown, Plus,
+  BarChart3, Sword, Crown, Plus, Instagram,
   Loader2, AlertCircle, ChevronDown, Flame, Map
 } from 'lucide-react';
 
@@ -93,24 +94,23 @@ const MatchCard = ({ match }) => {
 
   const positionColor =
     position === 1 ? 'text-yellow-400' :
-    position === 2 ? 'text-zinc-300' :
-    position === 3 ? 'text-orange-400' :
-    'text-zinc-400';
+      position === 2 ? 'text-zinc-300' :
+        position === 3 ? 'text-orange-400' :
+          'text-zinc-400';
 
   const dateStr = match.scheduledStartTime
     ? new Date(match.scheduledStartTime).toLocaleDateString('en-IN', {
-        day: 'numeric', month: 'short', year: 'numeric'
-      })
+      day: 'numeric', month: 'short', year: 'numeric'
+    })
     : '—';
 
   const mapImage = MAP_IMAGES[match.map] || ErangelMap;
 
   return (
-    <div 
+    <div
       onClick={() => navigate(`/matches/${match._id}`)}
-      className={`relative group bg-zinc-900/50 border rounded-lg p-4 transition-all duration-300 hover:bg-zinc-900 cursor-pointer overflow-hidden ${
-        isWin ? 'border-yellow-500/30' : 'border-zinc-800 hover:border-zinc-700'
-      }`}
+      className={`relative group bg-zinc-900/50 border rounded-lg p-4 transition-all duration-300 hover:bg-zinc-900 cursor-pointer overflow-hidden ${isWin ? 'border-yellow-500/30' : 'border-zinc-800 hover:border-zinc-700'
+        }`}
     >
       {/* Map Background Overlay */}
       <div className="absolute inset-0 opacity-20 group-hover:opacity-30 transition-all duration-500 pointer-events-none">
@@ -124,9 +124,13 @@ const MatchCard = ({ match }) => {
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2 min-w-0">
             <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isWin ? 'bg-yellow-400' : 'bg-zinc-600'}`} />
-            <span className="text-white font-medium text-sm truncate">
+            <Link
+              to={`/tournament/${match.tournament?._id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="text-white font-medium text-sm truncate hover:text-cyan-400 transition-colors"
+            >
               {match.tournament?.tournamentName || 'Unknown Tournament'}
-            </span>
+            </Link>
             {isChicken && <span className="text-base leading-none">🐔</span>}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0 ml-2">
@@ -187,6 +191,7 @@ const MatchCard = ({ match }) => {
 // ─── Tournament History Card ──────────────────────────────────────────────────
 
 const TournamentHistoryCard = ({ tournament }) => {
+  const [logoError, setLogoError] = useState(false);
   const position = tournament.finalPosition;
   const isTopThree = position && position <= 3;
   const positionEmoji = position === 1 ? '🥇' : position === 2 ? '🥈' : position === 3 ? '🥉' : null;
@@ -201,14 +206,18 @@ const TournamentHistoryCard = ({ tournament }) => {
   })();
 
   return (
-    <div className={`bg-zinc-900/50 border rounded-xl p-4 transition-colors hover:bg-zinc-900 ${
-      isTopThree ? 'border-yellow-500/30' : 'border-zinc-800'
-    }`}>
+    <div className={`bg-zinc-900/50 border rounded-xl p-4 transition-colors hover:bg-zinc-900 ${isTopThree ? 'border-yellow-500/30' : 'border-zinc-800'
+      }`}>
       <div className="flex items-start gap-3">
         {/* Logo or placeholder */}
         <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-zinc-800 border border-zinc-700 flex items-center justify-center">
-          {tournament.media?.logo ? (
-            <img src={tournament.media.logo} alt="" className="w-full h-full object-cover" />
+          {tournament.media?.logo && !logoError ? (
+            <img
+              src={tournament.media.logo}
+              alt=""
+              className="w-full h-full object-cover"
+              onError={() => setLogoError(true)}
+            />
           ) : (
             <Trophy className="w-5 h-5 text-zinc-600" />
           )}
@@ -217,9 +226,12 @@ const TournamentHistoryCard = ({ tournament }) => {
         {/* Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1">
-            <p className="text-white font-semibold text-sm truncate">
+            <Link
+              to={`/tournament/${tournament._id}`}
+              className="text-white font-semibold text-sm truncate hover:text-amber-400 transition-colors"
+            >
               {tournament.tournamentName}
-            </p>
+            </Link>
             {positionEmoji && (
               <span className="text-base leading-none">{positionEmoji}</span>
             )}
@@ -240,11 +252,10 @@ const TournamentHistoryCard = ({ tournament }) => {
         {/* Position badge */}
         <div className="flex-shrink-0 text-right">
           {position != null ? (
-            <div className={`text-lg font-bold ${
-              position === 1 ? 'text-yellow-400' :
-              position === 2 ? 'text-zinc-300' :
-              position === 3 ? 'text-orange-400' : 'text-zinc-400'
-            }`}>
+            <div className={`text-lg font-bold ${position === 1 ? 'text-yellow-400' :
+                position === 2 ? 'text-zinc-300' :
+                  position === 3 ? 'text-orange-400' : 'text-zinc-400'
+              }`}>
               #{position}
             </div>
           ) : (
@@ -407,7 +418,7 @@ const AegisMyProfile = () => {
     teamStatus: user.teamStatus || 'Not specified',
     availability: user.availability || 'Not specified',
     discordTag: user.discordTag || '',
-    twitch: user.twitch || '',
+    instagram: user?.instagram || '',
     youtube: user.youtube || '',
     profileVisibility: user.profileVisibility || 'public',
     profilePicture: user.profilePicture || null,
@@ -489,20 +500,20 @@ const AegisMyProfile = () => {
         {/* Profile Header */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-6">
           <div className="h-32 bg-gradient-to-r from-cyan-600/20 via-purple-600/20 to-pink-600/20" />
-          <div className="px-6 pb-6">
-            <div className="flex flex-col md:flex-row md:items-end md:justify-between -mt-16 mb-4">
-              <div className="flex items-end gap-4">
+          <div className="px-4 pb-6 md:px-6">
+            <div className="flex flex-col md:flex-row md:items-end md:justify-between -mt-12 md:-mt-16 mb-6">
+              <div className="flex flex-col md:flex-row items-center md:items-end gap-4 text-center md:text-left">
                 <div className="relative">
                   {userData.profilePicture && !imageError ? (
                     <img
                       src={userData.profilePicture}
                       alt="Profile"
-                      className="w-28 h-28 rounded-xl border-4 border-zinc-900 object-cover"
+                      className="w-24 h-24 md:w-28 md:h-28 rounded-xl border-4 border-zinc-900 object-cover"
                       onError={() => setImageError(true)}
                     />
                   ) : (
-                    <div className="w-28 h-28 rounded-xl border-4 border-zinc-900 bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center">
-                      <User className="w-12 h-12 text-white" />
+                    <div className="w-24 h-24 md:w-28 md:h-28 rounded-xl border-4 border-zinc-900 bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center">
+                      <User className="w-10 h-10 md:w-12 md:h-12 text-white" />
                     </div>
                   )}
                   {userData.verified && (
@@ -511,15 +522,29 @@ const AegisMyProfile = () => {
                     </div>
                   )}
                 </div>
-                <div className="mb-2">
-                  <h1 className="text-3xl font-bold text-white mb-1">{userData.username}</h1>
-                  <p className="text-zinc-400">{userData.realName}</p>
+                <div className="mb-2 w-full md:w-auto">
+                  <div className="flex flex-col md:flex-row items-center gap-2 md:gap-3 mb-2 md:mb-1">
+                    <h1 className="text-2xl md:text-3xl font-bold text-white break-words">{userData.username}</h1>
+                    {(() => {
+                      const badge = getRatingBadge(userData.aegisRating);
+                      return (
+                        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border ${badge.bg} ${badge.border}`}>
+                          <img src={badge.badge} alt={badge.tier} className="w-5 h-5" />
+                          <span className={`text-sm font-bold ${badge.textClass}`}>{userData.aegisRating}</span>
+                        </div>
+                      );
+                    })()}
+                    {user.aegisIsProvisional && (
+                      <span className="text-xs text-zinc-500 flex items-center gap-1">⏳ Provisional</span>
+                    )}
+                  </div>
+                  <p className="text-zinc-400 text-sm md:text-base">{userData.realName}</p>
                   {userData.primaryGameId && (
-                    <p className="text-cyan-400 text-sm">@{userData.primaryGameId}</p>
+                    <p className="text-cyan-400 text-sm md:text-base">@{userData.primaryGameId}</p>
                   )}
                 </div>
               </div>
-              <div className="flex gap-2 mt-4 md:mt-0">
+              <div className="flex justify-center md:justify-start gap-2 mt-6 md:mt-0">
                 <button
                   onClick={() => navigate('/settings')}
                   className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg flex items-center gap-2 transition-colors"
@@ -535,7 +560,7 @@ const AegisMyProfile = () => {
                 </button>
               </div>
             </div>
-            <div className="flex flex-wrap gap-4 text-sm text-zinc-400 mb-4">
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-2 text-sm text-zinc-400 mb-6">
               <span className="flex items-center gap-1.5">
                 <MapPin className="w-4 h-4" />
                 {userData.location}, {userData.country}
@@ -553,19 +578,18 @@ const AegisMyProfile = () => {
                 {userData.profileVisibility}
               </span>
             </div>
-            <p className="text-zinc-300 mb-4">{userData.bio}</p>
-            <div className="flex flex-wrap gap-2">
+            <p className="text-zinc-300 text-center md:text-left mb-6 max-w-2xl">{userData.bio}</p>
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
               {userData.primaryGame !== 'Not selected' && (
                 <span className="px-3 py-1 bg-cyan-500/20 border border-cyan-500/30 rounded-full text-cyan-400 text-xs">
                   {userData.primaryGame}
                 </span>
               )}
               {userData.teamStatus !== 'Not specified' && (
-                <span className={`px-3 py-1 border rounded-full text-xs ${
-                  userData.teamStatus === 'looking for a team' ? 'bg-green-500/20 border-green-500/30 text-green-400' :
-                  userData.teamStatus === 'in a team' ? 'bg-blue-500/20 border-blue-500/30 text-blue-400' :
-                  'bg-yellow-500/20 border-yellow-500/30 text-yellow-400'
-                }`}>
+                <span className={`px-3 py-1 border rounded-full text-xs ${userData.teamStatus === 'looking for a team' ? 'bg-green-500/20 border-green-500/30 text-green-400' :
+                    userData.teamStatus === 'in a team' ? 'bg-blue-500/20 border-blue-500/30 text-blue-400' :
+                      'bg-yellow-500/20 border-yellow-500/30 text-yellow-400'
+                  }`}>
                   {userData.teamStatus}
                 </span>
               )}
@@ -583,26 +607,35 @@ const AegisMyProfile = () => {
           </div>
         </div>
 
-        {/* Stats Overview */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <StatBox icon={Trophy} label="Aegis Rating" value={userData.aegisRating} color="cyan" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4 transition-all hover:bg-zinc-900">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-[#FF4500]/10 rounded-lg">
+                {(() => { const b = getRatingBadge(userData.aegisRating); return <img src={b.badge} alt={b.tier} className="w-5 h-5" />; })()}
+              </div>
+              <span className="text-zinc-400 text-sm">Aegis Rating</span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <div className="text-2xl font-bold" style={{ color: getRatingBadge(userData.aegisRating).color }}>{userData.aegisRating}</div>
+              <span className="text-xs text-zinc-500">{getRatingBadge(userData.aegisRating).tier}</span>
+            </div>
+          </div>
           <StatBox icon={Target} label="Win Rate" value={`${userData.statistics.winRate}%`} color="green" />
           <StatBox icon={Sword} label="Total Kills" value={userData.statistics.totalKills} color="red" />
           <StatBox icon={Medal} label="Tournaments" value={totalTournaments || userData.statistics.tournamentsPlayed} color="amber" />
         </div>
 
         {/* Tabs */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-1 mb-6">
-          <div className="flex gap-1 overflow-x-auto">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-1 mb-6 sticky top-20 z-30 shadow-2xl backdrop-blur-xl bg-zinc-900/80">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide pb-0.5 mask-fade-right">
             {['overview', 'matches', 'tournaments', 'social'].map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2.5 rounded-lg font-medium transition-colors whitespace-nowrap text-sm ${
-                  activeTab === tab
+                className={`px-4 py-2.5 rounded-lg font-medium transition-colors whitespace-nowrap text-sm ${activeTab === tab
                     ? 'bg-cyan-600 text-white'
                     : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-                }`}
+                  }`}
               >
                 {tab.charAt(0).toUpperCase() + tab.slice(1)}
                 {/* Show counts on tabs */}
@@ -636,7 +669,7 @@ const AegisMyProfile = () => {
                     <BarChart3 className="w-5 h-5 text-cyan-400" />
                     Performance
                   </h2>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="bg-zinc-800/50 rounded-lg p-4">
                       <p className="text-zinc-400 text-sm mb-1">Matches Played</p>
                       <p className="text-2xl font-bold text-white">{userData.statistics.matchesPlayed}</p>
@@ -648,7 +681,9 @@ const AegisMyProfile = () => {
                     <div className="bg-zinc-800/50 rounded-lg p-4">
                       <p className="text-zinc-400 text-sm mb-1">Avg Placement</p>
                       <p className="text-2xl font-bold text-cyan-400">
-                        #{userData.statistics.averagePlacement || 'N/A'}
+                        {userData.statistics.averagePlacement > 0 ?
+                          `#${userData.statistics.averagePlacement.toFixed(1)}` :
+                          '—'}
                       </p>
                     </div>
                   </div>
@@ -798,7 +833,7 @@ const AegisMyProfile = () => {
                 <h2 className="text-xl font-bold mb-4">Social Links</h2>
                 <div className="space-y-3">
                   <SocialLinkCard icon={Hash} platform="Discord" value={userData.discordTag} color="indigo" />
-                  <SocialLinkCard icon={Activity} platform="Twitch" value={userData.twitch} color="purple" />
+                  <SocialLinkCard icon={Instagram} platform="Instagram" value={userData.instagram} color="pink" />
                   <SocialLinkCard icon={ExternalLink} platform="YouTube" value={userData.youtube} color="red" />
                 </div>
               </div>
@@ -816,20 +851,27 @@ const AegisMyProfile = () => {
               </h3>
               {team ? (
                 <div className="text-center">
-                  {team.logo && !teamLogoError ? (
-                    <img
-                      src={team.logo}
-                      alt={`${team.teamName} logo`}
-                      className="w-16 h-16 rounded-lg object-cover mx-auto mb-3 border border-zinc-700"
-                      onError={() => setTeamLogoError(true)}
-                    />
-                  ) : (
-                    <div className="w-16 h-16 bg-gradient-to-br from-cyan-500 to-purple-600 rounded-lg mx-auto mb-3 flex items-center justify-center">
-                      <span className="text-white font-bold text-lg">{team.teamName.charAt(0).toUpperCase()}</span>
-                    </div>
-                  )}
-                  <p className="text-white font-medium">{team.teamName}</p>
-                  <p className="text-zinc-400 text-sm">Member since {userData.joinDate}</p>
+                  <Link to={`/team/${teamId}`} className="block group">
+                    {team.logo && !teamLogoError ? (
+                      <img
+                        src={team.logo}
+                        alt={`${team.teamName} logo`}
+                        className="w-16 h-16 rounded-lg object-cover mx-auto mb-3 border border-zinc-700 group-hover:border-cyan-500/50 transition-all"
+                        onError={() => setTeamLogoError(true)}
+                      />
+                    ) : (
+                      <div className="w-16 h-16 bg-gradient-to-br from-cyan-500 to-purple-600 rounded-lg mx-auto mb-3 flex items-center justify-center group-hover:shadow-lg group-hover:shadow-cyan-500/20 transition-all">
+                        <span className="text-white font-bold text-lg">{team.teamName.charAt(0).toUpperCase()}</span>
+                      </div>
+                    )}
+                  </Link>
+                  <Link
+                    to={`/team/${teamId}`}
+                    className="group"
+                  >
+                    <p className="text-white font-medium group-hover:text-cyan-400 transition-colors">{team.teamName}</p>
+                    <p className="text-zinc-400 text-sm">Member since {userData.joinDate}</p>
+                  </Link>
                 </div>
               ) : (
                 <div className="text-center py-6">
@@ -888,7 +930,7 @@ const SocialLinkCard = ({ icon: Icon, platform, value, color }) => (
   <div className={`p-4 rounded-lg border ${value
     ? `bg-${color}-500/10 border-${color}-500/30`
     : 'bg-zinc-800/50 border-zinc-700'
-  }`}>
+    }`}>
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-3">
         <Icon className={`w-5 h-5 ${value ? `text-${color}-400` : 'text-zinc-500'}`} />

@@ -102,7 +102,7 @@ const matchSchema = new mongoose.Schema(
       {
         platform: {
           type: String,
-          enum: ['YouTube', 'Twitch', 'Facebook Gaming', 'Loco', 'Rooter'],
+          enum: ['YouTube', 'Instagram', 'Facebook Gaming', 'Loco', 'Rooter'],
         },
         url: String,
         language: String,

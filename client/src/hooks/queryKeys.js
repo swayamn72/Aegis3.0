@@ -60,3 +60,8 @@ export const profileKeys = {
     tournaments: (playerId) => ['playerTournaments', playerId],
 };
 
+export const teamKeys = {
+    matches: (teamId, page) => ['teamMatches', teamId, page],
+    tournaments: (teamId, page) => ['teamTournaments', teamId, page],
+};
+

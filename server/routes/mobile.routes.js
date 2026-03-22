@@ -18,7 +18,7 @@ router.get("/me", auth, async (req, res) => {
           // status / meta
           "aegisRating", "teamStatus", "profileVisibility", "cardTheme", "coins", "statistics", "createdAt",
           // socials
-          "discordTag", "twitch", "youtube", "twitter",
+          "discordTag", "instagram", "youtube", "twitter",
           // team ref
           "team",
         ].join(" ")

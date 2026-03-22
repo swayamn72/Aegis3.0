@@ -1159,8 +1159,13 @@ const TournamentManagementPageOrg = () => {
                                 individualAwards
                             };
 
-                            await axiosInstance.put(`/api/org-tournaments/${id}`, {
+                            const formData = new FormData();
+                            formData.append('tournamentData', JSON.stringify({
                                 prizePool: updatedPrizePool
+                            }));
+
+                            await axiosInstance.put(`/api/org-tournaments/${id}`, formData, {
+                                headers: { 'Content-Type': 'multipart/form-data' }
                             });
 
                             toast.success('Prize distribution updated successfully');

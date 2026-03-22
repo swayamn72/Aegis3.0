@@ -7,8 +7,10 @@ import {
     Users, AlertCircle, Crown, History, Star, MapPin, Calendar,
     Trophy, Target, Zap, TrendingUp, Award, Shield, Plus,
     MessageCircle, ChevronRight, Medal, Activity, BarChart3,
-    Gamepad2, X, Check, RefreshCw, User
+    Gamepad2, X, Check, RefreshCw, User, Camera, Upload as UploadIcon, Image as ImageIcon
 } from 'lucide-react';
+
+import axiosInstance from '../utils/axiosConfig';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL;
 
@@ -43,6 +45,8 @@ const MyTeams = () => {
         logo: ''
     });
     const [createTeamError, setCreateTeamError] = useState('');
+
+
 
 
 
@@ -347,6 +351,7 @@ const MyTeams = () => {
                                         />
                                         <p className="text-zinc-500 text-xs mt-1">{createTeamForm.bio.length}/200</p>
                                     </div>
+
                                     <div className="flex gap-3 pt-4">
                                         <button
                                             type="button"

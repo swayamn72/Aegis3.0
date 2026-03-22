@@ -6,3 +6,19 @@ export const getPlayerById = async (playerId) => {
     const { data } = await axiosInstance.get(`/api/players/${playerId}/profile`);
     return data;
 };
+
+// Get player rating history (paginated)
+export const getPlayerRatingHistory = async (playerId, page = 1, limit = 20) => {
+    const { data } = await axiosInstance.get(`/api/players/${playerId}/rating-history`, {
+        params: { page, limit },
+    });
+    return data;
+};
+
+// Get Aegis Rating leaderboard (paginated)
+export const getAegisLeaderboard = async (page = 1, limit = 25) => {
+    const { data } = await axiosInstance.get('/api/players/leaderboard/aegis', {
+        params: { page, limit },
+    });
+    return data;
+};
