@@ -31,6 +31,18 @@ const MatchManagement = ({ tournament, onUpdate }) => {
     const [applyingOcr, setApplyingOcr] = useState(false);
     const MATCHES_PER_PAGE = 10;
 
+    // Helper to resolve group names from IDs
+    const getGroupName = (groupId) => {
+        if (!groupId) return '';
+        if (groupId.length < 20) return groupId; // Already a name or short string
+
+        for (const phase of tournament.phases || []) {
+            const group = phase.groups?.find(g => g._id === groupId || g.id === groupId);
+            if (group) return group.name;
+        }
+        return `Group ${groupId.substring(0, 4)}...`; // Fallback
+    };
+
     useEffect(() => {
         setCurrentPage(1);
         fetchMatches(1);
@@ -496,6 +508,20 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                                             <span className="text-gray-400 text-sm">{match.tournamentPhase}</span>
                                             <span className="text-gray-400 text-sm">•</span>
                                             <span className="text-gray-400 text-sm">{match.map}</span>
+                                            {match.participatingGroups && match.participatingGroups.length > 0 && (
+                                                <>
+                                                    <span className="text-gray-400 text-sm">•</span>
+                                                    <span className="text-orange-400 text-sm">
+                                                        {match.participatingGroups.length === 1 
+                                                            ? (() => {
+                                                                const name = getGroupName(match.participatingGroups[0]);
+                                                                return name.startsWith('Group') ? name : `Group ${name}`;
+                                                              })()
+                                                            : `Groups: ${match.participatingGroups.map(id => getGroupName(id)).join(', ')}`
+                                                        }
+                                                    </span>
+                                                </>
+                                            )}
                                         </div>
                                         <p className="text-gray-500 text-sm">
                                             {new Date(match.scheduledStartTime).toLocaleString()}
@@ -659,9 +685,25 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                                                                     <div className="space-y-2">
                                                                         {[0, 1, 2, 3].map((playerIndex) => {
                                                                             const playerData = teamEntry.kills?.breakdown?.[playerIndex];
-                                                                            const playerName = playerData?.player?.username ||
-                                                                                playerData?.player?.name ||
-                                                                                `Player ${playerIndex + 1}`;
+                                                                            let playerName = `Player ${playerIndex + 1}`;
+                                                                            let secondaryName = '';
+                                                                            
+                                                                            let p = playerData?.player;
+                                                                            if (!p && teamEntry.roster && teamEntry.roster[playerIndex]) {
+                                                                                p = teamEntry.roster[playerIndex].player;
+                                                                            }
+
+                                                                            if (p) {
+                                                                                const gameIds = p.gameIds || [];
+                                                                                if (gameIds.length > 0) {
+                                                                                    playerName = gameIds[0].inGameName;
+                                                                                    if (gameIds.length > 1) {
+                                                                                        secondaryName = ` (alt: ${gameIds[1].inGameName})`;
+                                                                                    }
+                                                                                } else {
+                                                                                    playerName = p.inGameName || p.username || playerName;
+                                                                                }
+                                                                            }
                                                                             const playerKills = playerData?.kills || 0;
                                                                             const playerKillsKey = `${match._id}-${teamId}-player${playerIndex}-kills`;
                                                                             const currentPlayerKills = pendingChanges[playerKillsKey] !== undefined
@@ -671,7 +713,10 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                                                                             return (
                                                                                 <div key={playerIndex} className="flex items-center gap-3 p-2 bg-gray-700/50 rounded">
                                                                                     <div className="flex-1 min-w-0">
-                                                                                        <span className="text-sm text-gray-300">{playerName}</span>
+                                                                                        <span className="text-sm text-gray-300">
+                                                                                            {playerName}
+                                                                                            {secondaryName && <span className="text-xs text-gray-500 ml-1">{secondaryName}</span>}
+                                                                                        </span>
                                                                                     </div>
                                                                                     <div className="flex items-center gap-2">
                                                                                         <label className="text-gray-500 text-xs">Kills:</label>

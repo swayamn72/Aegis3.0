@@ -150,6 +150,20 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
     const currentPhase = tournament.phases[phaseIndex];
     console.log('Current phase:', currentPhase.name, 'Status:', currentPhase.status);
 
+    // 1. Double-check if phase is already completed 
+    if (currentPhase.status === 'completed') {
+      return res.status(400).json({ error: 'This phase has already been advanced.' });
+    }
+
+    // 2. Sequence Guard: Ensure all previous phases are completed
+    const previousPhases = tournament.phases.slice(0, phaseIndex);
+    const incompletePrevious = previousPhases.find(p => p.status !== 'completed');
+    if (incompletePrevious) {
+      return res.status(400).json({ 
+        error: `Cannot advance "${currentPhase.name}" until "${incompletePrevious.name}" is completed.` 
+      });
+    }
+
     // Fetch all matches for this phase
     const matches = await Match.find({
       tournament: tournamentId,
@@ -173,17 +187,6 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
       .lean();
 
     const phaseTeamIds = phaseRegistrations.map(r => r.team.toString());
-
-    // **AUTOMATION: Mark all matches in this phase as completed**
-    // This ensures that "in_progress" or "scheduled" matches are finalized when advancing.
-    await Match.updateMany(
-      {
-        tournament: tournamentId,
-        tournamentPhase: phaseName,
-        status: { $ne: 'completed' }
-      },
-      { $set: { status: 'completed' } }
-    );
 
     // **AUTOMATION: Mark all matches in this phase as completed**
     // This ensures that "in_progress" or "scheduled" matches are finalized when advancing.

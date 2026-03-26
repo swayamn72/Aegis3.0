@@ -43,7 +43,16 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
     format: 'Battle Royale Points System',
     participatingTeams: [],
     tags: [],
-    featured: false
+    featured: false,
+    gameSettings: {
+      serverRegion: 'India',
+      gameMode: 'TPP Squad',
+      maps: ['Erangel', 'Miramar'],
+      pointsSystem: {
+        killPoints: 1,
+        placementPoints: { 1: 10, 2: 6, 3: 5, 4: 4, 5: 3, 6: 2, 7: 1, 8: 1 }
+      }
+    }
   });
 
   const [errors, setErrors] = useState({});
@@ -106,7 +115,16 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
         participatingTeams: tournament.participatingTeams || [],
         tags: tournament.tags || [],
         featured: tournament.featured || false,
-        phases: tournament.phases || []
+        phases: tournament.phases || [],
+        gameSettings: tournament.gameSettings || {
+          serverRegion: 'India',
+          gameMode: 'TPP Squad',
+          maps: ['Erangel', 'Miramar'],
+          pointsSystem: {
+            killPoints: 1,
+            placementPoints: { 1: 10, 2: 6, 3: 5, 4: 4, 5: 3, 6: 2, 7: 1, 8: 1 }
+          }
+        }
       });
       // Set previews for editing
       setLogoPreview(tournament.media?.logo || '');
@@ -151,7 +169,16 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
         participatingTeams: [],
         tags: [],
         featured: false,
-        phases: []
+        phases: [],
+        gameSettings: {
+          serverRegion: 'India',
+          gameMode: 'TPP Squad',
+          maps: ['Erangel', 'Miramar'],
+          pointsSystem: {
+            killPoints: 1,
+            placementPoints: { 1: 10, 2: 6, 3: 5, 4: 4, 5: 3, 6: 2, 7: 1, 8: 1 }
+          }
+        }
       });
       // Clear file states for new form
       setLogoFile(null);
@@ -160,6 +187,23 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
       setCoverPreview('');
     }
   }, [tournament]);
+
+  const handleMapToggle = (mapName) => {
+    setFormData(prev => {
+      const currentMaps = prev.gameSettings?.maps || [];
+      const newMaps = currentMaps.includes(mapName)
+        ? currentMaps.filter(m => m !== mapName)
+        : [...currentMaps, mapName];
+      
+      return {
+        ...prev,
+        gameSettings: {
+          ...prev.gameSettings,
+          maps: newMaps
+        }
+      };
+    });
+  };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -241,6 +285,13 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
 
       if (!formData.tournamentName.trim()) {
         newErrors.tournamentName = 'Tournament name is required';
+      }
+
+      const mapSelection = formData.gameSettings?.maps;
+      if (!mapSelection || mapSelection.length === 0) {
+        toast.error('Please select at least one map.');
+        setLoading(false);
+        return;
       }
 
       if (Object.keys(newErrors).length > 0) {
@@ -490,6 +541,35 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
                     <p className="text-red-400 text-sm mt-1">{errors.endDate}</p>
                   )}
                 </div>
+              </div>
+
+              {/* Map Selection Component (Available while Editing or Creation) */}
+              <div className={isEditing ? 'mt-6' : ''}>
+                <label className="block text-sm font-medium text-zinc-300 mb-3">
+                  Maps *
+                </label>
+                <div className="flex flex-wrap gap-3">
+                  {['Erangel', 'Miramar', 'Sanhok', 'Vikendi', 'Rondo'].map((mapName) => {
+                    const isSelected = formData.gameSettings?.maps?.includes(mapName);
+                    return (
+                      <button
+                        key={mapName}
+                        type="button"
+                        onClick={() => handleMapToggle(mapName)}
+                        className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                          isSelected 
+                            ? 'bg-orange-500 text-white border border-orange-500' 
+                            : 'bg-zinc-800 text-zinc-300 border border-zinc-700 hover:border-zinc-500'
+                        }`}
+                      >
+                        {mapName}
+                      </button>
+                    );
+                  })}
+                </div>
+                {(!formData.gameSettings?.maps || formData.gameSettings.maps.length === 0) && (
+                  <p className="text-red-400 text-xs mt-2">Please select at least one map.</p>
+                )}
               </div>
 
               {/* Open for All Checkbox */}

@@ -109,6 +109,7 @@ const DetailedTournamentInfo = () => {
         params: {
           phase: matchPhase === 'All' ? '' : matchPhase,
           group: matchGroup === 'All' ? '' : matchGroup,
+          status: 'completed',
           limit: MATCHES_PER_PAGE,
           offset: (matchPage - 1) * MATCHES_PER_PAGE
         }
@@ -1077,7 +1078,7 @@ const DetailedTournamentInfo = () => {
                       >
                         <option value="All">All Groups</option>
                         {matchPhase !== 'All' && groupsData[matchPhase] && Object.keys(groupsData[matchPhase]).map(g => (
-                          <option key={g} value={g}>Group {g}</option>
+                          <option key={g} value={groupsData[matchPhase][g].groupId || g}>Group {g}</option>
                         ))}
                       </select>
                     </div>

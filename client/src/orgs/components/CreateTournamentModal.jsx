@@ -83,6 +83,23 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
         }));
     };
 
+    const handleMapToggle = (mapName) => {
+        setFormData(prev => {
+            const currentMaps = prev.gameSettings.maps || [];
+            const newMaps = currentMaps.includes(mapName)
+                ? currentMaps.filter(m => m !== mapName)
+                : [...currentMaps, mapName];
+            
+            return {
+                ...prev,
+                gameSettings: {
+                    ...prev.gameSettings,
+                    maps: newMaps
+                }
+            };
+        });
+    };
+
     const handleFileChange = (field, file) => {
         setFiles(prev => ({ ...prev, [field]: file }));
     };
@@ -163,6 +180,10 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
             const hasFinalStage = formData.phases?.some(p => p.type === 'final_stage');
             if (!hasFinalStage) {
                 toast.error('At least one phase must be set as "Final Stage" before submitting.');
+                return;
+            }
+            if (!formData.gameSettings?.maps || formData.gameSettings.maps.length === 0) {
+                toast.error('Please select at least one map.');
                 return;
             }
             const formDataToSend = new FormData();
@@ -300,6 +321,33 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                                         className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
                                     />
                                 </div>
+                            </div>
+
+                            {/* Map Selection */}
+                            <div>
+                                <label className="block text-sm font-medium mb-3">Maps *</label>
+                                <div className="flex flex-wrap gap-3">
+                                    {['Erangel', 'Miramar', 'Sanhok', 'Vikendi', 'Rondo'].map((mapName) => {
+                                        const isSelected = formData.gameSettings.maps?.includes(mapName);
+                                        return (
+                                            <button
+                                                key={mapName}
+                                                type="button"
+                                                onClick={() => handleMapToggle(mapName)}
+                                                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                                                    isSelected 
+                                                        ? 'bg-orange-500 text-white border border-orange-500' 
+                                                        : 'bg-gray-700 text-gray-300 border border-gray-600 hover:border-gray-500'
+                                                }`}
+                                            >
+                                                {mapName}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                {(!formData.gameSettings.maps || formData.gameSettings.maps.length === 0) && (
+                                    <p className="text-red-400 text-xs mt-2">Please select at least one map.</p>
+                                )}
                             </div>
 
                             {/* Open for All Checkbox */}

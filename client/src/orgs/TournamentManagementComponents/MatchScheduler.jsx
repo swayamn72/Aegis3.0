@@ -23,6 +23,7 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
     map: 'Erangel'
   });
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [matchToDelete, setMatchToDelete] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -180,6 +181,7 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
       });
       setSelectedGroups([]);
       setShowScheduleForm(false);
+      setShowSuccessModal(true);
       toast.success('Match scheduled successfully');
     } catch (error) {
       console.error('Error scheduling match:', error);
@@ -649,14 +651,22 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
               >
                 Cancel
               </button>
-              <button
-                onClick={handleScheduleMatch}
-                disabled={selectedGroups.length === 0}
-                className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                <MessageSquare className="w-4 h-4" />
-                Schedule & Notify Teams
-              </button>
+              {(() => {
+                const selectedPhaseObj = phases.find(p => p.name === formData.tournamentPhase);
+                const isPhaseCompleted = selectedPhaseObj?.status === 'completed';
+                
+                return (
+                  <button
+                    onClick={handleScheduleMatch}
+                    disabled={selectedGroups.length === 0 || isPhaseCompleted}
+                    title={isPhaseCompleted ? "Cannot schedule new matches in a completed phase." : ""}
+                    className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    Schedule & Notify Teams
+                  </button>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -881,6 +891,32 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
                     ) : (
                       'Delete'
                     )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Success Confirmation Modal */}
+        {showSuccessModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-300">
+            <div className="bg-zinc-900 border border-green-500/20 rounded-2xl max-w-sm w-full p-6 shadow-2xl shadow-green-500/10 animate-in zoom-in-95 duration-300">
+              <div className="flex flex-col items-center text-center space-y-4">
+                <div className="w-16 h-16 bg-green-500/10 rounded-full flex items-center justify-center">
+                  <Check className="w-8 h-8 text-green-500" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white">Match Scheduled!</h3>
+                  <p className="text-zinc-400 mt-2 text-sm leading-relaxed">
+                    The match has been successfully created and all participating teams have been notified via their captain's dashboard.
+                  </p>
+                </div>
+                <div className="w-full pt-4">
+                  <button
+                    onClick={() => setShowSuccessModal(false)}
+                    className="w-full px-4 py-3 bg-green-500 text-white rounded-xl hover:bg-green-600 transition-all font-bold shadow-lg shadow-green-500/20 hover:scale-[1.02] transform active:scale-[0.98]"
+                  >
+                    Great!
                   </button>
                 </div>
               </div>

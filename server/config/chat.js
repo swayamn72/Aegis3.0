@@ -2,7 +2,7 @@
 import admin from 'firebase-admin';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const serviceAccount = require('../aegis-app-88edd-firebase-adminsdk-fbsvc-456276ea78.json');
+const serviceAccount = require('../aegis3-cbfba-firebase-adminsdk-fbsvc-b7e1b5653b.json');
 
 if (!admin.apps.length) {
   admin.initializeApp({

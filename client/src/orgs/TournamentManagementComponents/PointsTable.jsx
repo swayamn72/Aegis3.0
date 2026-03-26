@@ -563,21 +563,39 @@ const PointsTable = ({ tournament, onUpdate }) => {
                             {selectedPhaseObj?.type === 'final_stage' ? (
                                 <button
                                     onClick={handleConcludeTournament}
-                                    disabled={isConcluding || tournament.status === 'completed'}
+                                    disabled={
+                                        isConcluding || 
+                                        tournament.status === 'completed' || 
+                                        selectedPhaseObj?.status === 'completed' ||
+                                        (tournament.phases?.findIndex(p => p.name === selectedPhase) > 0 && 
+                                         tournament.phases[tournament.phases.findIndex(p => p.name === selectedPhase) - 1]?.status !== 'completed')
+                                    }
                                     className="px-4 py-2 bg-zinc-100 text-zinc-950 font-bold rounded-lg hover:bg-white transition-all disabled:opacity-50 flex items-center gap-2 shadow-[0_0_15px_rgba(255,255,255,0.1)] hover:shadow-[0_0_20px_rgba(255,255,255,0.2)]"
                                 >
                                     <Trophy className="w-4 h-4" />
-                                    {tournament.status === 'completed' ? 'Tournament Concluded' : 'Conclude Tournament'}
+                                    {tournament.status === 'completed' || selectedPhaseObj?.status === 'completed' ? 'Tournament Concluded' : 'Conclude Tournament'}
                                 </button>
                             ) : (
-                                <button
-                                    onClick={handleAdvancePhaseClick}
-                                    disabled={advancingPhase || tournament.status === 'completed'}
-                                    className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 flex items-center gap-2"
-                                >
-                                    <CheckCircle className="w-4 h-4" />
-                                    Advance Phase
-                                </button>
+                                <div className="flex flex-col items-end gap-1">
+                                    <button
+                                        onClick={handleAdvancePhaseClick}
+                                        disabled={
+                                            advancingPhase || 
+                                            tournament.status === 'completed' || 
+                                            selectedPhaseObj?.status === 'completed' ||
+                                            (tournament.phases?.findIndex(p => p.name === selectedPhase) > 0 && 
+                                             tournament.phases[tournament.phases.findIndex(p => p.name === selectedPhase) - 1]?.status !== 'completed')
+                                        }
+                                        className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 flex items-center gap-2 font-medium"
+                                    >
+                                        <CheckCircle className="w-4 h-4" />
+                                        {selectedPhaseObj?.status === 'completed' ? 'Phase Advanced' : 'Advance Phase'}
+                                    </button>
+                                    {tournament.phases?.findIndex(p => p.name === selectedPhase) > 0 && 
+                                     tournament.phases[tournament.phases.findIndex(p => p.name === selectedPhase) - 1]?.status !== 'completed' && (
+                                        <span className="text-[10px] text-orange-400 font-medium">Previous phase must be advanced first</span>
+                                    )}
+                                </div>
                             )}
                         </div>
                     )}

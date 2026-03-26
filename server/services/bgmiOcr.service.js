@@ -247,11 +247,20 @@ export function identifyTeam(players, slotList) {
             // 1. Roster Match: Check if this player closely matches any registered roster name
             const roster = team.roster || [];
             for (const rosterEntry of roster) {
-                const rosterName = rosterEntry.inGameName || '';
-                const sim = getSimilarity(p.name, rosterName);
-                if (sim >= 0.7) {
-                    const rosterScore = sim * 20; // High weight for roster matches
-                    if (rosterScore > scoreForThisTeam) scoreForThisTeam = rosterScore;
+                let rosterNames = [];
+                if (rosterEntry.player && Array.isArray(rosterEntry.player.gameIds) && rosterEntry.player.gameIds.length > 0) {
+                    rosterNames = rosterEntry.player.gameIds.map(g => g.inGameName).filter(Boolean);
+                }
+                if (rosterNames.length === 0 && rosterEntry.inGameName) {
+                    rosterNames.push(rosterEntry.inGameName);
+                }
+
+                for (const rosterName of rosterNames) {
+                    const sim = getSimilarity(p.name, rosterName);
+                    if (sim >= 0.7) {
+                        const rosterScore = sim * 20; // High weight for roster matches
+                        if (rosterScore > scoreForThisTeam) scoreForThisTeam = rosterScore;
+                    }
                 }
             }
 
@@ -416,12 +425,21 @@ export async function processScreenshot(imageBuffer, slotList) {
             let bestScore = 0;
 
             roster.forEach((rosterEntry, index) => {
-                const rosterName = rosterEntry.inGameName || '';
-                const score = getSimilarity(ocrPlayer.name, rosterName);
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestMatch = rosterEntry;
-                    bestMatchIndex = index;
+                let rosterNames = [];
+                if (rosterEntry.player && Array.isArray(rosterEntry.player.gameIds) && rosterEntry.player.gameIds.length > 0) {
+                    rosterNames = rosterEntry.player.gameIds.map(g => g.inGameName).filter(Boolean);
+                }
+                if (rosterNames.length === 0 && rosterEntry.inGameName) {
+                    rosterNames.push(rosterEntry.inGameName);
+                }
+
+                for (const rosterName of rosterNames) {
+                    const score = getSimilarity(ocrPlayer.name, rosterName);
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestMatch = rosterEntry;
+                        bestMatchIndex = index;
+                    }
                 }
             });
 

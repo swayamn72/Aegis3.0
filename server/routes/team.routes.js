@@ -119,7 +119,7 @@ router.get('/:id', auth, async (req, res) => {
     })
       .sort({ actualEndTime: -1 })
       .limit(5)
-      .populate('tournament', 'tournamentName shortName')
+      .populate('tournament', 'tournamentName shortName media')
       .select('matchNumber matchType map actualEndTime results tournament')
       .lean();
 
@@ -208,7 +208,7 @@ router.get('/:id/matches', auth, async (req, res) => {
         .sort({ actualEndTime: -1 })
         .skip(skip)
         .limit(limit)
-        .populate('tournament', 'tournamentName shortName')
+        .populate('tournament', 'tournamentName shortName media')
         .select('matchNumber matchType map actualEndTime results tournament')
         .lean(),
       Match.countDocuments(filter),

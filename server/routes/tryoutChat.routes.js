@@ -6,6 +6,7 @@ import Team from '../models/team.model.js';
 import TeamApplication from '../models/teamApplication.model.js';
 import Player from '../models/player.model.js';
 import auth from '../middleware/auth.js';
+import notificationService from '../services/notification.service.js';
 
 const router = express.Router();
 
@@ -133,6 +134,15 @@ router.post('/:chatId/end-tryout', auth, async (req, res) => {
       });
     }
 
+    // FCM: notify the other party that the tryout ended
+    const otherPartyId = isTeamCaptain ? chat.applicant._id.toString() : chat.team.captain.toString();
+    notificationService.sendToPlayer(
+      otherPartyId,
+      '❌ Tryout Ended',
+      `Tryout with ${isTeamCaptain ? chat.team.teamName : chat.applicant.username} has ended.`,
+      { type: 'tryout_ended', chatId }
+    ).catch(err => console.error('FCM tryout_ended error:', err));
+
     res.json({
       message: 'Tryout ended successfully',
       chat
@@ -218,6 +228,14 @@ router.post('/:chatId/send-offer', auth, async (req, res) => {
         message: systemMessage
       });
     }
+
+    // FCM: notify applicant about the team offer
+    notificationService.sendToPlayer(
+      chat.applicant._id.toString(),
+      '🏆 Team Offer Received',
+      `${chat.team.teamName} has sent you a join offer!`,
+      { type: 'team_offer', chatId }
+    ).catch(err => console.error('FCM team_offer error:', err));
 
     res.json({
       message: 'Team offer sent successfully',
@@ -379,6 +397,14 @@ router.post('/:chatId/accept-offer', auth, async (req, res) => {
       });
     }
 
+    // FCM: notify team captain that the applicant accepted
+    notificationService.sendToPlayer(
+      chat.team.captain.toString(),
+      '🎉 Offer Accepted',
+      `${chat.applicant.username} has joined ${team.teamName}!`,
+      { type: 'offer_accepted', chatId }
+    ).catch(err => console.error('FCM offer_accepted error:', err));
+
     res.json({
       message: 'Team offer accepted successfully',
       chat,
@@ -459,6 +485,14 @@ router.post('/:chatId/reject-offer', auth, async (req, res) => {
         message: systemMessage
       });
     }
+
+    // FCM: notify team captain that the offer was rejected
+    notificationService.sendToPlayer(
+      chat.team.captain.toString(),
+      '🚫 Offer Declined',
+      `${chat.applicant.username} has declined the team offer.`,
+      { type: 'offer_rejected', chatId }
+    ).catch(err => console.error('FCM offer_rejected error:', err));
 
     res.json({
       message: 'Team offer rejected',

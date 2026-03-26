@@ -19,8 +19,8 @@ build
 .env.test.local
 .env.production.local
 
-# Firebase Admin SDK secret
-aegis-app-88edd-firebase-adminsdk-fbsvc-456276ea78.json
+# Firebase Admin SDK secrets
+*-firebase-adminsdk-fbsvc-*.json
 
 # Editor directories and files
 .vscode/*

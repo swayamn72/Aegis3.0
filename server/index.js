@@ -14,6 +14,7 @@ import serverless from 'serverless-http';
 
 import connectDB from './config/db.js';
 import "./config/cloudinary.js";
+import './config/firebase.js';
 import initChat from './config/chat.js';
 
 // ROUTES

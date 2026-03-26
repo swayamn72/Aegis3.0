@@ -13,6 +13,22 @@ import { FaDiscord } from "react-icons/fa";
 import axiosInstance from '../utils/axiosConfig';
 import { fetchTeamMatches, fetchTeamTournaments } from '../api/teamMatches';
 import { teamKeys } from '../hooks/queryKeys';
+
+// Map Images
+import ErangelMap from '../assets/mapImages/erangel.jpg';
+import MiramarMap from '../assets/mapImages/miramar.webp';
+import SanhokMap from '../assets/mapImages/sanhok.webp';
+import VikendiMap from '../assets/mapImages/vikendi.jpg';
+
+const MAP_IMAGES = {
+  Erangel: ErangelMap,
+  Miramar: MiramarMap,
+  Sanhok: SanhokMap,
+  Vikendi: VikendiMap,
+  Livik: ErangelMap,
+  Nusa: ErangelMap,
+  Rondo: ErangelMap,
+};
 const API_URL = import.meta.env.VITE_BACKEND_URL;
 
 // Fetch function for team data
@@ -897,10 +913,17 @@ const DetailedTeamInfo = () => {
                         <div key={match._id ?? idx} className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4 hover:border-zinc-600 transition-colors">
                           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div className="flex items-center gap-4 flex-1">
-                              <div className={`w-16 h-16 rounded-lg flex items-center justify-center font-bold flex-shrink-0 ${pos ? placementColor : 'bg-zinc-700/50 text-zinc-400 border-2 border-zinc-600'}`}>
-                                <div className="text-center">
-                                  <div className="text-xs text-zinc-400">Rank</div>
-                                  <div className="text-xl">{pos ? `#${pos}` : '—'}</div>
+                              <div className={`w-16 h-16 rounded-lg flex items-center justify-center font-bold flex-shrink-0 relative overflow-hidden ${pos ? placementColor : 'bg-zinc-700/50 text-zinc-400 border-2 border-zinc-600'}`}>
+                                <img 
+                                  src={MAP_IMAGES[match.map] || ErangelMap} 
+                                  alt={match.map} 
+                                  className="absolute inset-0 w-full h-full object-cover opacity-50 transition-transform duration-500 group-hover:scale-110"
+                                  onError={(e) => { e.target.style.display = 'none'; }}
+                                />
+                                <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors" />
+                                <div className="relative z-10 text-center">
+                                  <div className={`text-[10px] uppercase tracking-tighter leading-none mb-1 ${pos ? 'text-white' : 'text-zinc-400'}`}>Rank</div>
+                                  <div className="text-xl leading-none">{pos ? `#${pos}` : '—'}</div>
                                 </div>
                               </div>
                               <div className="flex-1 min-w-0">
@@ -918,9 +941,18 @@ const DetailedTeamInfo = () => {
                                   )}
                                 </div>
                                 <div className="flex items-center gap-3 text-sm text-zinc-400 flex-wrap">
-                                  <span className="flex items-center gap-1">
-                                    <Trophy className="w-3 h-3" />
-                                    {tournamentName}
+                                  <span className="flex items-center gap-1.5 min-w-0">
+                                    {match.tournament?.media?.logo ? (
+                                      <img 
+                                        src={match.tournament.media.logo} 
+                                        alt={tournamentName}
+                                        className="w-4 h-4 rounded-sm object-cover"
+                                        onError={(e) => { e.target.style.display = 'none'; }}
+                                      />
+                                    ) : (
+                                      <Trophy className="w-3 h-3 flex-shrink-0" />
+                                    )}
+                                    <span className="truncate">{tournamentName}</span>
                                   </span>
                                   <span>•</span>
                                   <span>{matchDate}</span>
@@ -1004,6 +1036,21 @@ const DetailedTeamInfo = () => {
                           return (
                             <div key={t._id ?? idx} className="bg-gradient-to-br from-green-900/20 to-zinc-800/40 border border-green-700/40 rounded-lg p-5 hover:border-green-500/50 transition-all group">
                               <div className="flex items-start justify-between mb-3">
+                              <div className="flex gap-4">
+                                {t.media?.logo ? (
+                                  <div className="flex-shrink-0">
+                                    <img 
+                                      src={t.media.logo} 
+                                      alt={t.tournamentName}
+                                      className="w-16 h-16 rounded-lg object-cover border border-zinc-700/50 shadow-lg group-hover:border-green-500/30 transition-colors"
+                                      onError={(e) => { e.target.src = '/default-tournament.png'; e.target.onerror = null; }}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="w-16 h-16 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center flex-shrink-0">
+                                    <Trophy className="w-8 h-8 text-zinc-600" />
+                                  </div>
+                                )}
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                                     <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30">
@@ -1025,6 +1072,7 @@ const DetailedTeamInfo = () => {
                                     Started {startDate}
                                   </div>
                                 </div>
+                              </div>
                                 {t.tier && (
                                   <span className="text-xs font-bold px-2 py-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 ml-2 flex-shrink-0">
                                     {t.tier}
@@ -1059,6 +1107,21 @@ const DetailedTeamInfo = () => {
                           return (
                             <div key={t._id ?? idx} className="bg-gradient-to-br from-zinc-800/80 to-zinc-800/40 border border-zinc-700 rounded-lg p-5 hover:border-amber-500/50 transition-all group">
                               <div className="flex items-start justify-between mb-3">
+                              <div className="flex gap-4">
+                                {t.media?.logo ? (
+                                  <div className="flex-shrink-0">
+                                    <img 
+                                      src={t.media.logo} 
+                                      alt={t.tournamentName}
+                                      className="w-16 h-16 rounded-lg object-cover border border-zinc-700/50 shadow-lg group-hover:border-amber-500/30 transition-colors"
+                                      onError={(e) => { e.target.src = '/default-tournament.png'; e.target.onerror = null; }}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="w-16 h-16 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center flex-shrink-0">
+                                    <Trophy className="w-8 h-8 text-zinc-600" />
+                                  </div>
+                                )}
                                 <div className="flex-1 min-w-0">
                                   <h3 className="text-white font-bold text-lg mb-1 group-hover:text-cyan-400 transition-colors truncate">
                                     {t.tournamentName || t.shortName || 'Tournament'}
@@ -1071,6 +1134,7 @@ const DetailedTeamInfo = () => {
                                     {endDate}
                                   </div>
                                 </div>
+                              </div>
                                 <div className="flex flex-col items-end gap-2 ml-2 flex-shrink-0">
                                   {t.tier && (
                                     <span className="text-xs font-bold px-2 py-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">

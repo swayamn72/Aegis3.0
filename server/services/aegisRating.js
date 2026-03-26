@@ -217,7 +217,7 @@ export async function calculateAegisRatingDelta(matchDoc, tournamentDoc, cumulat
       }
 
       // --- Floor guard ---
-      const effectiveFloor = Math.max(player.aegisPrestigeFloor, (player.aegisRatingPeak || 0) * 0.80);
+      const effectiveFloor = Math.max(player.aegisPrestigeFloor || 0, (player.aegisRatingPeak || 0) * 0.80);
       let newRating = Math.round(player.aegisRating + delta);
       if (newRating < effectiveFloor) newRating = effectiveFloor;
       const actualDelta = newRating - player.aegisRating;
@@ -226,7 +226,7 @@ export async function calculateAegisRatingDelta(matchDoc, tournamentDoc, cumulat
       const peakWeight = PEAK_WEIGHT[tier] || 0;
       const peakContribution = peakWeight > 0 ? Math.round(newRating * peakWeight) : 0;
       const newPeak = peakWeight > 0 ? Math.max(player.aegisRatingPeak || 0, peakContribution) : (player.aegisRatingPeak || 0);
-      const newFloor = Math.max(player.aegisPrestigeFloor, newPeak * 0.80);
+      const newFloor = Math.max(player.aegisPrestigeFloor || 0, newPeak * 0.80);
       const newMatchesRated = (player.aegisMatchesRated || 0) + 1;
 
       // --- Build bulkWrite op ---

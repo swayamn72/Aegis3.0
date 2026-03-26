@@ -10,6 +10,7 @@ import ChatMessage from '../models/chat.model.js';
 import mongoose from 'mongoose';
 import upload from '../config/multer.js';
 import { processScreenshots } from '../services/bgmiOcr.service.js';
+import notificationService from '../services/notification.service.js';
 
 const router = express.Router();
 
@@ -165,7 +166,37 @@ router.get('/tournament/:tournamentId', async (req, res) => {
     const filter = { tournament: tournamentId };
     if (status) filter.status = status;
     if (phase) filter.tournamentPhase = phase;
-    if (group) filter.participatingGroups = group;
+    if (group) {
+      if (mongoose.Types.ObjectId.isValid(group)) {
+        filter.participatingGroups = group;
+      } else {
+        // Resolve group name to ID for more robust filtering
+        const tournament = await Tournament.findById(tournamentId).select('phases').lean();
+        const groupIds = [];
+        if (tournament && tournament.phases) {
+          tournament.phases.forEach(p => {
+            p.groups?.forEach(g => {
+              // Match name, "Group Name", or just the number if name is "Group 50"
+              const cleanGroupName = (g.name || '').toLowerCase();
+              const queryGroup = (group || '').toString().toLowerCase();
+              
+              if (cleanGroupName === queryGroup || 
+                  cleanGroupName === `group ${queryGroup}` || 
+                  cleanGroupName.replace('group ', '').trim() === queryGroup) {
+                groupIds.push(g._id.toString());
+              }
+            });
+          });
+        }
+        
+        if (groupIds.length > 0) {
+          filter.participatingGroups = { $in: groupIds };
+        } else {
+          // Fallback to direct match (for legacy data or untracked names)
+          filter.participatingGroups = group;
+        }
+      }
+    }
 
     // Count total matches for pagination
     const totalMatches = await Match.countDocuments(filter);
@@ -189,6 +220,7 @@ router.get('/tournament/:tournamentId', async (req, res) => {
           path: 'results.team',
           select: 'teamName teamTag logo'
         })
+        .populate('results.kills.breakdown.player', 'username gameIds inGameName profilePicture')
         .populate('tournament', 'tournamentName shortName phases');
     }
 
@@ -220,10 +252,15 @@ router.get('/tournament/:tournamentId', async (req, res) => {
             phase: match.tournamentPhase,
             group: { $in: match.groupNames },
             status: { $in: ['approved', 'checked_in'] }
-          }).populate('team', 'teamName teamTag logo').lean();
+          }).populate('team', 'teamName teamTag logo')
+            .populate('roster.player', 'username gameIds inGameName profilePicture')
+            .lean();
 
           // Add teams to match object
-          match.teams = registrations.map(reg => reg.team);
+          match.teams = registrations.map(reg => ({
+            ...reg.team,
+            roster: reg.roster
+          }));
         }
       }
       return match;
@@ -261,6 +298,14 @@ router.post('/schedule', verifyOrgToken, verifyTournamentOwnership, async (req, 
     const phase = tournament.phases?.find(p => p.name === matchData.tournamentPhase);
     if (!phase) {
       return res.status(400).json({ error: 'Invalid tournament phase' });
+    }
+
+    // Prevent scheduling if the phase is completed
+    if (phase.status === 'completed') {
+      return res.status(400).json({ 
+        error: 'Phase is concluded', 
+        details: 'Cannot schedule new matches in a completed phase.' 
+      });
     }
 
     // Normalize incoming group ids to strings
@@ -387,6 +432,15 @@ router.post('/schedule', verifyOrgToken, verifyTournamentOwnership, async (req, 
           });
         });
       }
+
+      // Fire-and-forget FCM push notifications (never delay the HTTP response)
+      const allPlayerIds = allPlayers.map(p => p._id.toString());
+      notificationService.sendToMultiplePlayers(
+        allPlayerIds,
+        '📅 Match Scheduled',
+        `${matchData.matchName} in ${tournament.tournamentName} - ${matchData.tournamentPhase}`,
+        { type: 'match_scheduled', matchId: scheduledMatch._id.toString(), tournamentId: matchData.tournament.toString() }
+      ).catch(err => console.error('FCM match_scheduled error:', err));
     } else {
       console.log('   ⚠️  No players found for notification');
     }
@@ -623,6 +677,15 @@ router.post('/:matchId/share-credentials', verifyOrgToken, verifyMatchOwnership,
       });
     }
 
+    // Fire-and-forget FCM push notifications for room credentials
+    const eligiblePlayerIds = eligiblePlayers.map(p => p._id.toString());
+    notificationService.sendToMultiplePlayers(
+      eligiblePlayerIds,
+      '🔑 Room Credentials Shared',
+      `Match #${match.matchNumber} - Room ID: ${roomId} | Password: ${password}`,
+      { type: 'room_credentials', matchId: matchId, tournamentId: (match.tournament?._id || match.tournament).toString() }
+    ).catch(err => console.error('FCM room_credentials error:', err));
+
     // Optional: Send email notifications to players
     try {
       // Only if you have email service set up
@@ -734,9 +797,25 @@ router.put('/:matchId/results', verifyOrgToken, verifyMatchOwnership, async (req
         if (result.playerKills && Array.isArray(result.playerKills)) {
           // If breakdown is empty or missing players, try to get team members
           if (!teamEntry.kills.breakdown || teamEntry.kills.breakdown.length === 0 || teamEntry.kills.breakdown.some(b => !b.player)) {
-            const teamWithPlayers = await Team.findById(result.teamId).select('players').lean();
-            if (teamWithPlayers && teamWithPlayers.players) {
-              teamEntry.kills.breakdown = teamWithPlayers.players.map((playerId, index) => ({
+            // Try to get from Registration roster first
+            const registration = await Registration.findOne({
+              tournament: match.tournament._id || match.tournament,
+              team: result.teamId,
+              status: { $in: ['approved', 'checked_in'] }
+            }).select('roster').lean();
+
+            let playersList = [];
+            if (registration && registration.roster && registration.roster.length > 0) {
+              playersList = registration.roster.map(r => r.player);
+            } else {
+              const teamWithPlayers = await Team.findById(result.teamId).select('players').lean();
+              if (teamWithPlayers && teamWithPlayers.players) {
+                playersList = teamWithPlayers.players;
+              }
+            }
+
+            if (playersList.length > 0) {
+              teamEntry.kills.breakdown = playersList.map((playerId, index) => ({
                 player: playerId,
                 kills: result.playerKills[index] || 0
               }));
@@ -783,8 +862,8 @@ router.put('/:matchId/results', verifyOrgToken, verifyMatchOwnership, async (req
 
     await match.save();
     await match.populate('results.team', 'teamName teamTag logo');
-    await match.populate('results.kills.breakdown.player', 'username inGameName profilePicture');
-    await match.populate('matchStats.mostKillsPlayer.player', 'username inGameName profilePicture');
+    await match.populate('results.kills.breakdown.player', 'username gameIds inGameName profilePicture');
+    await match.populate('matchStats.mostKillsPlayer.player', 'username gameIds inGameName profilePicture');
 
     // Fire-and-forget: keep player+team stats counters in sync (never blocks response)
     const teamIdsForStats = match.results.map(r => r.team._id || r.team).filter(Boolean);
@@ -1113,8 +1192,8 @@ router.get('/:matchId', async (req, res) => {
 
     const match = await Match.findById(matchId)
       .populate('results.team', 'teamName teamTag logo')
-      .populate('results.kills.breakdown.player', 'username inGameName profilePicture')
-      .populate('matchStats.mostKillsPlayer.player', 'username inGameName profilePicture')
+      .populate('results.kills.breakdown.player', 'username gameIds inGameName profilePicture')
+      .populate('matchStats.mostKillsPlayer.player', 'username gameIds inGameName profilePicture')
       .populate('tournament', 'tournamentName shortName logo')
       .lean();
 
@@ -1226,7 +1305,7 @@ router.post(
           tournament: match.tournament,
           team: { $in: uniqueTeamIds },
           status: { $in: ['approved', 'checked_in'] }
-        }).select('team roster').lean()
+        }).populate('roster.player', 'username gameIds').select('team roster').lean()
       ]);
 
       const teamNameById = Object.fromEntries(teams.map(t => [t._id.toString(), t.teamName]));

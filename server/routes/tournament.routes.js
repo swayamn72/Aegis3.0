@@ -227,7 +227,7 @@ router.get('/:id', async (req, res) => {
 
       // Fetch recent matches
       includeMatches === 'true' ?
-        Match.find({ tournament: id })
+        Match.find({ tournament: id, status: 'completed' })
           .sort({ scheduledStartTime: -1 })
           .limit(mobile === 'true' ? 10 : 20)
           .populate('results.team', 'teamName teamTag')
@@ -291,8 +291,7 @@ router.get('/:id', async (req, res) => {
         phase: reg.phase
       })),
 
-      description: tournament.description ||
-        `${tournament.tournamentName} is a competitive ${tournament.gameTitle} tournament featuring top teams from ${tournament.region}.`,
+      description: tournament.description || '',
 
       media: {
         banner: tournament.media?.banner || null,
@@ -401,6 +400,7 @@ router.get('/:id', async (req, res) => {
             const phaseStandingDoc = phaseStandings.find(ps => ps.phase === phase.name);
 
             groupsData[phase.name][groupKey] = {
+              groupId: group._id,
               standings: (phaseStandingDoc?.topTeams || [])
                 .filter(s => !group.name || s.group === group.name) // Filter by group if specific group requested
                 .slice()

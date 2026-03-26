@@ -1,0 +1,8 @@
+﻿[dotenv@17.3.1] injecting env (13) from .env -- tip: ΓÜÖ∩╕Å  suppress all logs with { quiet: true }
+
+--- Full Match Analysis (Match: 69c016aa5004b2b9543d5743) ---
+Total Rated Players: 79
+Max Gain: +0 (player1ign)
+Max Loss: -1 (player_51_1_6871)
+Players with 0 change: 4
+Average Delta: -0.95
