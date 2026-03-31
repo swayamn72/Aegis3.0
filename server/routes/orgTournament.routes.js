@@ -124,7 +124,7 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
 
     // Fetch tournament with teams populated
     const tournament = await Tournament.findById(tournamentId)
-      .select('phases organizer status prizePool participatingTeams')
+      .select('phases organizer status prizePool participatingTeams tier importanceScore')
       .populate('phases.teams', 'teamName teamTag logo');
 
     if (!tournament) {

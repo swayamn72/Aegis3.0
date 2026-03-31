@@ -77,7 +77,7 @@ router.get('/leaderboard/aegis', async (req, res) => {
     const [total, players] = await Promise.all([
       Player.countDocuments({ aegisMatchesRated: { $gt: 0 } }),
       Player.find({ aegisMatchesRated: { $gt: 0 } })
-        .select('username profilePicture aegisRating aegisRatingPeak aegisIsProvisional aegisMatchesRated team primaryGame inGameRole verified')
+        .select('username profilePicture aegisRating aegisRatingPeak aegisIsProvisional aegisMatchesRated tournamentsPlayed matchesPlayed team primaryGame inGameRole verified')
         .populate('team', 'teamName teamTag logo')
         .sort({ aegisRating: -1 })
         .skip(skip)
@@ -101,7 +101,7 @@ router.get("/me", auth, async (req, res) => {
       .select(
         [
           // User fields
-          "_id", "realName", "age", "location", "bio", "languages", "profilePicture", "gameIds", "earnings", "inGameRole", "teamStatus", "availability", "discordTag", "instagram", "youtube", "profileVisibility", "cardTheme", "username", "country", "aegisRating", "aegisRatingPeak", "aegisMatchesRated", "aegisIsProvisional", "sChampionships", "aChampionships", "sTopThree", "verified", "createdAt", "previousTeams", "team", "primaryGame", "tournamentsPlayed", "matchesPlayed"
+          "_id", "realName", "age", "location", "bio", "languages", "profilePicture", "gameIds", "earnings", "inGameRole", "teamStatus", "availability", "discordTag", "instagram", "youtube", "profileVisibility", "cardTheme", "username", "country", "aegisRating", "aegisRatingPeak", "aegisMatchesRated", "aegisIsProvisional", "sChampionships", "aChampionships", "sTopThree", "verified", "createdAt", "previousTeams", "team", "primaryGame", "tournamentsPlayed", "matchesPlayed", "statistics"
         ].join(" ")
       )
       .populate({
@@ -854,7 +854,7 @@ router.get('/:id/profile', async (req, res) => {
   try {
     const { id } = req.params;
     const player = await Player.findById(id)
-      .select('_id username gameIds realName profilePicture verified primaryGame country location age teamStatus inGameRole team bio languages previousTeams createdAt discordTag instagram youtube twitter aegisRating aegisRatingPeak aegisRatingFloor aegisPrestigeFloor aegisMatchesRated aegisIsProvisional aegisLastRatedMatchAt sChampionships aChampionships sTopThree')
+      .select('_id username gameIds realName profilePicture verified primaryGame country location age teamStatus inGameRole team bio languages previousTeams createdAt discordTag instagram youtube twitter aegisRating aegisRatingPeak aegisRatingFloor aegisPrestigeFloor aegisMatchesRated aegisIsProvisional aegisLastRatedMatchAt sChampionships aChampionships sTopThree statistics')
       .populate({
         path: 'team',
         select: '_id teamName teamTag logo primaryGame region players captain',

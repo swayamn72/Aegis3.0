@@ -92,11 +92,11 @@ router.get('/:id', auth, async (req, res) => {
     const team = await Team.findById(teamId)
       .populate({
         path: 'captain',
-        select: 'username profilePicture primaryGame realName age country aegisRating statistics inGameRole discordTag instagram youtube twitter verified'
+        select: 'username profilePicture primaryGame realName age country aegisRating statistics inGameRole discordTag instagram youtube twitter verified tournamentsPlayed matchesPlayed'
       })
       .populate({
         path: 'players',
-        select: 'username profilePicture primaryGame realName age country aegisRating statistics inGameRole discordTag verified'
+        select: 'username profilePicture primaryGame realName age country aegisRating statistics inGameRole discordTag verified tournamentsPlayed matchesPlayed'
       })
       .populate('organization', 'orgName logo description website establishedDate')
       .select('-__v');
@@ -120,7 +120,7 @@ router.get('/:id', auth, async (req, res) => {
       .sort({ actualEndTime: -1 })
       .limit(5)
       .populate('tournament', 'tournamentName shortName media')
-      .select('matchNumber matchType map actualEndTime results tournament')
+      .select('matchNumber matchType map scheduledStartTime actualEndTime results tournament tournamentPhase')
       .lean();
 
     // Format match data
@@ -133,8 +133,9 @@ router.get('/:id', auth, async (req, res) => {
         matchNumber: match.matchNumber,
         matchType: match.matchType,
         map: match.map,
-        date: match.actualEndTime,
+        date: match.actualEndTime || match.scheduledStartTime,
         tournament: match.tournament,
+        phase: match.tournamentPhase,
         position: teamData?.finalPosition || null,
         kills: teamData?.kills?.total || 0,
         points: teamData?.points?.totalPoints || 0,
@@ -209,7 +210,7 @@ router.get('/:id/matches', auth, async (req, res) => {
         .skip(skip)
         .limit(limit)
         .populate('tournament', 'tournamentName shortName media')
-        .select('matchNumber matchType map actualEndTime results tournament')
+        .select('matchNumber matchType map scheduledStartTime actualEndTime results tournament tournamentPhase')
         .lean(),
       Match.countDocuments(filter),
     ]);
@@ -221,8 +222,9 @@ router.get('/:id/matches', auth, async (req, res) => {
         matchNumber: match.matchNumber,
         matchType:   match.matchType,
         map:         match.map,
-        date:        match.actualEndTime,
+        date:        match.actualEndTime || match.scheduledStartTime,
         tournament:  match.tournament,
+        phase:       match.tournamentPhase,
         position:    td?.finalPosition  ?? null,
         kills:       td?.kills?.total   ?? 0,
         points:      td?.points?.totalPoints ?? 0,

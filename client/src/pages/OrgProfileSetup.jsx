@@ -77,7 +77,14 @@ export default function OrgProfileSetup() {
         setLoading(true);
 
         try {
-            const response = await axios.post(`${API_URL}/api/auth/complete-org-profile`, formData, {
+            // Trim leading '@' from social handles
+            const submissionData = {
+                ...formData,
+                orgInstagram: formData.orgInstagram ? String(formData.orgInstagram).replace(/^@+/, '') : '',
+                ownerInstagram: formData.ownerInstagram ? String(formData.ownerInstagram).replace(/^@+/, '') : ''
+            };
+
+            const response = await axios.post(`${API_URL}/api/auth/complete-org-profile`, submissionData, {
                 withCredentials: true,
             });
 

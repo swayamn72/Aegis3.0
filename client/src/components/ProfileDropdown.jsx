@@ -30,8 +30,6 @@ const ProfileDropdown = ({ user, logout }) => {
     { icon: User, label: 'My Profile', href: '/my-profile' },
     { icon: Gamepad2, label: 'My Game IDs', href: '/my-game-ids' },
     { icon: Users, label: 'My Teams', href: '/my-teams' },
-    { icon: Trophy, label: 'Achievements', href: '/achievements' },
-    { icon: Star, label: 'connections', href: '/connections' },
     { icon: Bell, label: 'Notifications', href: '/notifications' },
     { icon: Settings, label: 'Settings', href: '/settings' },
     { icon: LogOut, label: 'Logout', href: '#', isLogout: true }

@@ -4,11 +4,11 @@ import { useAuth } from '../context/AuthContext';
 import { useTeam, usePlayerMatches, usePlayerTournaments } from '../hooks/useProfile';
 import { getRatingBadge } from '../utils/aegisRatingUtils';
 import {
-  User, MapPin, Calendar, Globe, Users, Trophy, Target,
-  TrendingUp, Award, Gamepad2, Settings, Share2, Edit,
-  Clock, Zap, Medal, ChevronRight, Hash, Activity,
+  User, MapPin, Calendar, Globe, Users, Trophy,
+  Gamepad2, Share2, Edit,
+  Clock, Medal, ChevronRight, Hash,
   ExternalLink, Check, X, Shield, Eye,
-  BarChart3, Sword, Crown, Plus, Instagram,
+  Sword, Instagram, Twitter, Youtube,
   Loader2, AlertCircle, ChevronDown, Flame, Map
 } from 'lucide-react';
 
@@ -381,10 +381,8 @@ const AegisMyProfile = () => {
   const totalMatches = matchPages?.pages?.[0]?.total ?? 0;
   const totalTournaments = tournamentPages?.pages?.[0]?.total ?? 0;
 
-  const loading = teamLoading;
 
   useEffect(() => { setImageError(false); }, [user?.profilePicture]);
-  useEffect(() => { setTeamLogoError(false); }, [team?.logo]);
   useEffect(() => { setTeamLogoError(false); }, [team?.logo]);
 
   if (isLoading) {
@@ -444,7 +442,6 @@ const AegisMyProfile = () => {
     </div>
   );
 
-  const recentMatches = allMatches.slice(0, 3);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white pt-24 pb-12">
@@ -608,6 +605,9 @@ const AegisMyProfile = () => {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <StatBox icon={Gamepad2} label="Total Matches" value={totalMatches || userData.statistics.matchesPlayed || 0} color="purple" />
+          <StatBox icon={Medal} label="Tournaments" value={totalTournaments || userData.statistics.tournamentsPlayed || 0} color="amber" />
+          <StatBox icon={Sword} label="Total Kills" value={userData.statistics.totalKills || 0} color="red" />
           <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4 transition-all hover:bg-zinc-900">
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2 bg-[#FF4500]/10 rounded-lg">
@@ -616,19 +616,16 @@ const AegisMyProfile = () => {
               <span className="text-zinc-400 text-sm">Aegis Rating</span>
             </div>
             <div className="flex items-baseline gap-2">
-              <div className="text-2xl font-bold" style={{ color: getRatingBadge(userData.aegisRating).color }}>{userData.aegisRating}</div>
+              <div className="text-2xl font-bold" style={{ color: getRatingBadge(userData.aegisRating).color }}>{userData.aegisRating || 1000}</div>
               <span className="text-xs text-zinc-500">{getRatingBadge(userData.aegisRating).tier}</span>
             </div>
           </div>
-          <StatBox icon={Target} label="Win Rate" value={`${userData.statistics.winRate}%`} color="green" />
-          <StatBox icon={Sword} label="Total Kills" value={userData.statistics.totalKills} color="red" />
-          <StatBox icon={Medal} label="Tournaments" value={totalTournaments || userData.statistics.tournamentsPlayed} color="amber" />
         </div>
 
         {/* Tabs */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-1 mb-6 sticky top-20 z-30 shadow-2xl backdrop-blur-xl bg-zinc-900/80">
           <div className="flex gap-1 overflow-x-auto scrollbar-hide pb-0.5 mask-fade-right">
-            {['overview', 'matches', 'tournaments', 'social'].map(tab => (
+            {['overview', 'matches', 'tournaments'].map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -663,93 +660,78 @@ const AegisMyProfile = () => {
             {/* OVERVIEW TAB */}
             {activeTab === 'overview' && (
               <>
-                {/* Performance Stats */}
+                {/* Team Info (Moved from sidebar) */}
                 <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-                  <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5 text-cyan-400" />
-                    Performance
-                  </h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="bg-zinc-800/50 rounded-lg p-4">
-                      <p className="text-zinc-400 text-sm mb-1">Matches Played</p>
-                      <p className="text-2xl font-bold text-white">{userData.statistics.matchesPlayed}</p>
-                    </div>
-                    <div className="bg-zinc-800/50 rounded-lg p-4">
-                      <p className="text-zinc-400 text-sm mb-1">Matches Won</p>
-                      <p className="text-2xl font-bold text-green-400">{userData.statistics.matchesWon}</p>
-                    </div>
-                    <div className="bg-zinc-800/50 rounded-lg p-4">
-                      <p className="text-zinc-400 text-sm mb-1">Avg Placement</p>
-                      <p className="text-2xl font-bold text-cyan-400">
-                        {userData.statistics.averagePlacement > 0 ?
-                          `#${userData.statistics.averagePlacement.toFixed(1)}` :
-                          '—'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Recent Matches (overview preview) */}
-                <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl font-bold flex items-center gap-2">
-                      <Gamepad2 className="w-5 h-5 text-cyan-400" />
-                      Recent Matches
-                    </h2>
-                    {totalMatches > 3 && (
-                      <button
-                        onClick={() => setActiveTab('matches')}
-                        className="text-cyan-400 text-sm hover:text-cyan-300 flex items-center gap-1"
-                      >
-                        View All ({totalMatches})
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                  <div className="space-y-3">
-                    {matchesLoading ? (
-                      [1, 2, 3].map(i => <SkeletonCard key={i} rows={2} />)
-                    ) : matchesError ? (
-                      <ErrorState message="Could not load recent matches" />
-                    ) : recentMatches.length > 0 ? (
-                      recentMatches.map(match => <MatchCard key={match._id} match={match} />)
-                    ) : (
-                      <EmptyState
-                        icon={Gamepad2}
-                        title="No matches yet"
-                        subtitle="Join a tournament and play your first match"
-                        cta="Browse Tournaments"
-                        onCta={() => navigate('/tournaments')}
-                      />
-                    )}
-                  </div>
-                </div>
-
-                {/* Recent Tournaments (overview preview) */}
-                {allTournaments.length > 0 && (
-                  <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-xl font-bold flex items-center gap-2">
-                        <Trophy className="w-5 h-5 text-amber-400" />
-                        Recent Tournaments
-                      </h2>
-                      {totalTournaments > 2 && (
+                  <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                    <Shield className="w-5 h-5 text-cyan-400" />
+                    Current Team
+                  </h3>
+                  {team ? (
+                    <div className="flex flex-col md:flex-row items-center md:items-start gap-6 bg-zinc-800/30 border border-zinc-700/50 rounded-xl p-6">
+                      <Link to={`/team/${teamId}`} className="block shrink-0">
+                        {team.logo && !teamLogoError ? (
+                          <img
+                            src={team.logo}
+                            alt={`${team.teamName} logo`}
+                            className="w-24 h-24 rounded-xl object-cover border-2 border-zinc-700 hover:border-cyan-500 transition-all"
+                            onError={() => setTeamLogoError(true)}
+                          />
+                        ) : (
+                          <div className="w-24 h-24 bg-gradient-to-br from-cyan-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-cyan-500/20">
+                            <span className="text-white font-bold text-2xl">{team.teamName.charAt(0).toUpperCase()}</span>
+                          </div>
+                        )}
+                      </Link>
+                      <div className="flex-1 text-center md:text-left">
+                        <div className="flex flex-col md:flex-row items-center gap-3 mb-2">
+                          <h4 className="text-2xl font-black text-white">{team.teamName}</h4>
+                          <span className="bg-zinc-700 px-2 py-1 rounded text-xs font-bold text-zinc-300">{team.teamTag}</span>
+                        </div>
+                        <p className="text-zinc-400 mb-4 max-w-md">{team.bio || 'Representing with pride.'}</p>
+                        <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 text-sm">
+                          <div className="flex items-center gap-1.5">
+                            <Users className="w-4 h-4 text-blue-400" />
+                            <span className="text-zinc-400">Members:</span>
+                            <span className="text-white font-bold">{team.players?.length || 0}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <MapPin className="w-4 h-4 text-green-400" />
+                            <span className="text-zinc-400">Region:</span>
+                            <span className="text-white font-bold">{team.region || 'India'}</span>
+                          </div>
+                        </div>
                         <button
-                          onClick={() => setActiveTab('tournaments')}
-                          className="text-amber-400 text-sm hover:text-amber-300 flex items-center gap-1"
+                          onClick={() => navigate(`/team/${teamId}`)}
+                          className="mt-6 px-6 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 mx-auto md:mx-0"
                         >
-                          View All ({totalTournaments})
-                          <ChevronRight className="w-4 h-4" />
+                          View Team Profile <ChevronRight className="w-4 h-4" />
                         </button>
-                      )}
+                      </div>
                     </div>
-                    <div className="space-y-3">
-                      {allTournaments.slice(0, 2).map(t => (
-                        <TournamentHistoryCard key={t.registrationId} tournament={t} />
-                      ))}
-                    </div>
+                  ) : (
+                    <EmptyState
+                      icon={Shield}
+                      title="No Team"
+                      subtitle="You are not currently in a team"
+                      cta="Join a Team"
+                      onCta={() => navigate('/recruitment')}
+                    />
+                  )}
+                </div>
+
+                {/* Social Links (Integrated into Overview) */}
+                <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+                  <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                    <Hash className="w-5 h-5 text-cyan-400" />
+                    Social Links
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <SocialLinkCard icon={Hash} platform="Discord" value={userData.discordTag} color="indigo" />
+                    <SocialLinkCard icon={Twitter} platform="Twitter" value={userData.twitter} color="blue" />
+                    <SocialLinkCard icon={Instagram} platform="Instagram" value={userData.instagram} color="pink" />
+                    <SocialLinkCard icon={Youtube} platform="YouTube" value={userData.youtube} color="red" />
                   </div>
-                )}
+                </div>
               </>
             )}
 
@@ -826,92 +808,10 @@ const AegisMyProfile = () => {
                 </div>
               </div>
             )}
-
-            {/* SOCIAL TAB */}
-            {activeTab === 'social' && (
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-                <h2 className="text-xl font-bold mb-4">Social Links</h2>
-                <div className="space-y-3">
-                  <SocialLinkCard icon={Hash} platform="Discord" value={userData.discordTag} color="indigo" />
-                  <SocialLinkCard icon={Instagram} platform="Instagram" value={userData.instagram} color="pink" />
-                  <SocialLinkCard icon={ExternalLink} platform="YouTube" value={userData.youtube} color="red" />
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Sidebar */}
           <div className="space-y-6">
-
-            {/* Team Info */}
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-              <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                <Shield className="w-5 h-5 text-cyan-400" />
-                Team
-              </h3>
-              {team ? (
-                <div className="text-center">
-                  <Link to={`/team/${teamId}`} className="block group">
-                    {team.logo && !teamLogoError ? (
-                      <img
-                        src={team.logo}
-                        alt={`${team.teamName} logo`}
-                        className="w-16 h-16 rounded-lg object-cover mx-auto mb-3 border border-zinc-700 group-hover:border-cyan-500/50 transition-all"
-                        onError={() => setTeamLogoError(true)}
-                      />
-                    ) : (
-                      <div className="w-16 h-16 bg-gradient-to-br from-cyan-500 to-purple-600 rounded-lg mx-auto mb-3 flex items-center justify-center group-hover:shadow-lg group-hover:shadow-cyan-500/20 transition-all">
-                        <span className="text-white font-bold text-lg">{team.teamName.charAt(0).toUpperCase()}</span>
-                      </div>
-                    )}
-                  </Link>
-                  <Link
-                    to={`/team/${teamId}`}
-                    className="group"
-                  >
-                    <p className="text-white font-medium group-hover:text-cyan-400 transition-colors">{team.teamName}</p>
-                    <p className="text-zinc-400 text-sm">Member since {userData.joinDate}</p>
-                  </Link>
-                </div>
-              ) : (
-                <div className="text-center py-6">
-                  <p className="text-zinc-400 mb-3">Not in a team</p>
-                  <button
-                    onClick={() => navigate('/recruitment')}
-                    className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg text-sm transition-colors"
-                  >
-                    Find a Team
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Quick Stats Card */}
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-              <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-green-400" />
-                Quick Stats
-              </h3>
-              <div className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-zinc-400">Matches Played</span>
-                  <span className="text-white font-medium">{totalMatches || userData.statistics.matchesPlayed}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-zinc-400">Tournaments</span>
-                  <span className="text-white font-medium">{totalTournaments || userData.statistics.tournamentsPlayed}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-zinc-400">Total Kills</span>
-                  <span className="text-cyan-400 font-medium">{userData.statistics.totalKills}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-zinc-400">Win Rate</span>
-                  <span className="text-green-400 font-medium">{userData.statistics.winRate}%</span>
-                </div>
-              </div>
-            </div>
-
             {/* Earnings */}
             {userData.earnings > 0 && (
               <div className="bg-gradient-to-br from-green-900/20 to-emerald-900/20 border border-green-800/30 rounded-xl p-6">
@@ -926,24 +826,49 @@ const AegisMyProfile = () => {
   );
 };
 
-const SocialLinkCard = ({ icon: Icon, platform, value, color }) => (
-  <div className={`p-4 rounded-lg border ${value
-    ? `bg-${color}-500/10 border-${color}-500/30`
-    : 'bg-zinc-800/50 border-zinc-700'
-    }`}>
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-3">
-        <Icon className={`w-5 h-5 ${value ? `text-${color}-400` : 'text-zinc-500'}`} />
-        <div>
-          <p className="text-white font-medium">{platform}</p>
-          <p className={`text-sm ${value ? `text-${color}-300` : 'text-zinc-500 italic'}`}>
-            {value || 'Not connected'}
-          </p>
+const SocialLinkCard = ({ icon: Icon, platform, value, color }) => {
+  const urlPrefixMap = {
+    'Instagram': 'https://instagram.com/',
+    'Twitter': 'https://twitter.com/',
+    'YouTube': 'https://youtube.com/@',
+    'Discord': 'https://discord.gg/',
+  };
+
+  const cleanValue = value ? String(value).replace(/^@+/, '') : '';
+  let finalUrl = value;
+  if (value && !String(value).startsWith('http')) {
+    const prefix = urlPrefixMap[platform] || 'https://';
+    finalUrl = `${prefix}${cleanValue}`;
+  }
+
+  return (
+    <div className={`p-4 rounded-lg border ${value
+      ? `bg-${color}-500/10 border-${color}-500/30`
+      : 'bg-zinc-800/50 border-zinc-700'
+      }`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Icon className={`w-5 h-5 ${value ? `text-${color}-400` : 'text-zinc-500'}`} />
+          <div>
+            <p className="text-white font-medium">{platform}</p>
+            <p className={`text-sm ${value ? `text-${color}-300` : 'text-zinc-500 italic'}`}>
+              {value || 'Not connected'}
+            </p>
+          </div>
         </div>
+        {value && (
+          <a
+            href={finalUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+          >
+            <ExternalLink className="w-4 h-4 text-zinc-400" />
+          </a>
+        )}
       </div>
-      {value && <ExternalLink className="w-4 h-4 text-zinc-400" />}
     </div>
-  </div>
-);
+  );
+};
 
 export default AegisMyProfile;

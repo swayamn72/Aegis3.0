@@ -939,6 +939,8 @@ export const recalculateStatsForTeams = async (teamIds) => {
         update: {
           $set: {
             'statistics.matchesPlayed': stat.matchesPlayed,
+            'statistics.matchesWon': stat.matchesWon,
+            'statistics.chickenDinners': stat.matchesWon,
             'statistics.totalKills': stat.totalKills,
             'statistics.winRate': winRate,
             'statistics.averagePlacement': avgPlacement,
@@ -1029,6 +1031,7 @@ export const recalculateStatsForTeams = async (teamIds) => {
       filter: { _id: stat._id },
       update: {
         $set: {
+          matchesPlayed: stat.matchesPlayed,
           'statistics.totalKills': stat.totalKills,
           'statistics.matchesWon': stat.matchesWon,
           'statistics.matchesPlayed': stat.matchesPlayed,
@@ -1039,6 +1042,41 @@ export const recalculateStatsForTeams = async (teamIds) => {
   }));
 
   if (playerBulkOps.length > 0) await Player.bulkWrite(playerBulkOps, { ordered: false });
+
+  // --- 4. Tournament Participation (Career) ---
+  // A tournament is "played" if the registration reached certain status
+  const playerTourneyStats = await Registration.aggregate([
+    {
+      $match: {
+        'roster.player': { $in: allPlayerIds },
+        status: { $in: ['approved', 'checked_in', 'disqualified', 'withdrawn', 'completed'] }
+      }
+    },
+    { $unwind: '$roster' },
+    {
+      $match: { 'roster.player': { $in: allPlayerIds } }
+    },
+    {
+      $group: {
+        _id: '$roster.player',
+        tournamentsPlayed: { $sum: 1 }
+      }
+    }
+  ]);
+
+  const tourneyBulkOps = playerTourneyStats.map(stat => ({
+    updateOne: {
+      filter: { _id: stat._id },
+      update: {
+        $set: {
+          tournamentsPlayed: stat.tournamentsPlayed,
+          'statistics.tournamentsPlayed': stat.tournamentsPlayed
+        }
+      }
+    }
+  }));
+
+  if (tourneyBulkOps.length > 0) await Player.bulkWrite(tourneyBulkOps, { ordered: false });
 };
 
 // Helper: after deleting a match, unlock groups that have zero remaining scheduled matches

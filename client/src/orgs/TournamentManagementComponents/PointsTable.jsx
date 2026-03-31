@@ -120,7 +120,7 @@ const PointsTable = ({ tournament, onUpdate }) => {
             setLoading(true);
             setError(null);
 
-            const response = await axiosInstance.get(`/api/matches/tournament/${tournament._id}`);
+            const response = await axiosInstance.get(`/api/matches/tournament/${tournament._id}?limit=500`);
             const matchesData = response.data;
             setMatches(Array.isArray(matchesData) ? matchesData : (matchesData.matches || []));
         } catch (err) {
@@ -137,14 +137,17 @@ const PointsTable = ({ tournament, onUpdate }) => {
         // 1. Filter matches first based on selected phase
         let filteredMatches = matches;
         if (selectedPhase) {
-            filteredMatches = matches.filter(match => match.tournamentPhase === selectedPhase);
+            // Strict equality check for phase name to prevent cross-phase leakage
+            filteredMatches = matches.filter(match => match.tournamentPhase?.toString().trim() === selectedPhase.toString().trim());
         }
 
         // 2. Filter further by group if selected
         if (selectedGroup && selectedGroup !== 'overall') {
-            filteredMatches = filteredMatches.filter(match => 
-                match.participatingGroups && match.participatingGroups.includes(selectedGroup)
-            );
+            filteredMatches = filteredMatches.filter(match => {
+                const groupMatches = match.participatingGroups || [];
+                const namesMatches = match.groupNames || [];
+                return groupMatches.includes(selectedGroup) || namesMatches.includes(selectedGroup);
+            });
         }
         
         // 3. Extract unique teams from these filtered matches
@@ -187,9 +190,11 @@ const PointsTable = ({ tournament, onUpdate }) => {
                     const kills = teamResult.kills?.total || 0;
 
                     if (position || kills > 0) {
+                        // Consistent point calculation (standard BGMI 10pt system for 1st)
                         const placementPoints = getPlacementPoints(position);
+                        // We recalculate from position/kills to ensure consistency with current tournament rules 
+                        // even if the DB has legacy/different points from older seeds
                         const totalMatchPoints = placementPoints + kills;
-
                         teamPoints[teamIdStr].totalPositionPoints += placementPoints;
                         teamPoints[teamIdStr].totalKillPoints += kills;
                         teamPoints[teamIdStr].totalPoints += totalMatchPoints;
@@ -252,7 +257,9 @@ const PointsTable = ({ tournament, onUpdate }) => {
                     phase.groups.forEach(group => {
                         if (group.name === 'overall') return;
                         const groupStandings = pointsTable.filter(team => {
-                            const groupTeamIds = group.teams?.map(t => t._id?.toString() || t.toString()) || [];
+                            const groupTeamIds = (group.teams && group.teams.length > 0)
+                            ? group.teams.map(t => t._id?.toString() || t.toString())
+                            : group.slotList?.map(s => s.team?._id?.toString() || s.team?.toString()) || [];
                             return groupTeamIds.includes(team.teamId);
                         }).slice(0, numberOfTeams);
                         selectedTeams.push(...groupStandings);

@@ -164,6 +164,7 @@ registrationSchema.index({ tournament: 1, status: 1, totalTournamentPoints: -1 }
 registrationSchema.index({ tournament: 1, phase: 1, group: 1 }); // Phase/group queries
 registrationSchema.index({ team: 1, status: 1 }); // Team's active registrations
 registrationSchema.index({ tournament: 1, qualifiedThrough: 1 }); // Filter by qualification method
+registrationSchema.index({ 'roster.player': 1 }); // Performance for player stats / history
 
 // --- Virtuals ---
 

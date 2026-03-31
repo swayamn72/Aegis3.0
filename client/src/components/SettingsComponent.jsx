@@ -96,7 +96,8 @@ const SettingsComponent = () => {
     // Social & Contact
     discordTag: '',
     instagram: '',
-    YouTube: '',
+    youtube: '',
+    twitter: '',
     profileVisibility: 'public',
 
     // Appearance
@@ -144,7 +145,8 @@ const SettingsComponent = () => {
         availability: user.availability || '',
         discordTag: user.discordTag || '',
         instagram: user.instagram || '',
-        YouTube: user.YouTube || user.youtube || '', // fallback for both
+        youtube: user.youtube || user.YouTube || '', 
+        twitter: user.twitter || '',
         profileVisibility: user.profileVisibility || 'public',
         cardTheme: user.cardTheme || 'orange',
       });
@@ -171,6 +173,11 @@ const SettingsComponent = () => {
 
       // Now update the profile with other settings
       const updateData = { ...profileSettings };
+
+      // Trim leading '@' from social handles
+      if (updateData.instagram) updateData.instagram = String(updateData.instagram).replace(/^@+/, '');
+      if (updateData.youtube) updateData.youtube = String(updateData.youtube).replace(/^@+/, '');
+      if (updateData.twitter) updateData.twitter = String(updateData.twitter).replace(/^@+/, '');
 
       // Clean up empty strings that might cause validation issues on the backend
       ['teamStatus', 'availability', 'age', 'location', 'realName'].forEach(field => {
@@ -661,9 +668,20 @@ const SettingsComponent = () => {
                         <label className="block text-zinc-300 font-medium mb-2">YouTube</label>
                         <input
                           type="text"
-                          value={profileSettings.YouTube}
-                          onChange={(e) => setProfileSettings({ ...profileSettings, YouTube: e.target.value })}
+                          value={profileSettings.youtube}
+                          onChange={(e) => setProfileSettings({ ...profileSettings, youtube: e.target.value })}
                           placeholder="youtube.com/@username"
+                          className="w-full px-4 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white focus:border-orange-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-zinc-300 font-medium mb-2">Twitter (X)</label>
+                        <input
+                          type="text"
+                          value={profileSettings.twitter}
+                          onChange={(e) => setProfileSettings({ ...profileSettings, twitter: e.target.value })}
+                          placeholder="twitter.com/username"
                           className="w-full px-4 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white focus:border-orange-500 focus:outline-none"
                         />
                       </div>

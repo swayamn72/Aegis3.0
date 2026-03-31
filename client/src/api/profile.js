@@ -1,11 +1,5 @@
 import axiosInstance from '../utils/axiosConfig';
 
-// Connections API
-export const getConnections = async () => {
-    const { data } = await axiosInstance.get('/api/connections');
-    return data;
-};
-
 // Team API
 export const getTeam = async (teamId) => {
     if (!teamId) throw new Error('Team ID is required');

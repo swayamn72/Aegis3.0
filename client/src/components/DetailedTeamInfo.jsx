@@ -229,7 +229,16 @@ const DetailedTeamInfo = () => {
 
   const handleEditTeamSubmit = (e) => {
     e.preventDefault();
-    editTeamMutation.mutate(editTeamForm);
+    
+    // Trim leading '@' from social handles
+    const trimmedSocials = { ...editTeamForm.socials };
+    ['instagram', 'twitter', 'youtube', 'discord'].forEach(key => {
+      if (trimmedSocials[key]) {
+        trimmedSocials[key] = String(trimmedSocials[key]).replace(/^@+/, '');
+      }
+    });
+
+    editTeamMutation.mutate({ ...editTeamForm, socials: trimmedSocials });
   };
 
   // Mutation: Send Invitation
@@ -490,27 +499,42 @@ const DetailedTeamInfo = () => {
 
   const SocialLinkCard = ({ icon: Icon, platform, value, color }) => {
     const colorMap = {
-      indigo: { bg: 'bg-indigo-600/20', border: 'border-indigo-500/30', text: 'text-indigo-400', hover: 'hover:bg-indigo-600/30' },
-      pink:   { bg: 'bg-pink-600/20',   border: 'border-pink-500/30',   text: 'text-pink-400',   hover: 'hover:bg-pink-600/30'   },
-      blue:   { bg: 'bg-blue-600/20',   border: 'border-blue-500/30',   text: 'text-blue-400',   hover: 'hover:bg-blue-600/30'   },
-      red:    { bg: 'bg-red-600/20',    border: 'border-red-500/30',    text: 'text-red-400',    hover: 'hover:bg-red-600/30'    },
+      indigo: { bg: 'bg-indigo-600/20', border: 'border-indigo-500/30', text: 'text-indigo-400', hover: 'hover:bg-indigo-600/30', urlPrefix: 'https://discord.gg/' },
+      pink:   { bg: 'bg-pink-600/20',   border: 'border-pink-500/30',   text: 'text-pink-400',   hover: 'hover:bg-pink-600/30', urlPrefix: 'https://instagram.com/' },
+      blue:   { bg: 'bg-blue-600/20',   border: 'border-blue-500/30',   text: 'text-blue-400',   hover: 'hover:bg-blue-600/30', urlPrefix: 'https://twitter.com/' },
+      red:    { bg: 'bg-red-600/20',    border: 'border-red-500/30',    text: 'text-red-400',    hover: 'hover:bg-red-600/30', urlPrefix: 'https://youtube.com/@' },
     };
     const c = colorMap[color] || colorMap.blue;
+    
+    // Clean handle: trim leading '@'
+    const cleanValue = value ? String(value).replace(/^@+/, '') : '';
+    
+    // Construct final URL
+    let finalUrl = value;
+    if (value && !String(value).startsWith('http')) {
+      finalUrl = `${c.urlPrefix}${cleanValue}`;
+    }
+
     return (
-      <div className={`${c.bg} border ${c.border} rounded-xl p-5 flex flex-col items-center gap-3 ${value ? c.hover : 'opacity-40 cursor-not-allowed'} transition-colors`}>
+      <a 
+        href={value ? finalUrl : '#'} 
+        target={value ? "_blank" : "_self"} 
+        rel="noopener noreferrer"
+        className={`${c.bg} border ${c.border} rounded-xl p-5 flex flex-col items-center gap-3 ${value ? c.hover : 'opacity-40 cursor-not-allowed'} transition-colors no-underline`}
+        onClick={(e) => !value && e.preventDefault()}
+      >
         <Icon className={`w-8 h-8 ${c.text}`} />
         <div className="text-center">
           <div className="text-white font-semibold mb-1">{platform}</div>
           {value ? (
-            <a href={value.startsWith('http') ? value : `https://${value}`} target="_blank" rel="noopener noreferrer"
-              className={`text-sm ${c.text} hover:underline break-all`}>
+            <span className={`text-sm ${c.text} hover:underline break-all block max-w-full truncate px-2`}>
               {value}
-            </a>
+            </span>
           ) : (
             <span className="text-zinc-600 text-sm">Not linked</span>
           )}
         </div>
-      </div>
+      </a>
     );
   };
 
@@ -720,28 +744,48 @@ const DetailedTeamInfo = () => {
                     {/* Social Links */}
                     <div className="flex flex-wrap gap-2">
                       {teamData.socials?.discord && (
-                        <button className="flex items-center gap-2 bg-indigo-600/20 border border-indigo-500/30 rounded-lg px-3 py-2 text-indigo-400 hover:bg-indigo-600/30 transition-colors text-sm">
+                        <a 
+                          href={teamData.socials.discord.startsWith('http') ? teamData.socials.discord : `https://discord.gg/${teamData.socials.discord.replace(/^@+/, '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 bg-indigo-600/20 border border-indigo-500/30 rounded-lg px-3 py-2 text-indigo-400 hover:bg-indigo-600/30 transition-colors text-sm no-underline"
+                        >
                           <FaDiscord className="w-4 h-4" />
                           Discord
-                        </button>
+                        </a>
                       )}
                       {teamData.socials?.twitter && (
-                        <button className="flex items-center gap-2 bg-blue-600/20 border border-blue-500/30 rounded-lg px-3 py-2 text-blue-400 hover:bg-blue-600/30 transition-colors text-sm">
+                        <a 
+                          href={teamData.socials.twitter.startsWith('http') ? teamData.socials.twitter : `https://twitter.com/${teamData.socials.twitter.replace(/^@+/, '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 bg-blue-600/20 border border-blue-500/30 rounded-lg px-3 py-2 text-blue-400 hover:bg-blue-600/30 transition-colors text-sm no-underline"
+                        >
                           <Twitter className="w-4 h-4" />
                           Twitter
-                        </button>
+                        </a>
                       )}
                       {teamData.socials?.youtube && (
-                        <button className="flex items-center gap-2 bg-red-600/20 border border-red-500/30 rounded-lg px-3 py-2 text-red-400 hover:bg-red-600/30 transition-colors text-sm">
+                        <a 
+                          href={teamData.socials.youtube.startsWith('http') ? teamData.socials.youtube : `https://youtube.com/@${teamData.socials.youtube.replace(/^@+/, '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 bg-red-600/20 border border-red-500/30 rounded-lg px-3 py-2 text-red-400 hover:bg-red-600/30 transition-colors text-sm no-underline"
+                        >
                           <Youtube className="w-4 h-4" />
                           YouTube
-                        </button>
+                        </a>
                       )}
                       {teamData.socials?.instagram && (
-                        <button className="flex items-center gap-2 bg-pink-600/20 border border-pink-500/30 rounded-lg px-3 py-2 text-pink-400 hover:bg-pink-600/30 transition-colors text-sm">
+                        <a 
+                          href={teamData.socials.instagram.startsWith('http') ? teamData.socials.instagram : `https://instagram.com/${teamData.socials.instagram.replace(/^@+/, '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 bg-pink-600/20 border border-pink-500/30 rounded-lg px-3 py-2 text-pink-400 hover:bg-pink-600/30 transition-colors text-sm no-underline"
+                        >
                           <Instagram className="w-4 h-4" />
                           Instagram
-                        </button>
+                        </a>
                       )}
                     </div>
                   </div>
@@ -799,11 +843,11 @@ const DetailedTeamInfo = () => {
                   <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center border border-green-500/30 group-hover:bg-green-500/20 transition-colors">
                     <Target className="w-5 h-5 text-green-400" />
                   </div>
-                  <div className="text-2xl font-bold text-white">{teamData.matchesWon || 0}</div>
+                  <div className="text-2xl font-bold text-white">{teamData.statistics?.matchesWon || teamData.statistics?.chickenDinners || 0}</div>
                 </div>
                 <div className="text-sm text-zinc-400">Matches Won</div>
                 <div className="mt-2 text-xs text-green-400">
-                  {teamData.matchesPlayed ? Math.round((teamData.matchesWon || 0) / teamData.matchesPlayed * 100) : 0}% win rate
+                  {teamData.statistics?.matchesPlayed ? Math.round(((teamData.statistics?.matchesWon || teamData.statistics?.chickenDinners || 0) / teamData.statistics.matchesPlayed) * 100) : 0}% win rate
                 </div>
               </div>
 
@@ -812,10 +856,10 @@ const DetailedTeamInfo = () => {
                   <div className="w-10 h-10 bg-amber-500/10 rounded-lg flex items-center justify-center border border-amber-500/30 group-hover:bg-amber-500/20 transition-colors">
                     <Trophy className="w-5 h-5 text-amber-400" />
                   </div>
-                  <div className="text-2xl font-bold text-white">{teamData.tournamentsWon || 0}</div>
+                  <div className="text-2xl font-bold text-white">{teamData.statistics?.tournamentsWon || 0}</div>
                 </div>
                 <div className="text-sm text-zinc-400">Tournaments Won</div>
-                <div className="mt-2 text-xs text-amber-400">{teamData.tournamentsPlayed || 0} participated</div>
+                <div className="mt-2 text-xs text-amber-400">{teamData.statistics?.tournamentsPlayed || 0} participated</div>
               </div>
             </div>
           </div>
@@ -929,11 +973,6 @@ const DetailedTeamInfo = () => {
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                                   <h3 className="text-white font-semibold text-lg">{match.map || 'Unknown Map'}</h3>
-                                  {match.matchType && (
-                                    <span className="bg-cyan-500/10 text-cyan-400 text-xs px-2 py-0.5 rounded border border-cyan-500/20">
-                                      {match.matchType}
-                                    </span>
-                                  )}
                                   {match.chickenDinner && (
                                     <span className="bg-amber-500/20 text-amber-400 text-xs font-bold px-2 py-1 rounded border border-amber-500/50">
                                       🍗 WINNER
@@ -954,6 +993,12 @@ const DetailedTeamInfo = () => {
                                     )}
                                     <span className="truncate">{tournamentName}</span>
                                   </span>
+                                  {match.phase && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="truncate text-zinc-300">{match.phase}</span>
+                                    </>
+                                  )}
                                   <span>•</span>
                                   <span>{matchDate}</span>
                                 </div>

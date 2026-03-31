@@ -309,9 +309,6 @@ const playerSchema = new mongoose.Schema(
         ref: "Post",
       },
     ],
-    connections: [{ type: mongoose.Schema.Types.ObjectId, ref: "Player" }],
-    sentRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "Player" }],
-    receivedRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "Player" }],
   },
   {
     timestamps: true,

@@ -225,28 +225,6 @@ const Navbar = () => {
 
                     <button
                       onClick={() => {
-                        navigate('/achievements');
-                        setIsOpen(false);
-                      }}
-                      className="flex items-center gap-3 px-4 py-3 rounded-lg text-zinc-300 hover:text-orange-400 hover:bg-gray-800 transition-all duration-200"
-                    >
-                      <Trophy size={18} />
-                      <span className="font-medium">Achievements</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        navigate('/connections');
-                        setIsOpen(false);
-                      }}
-                      className="flex items-center gap-3 px-4 py-3 rounded-lg text-zinc-300 hover:text-orange-400 hover:bg-gray-800 transition-all duration-200"
-                    >
-                      <Star size={18} />
-                      <span className="font-medium">Connections</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
                         navigate('/notifications');
                         setIsOpen(false);
                       }}

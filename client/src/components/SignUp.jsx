@@ -188,9 +188,9 @@ const AegisSignup = () => {
           description: formData.description,
           contactPhone: formData.contactPhone,
           website: formData.website,
-          orgInstagram: formData.orgInstagram,
+          orgInstagram: formData.orgInstagram ? String(formData.orgInstagram).replace(/^@+/, '') : '',
           ownerSocial: {
-            instagram: formData.ownerInstagram
+            instagram: formData.ownerInstagram ? String(formData.ownerInstagram).replace(/^@+/, '') : ''
           }
         }, {
           withCredentials: true,

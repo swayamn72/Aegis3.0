@@ -1,23 +1,11 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import {
-    getConnections,
     getTeam,
     getPlayerPosts,
     updatePost,
     deletePost
 } from '../api/profile';
 import { fetchPlayerMatches, fetchPlayerTournaments } from '../api/playerMatches';
-
-// ─── Connections ──────────────────────────────────────────────────────────────
-
-export const useConnections = () => {
-    return useQuery({
-        queryKey: ['connections'],
-        queryFn: getConnections,
-        staleTime: 5 * 60 * 1000,
-        gcTime: 10 * 60 * 1000,
-    });
-};
 
 // ─── Team ─────────────────────────────────────────────────────────────────────
 

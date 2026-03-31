@@ -501,7 +501,7 @@ const DetailedPlayerProfile = () => {
         }
     };
 
-    const tabList = ['overview', 'matches', 'tournaments', 'social'];
+    const tabList = ['overview', 'matches', 'tournaments'];
 
     return (
         <div className="min-h-screen bg-zinc-950 text-white pt-24 pb-12">
@@ -618,7 +618,7 @@ const DetailedPlayerProfile = () => {
                             <div className="p-2 bg-purple-500/10 rounded-lg">
                                 <Gamepad2 className="w-5 h-5 text-purple-400" />
                             </div>
-                            <span className="text-zinc-400 text-sm">Matches</span>
+                            <span className="text-zinc-400 text-sm">Total Matches</span>
                         </div>
                         <div className="text-2xl font-bold text-white">{totalMatches || playerData.statistics?.matchesPlayed || 0}</div>
                     </div>
@@ -751,33 +751,17 @@ const DetailedPlayerProfile = () => {
                                     )}
                                 </div>
 
-                                {/* Recent Matches (Overview Section) */}
+                                {/* Social Links (Integrated into Overview) */}
                                 <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <h2 className="text-xl font-bold flex items-center gap-2">
-                                            <Gamepad2 className="w-5 h-5 text-cyan-400" />
-                                            Recent Matches
-                                        </h2>
-                                        {totalMatches > 3 && (
-                                            <button
-                                                onClick={() => setActiveTab('matches')}
-                                                className="text-cyan-400 text-sm hover:text-cyan-300 flex items-center gap-1"
-                                            >
-                                                View All ({totalMatches})
-                                                <ChevronRight className="w-4 h-4" />
-                                            </button>
-                                        )}
-                                    </div>
-                                    <div className="space-y-3">
-                                        {matchesLoading ? (
-                                            [1, 2, 3].map(i => <SkeletonCard key={i} rows={2} />)
-                                        ) : matchesError ? (
-                                            <ErrorState message="Could not load recent matches" />
-                                        ) : allMatches.length > 0 ? (
-                                            allMatches.slice(0, 3).map(match => <MatchCard key={match._id} match={match} />)
-                                        ) : (
-                                            <EmptyState icon={Gamepad2} title="No matches recorded" subtitle="Matches will appear here once results are verified" />
-                                        )}
+                                    <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                        <Hash className="w-5 h-5 text-cyan-400" />
+                                        Social Links
+                                    </h2>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <SocialLinkCard icon={Hash} platform="Discord" value={playerData.discordTag} color="indigo" />
+                                        <SocialLinkCard icon={Instagram} platform="Instagram" value={playerData.instagram} color="pink" />
+                                        <SocialLinkCard icon={Youtube} platform="YouTube" value={playerData.youtube} color="red" />
+                                        <SocialLinkCard icon={Twitter} platform="Twitter" value={playerData.twitter} color="blue" />
                                     </div>
                                 </div>
                             </>
@@ -841,18 +825,6 @@ const DetailedPlayerProfile = () => {
                             </div>
                         )}
 
-                        {/* SOCIAL TAB */}
-                        {activeTab === 'social' && (
-                            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-                                <h2 className="text-xl font-bold mb-4">Social Links</h2>
-                                <div className="space-y-3">
-                                    <SocialLinkCard icon={Hash} platform="Discord" value={playerData.discordTag} color="indigo" />
-                                    <SocialLinkCard icon={Instagram} platform="Instagram" value={playerData.instagram} color="pink" />
-                                    <SocialLinkCard icon={Youtube} platform="YouTube" value={playerData.youtube} color="red" />
-                                    <SocialLinkCard icon={Twitter} platform="Twitter" value={playerData.twitter} color="blue" />
-                                </div>
-                            </div>
-                        )}
                     </div>
 
                     {/* Sidebar Area */}
@@ -895,33 +867,49 @@ const DetailedPlayerProfile = () => {
     );
 };
 
-const SocialLinkCard = ({ icon: Icon, platform, value, color }) => (
-    <div className={`p-4 rounded-lg border ${value
-        ? `bg-${color}-500/10 border-${color}-500/30`
-        : 'bg-zinc-800/50 border-zinc-700'
-        }`}>
-        <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-                <Icon className={`w-5 h-5 ${value ? `text-${color}-400` : 'text-zinc-500'}`} />
-                <div>
-                    <p className="text-white font-medium">{platform}</p>
-                    <p className={`text-sm ${value ? `text-${color}-300` : 'text-zinc-500 italic'}`}>
-                        {value || 'Not connected'}
-                    </p>
+const SocialLinkCard = ({ icon: Icon, platform, value, color }) => {
+    const urlPrefixMap = {
+        'Instagram': 'https://instagram.com/',
+        'Twitter': 'https://twitter.com/',
+        'YouTube': 'https://youtube.com/@',
+        'Discord': 'https://discord.gg/',
+    };
+
+    const cleanValue = value ? String(value).replace(/^@+/, '') : '';
+    let finalUrl = value;
+    if (value && !String(value).startsWith('http')) {
+        const prefix = urlPrefixMap[platform] || 'https://';
+        finalUrl = `${prefix}${cleanValue}`;
+    }
+
+    return (
+        <div className={`p-4 rounded-lg border ${value
+            ? `bg-${color}-500/10 border-${color}-500/30`
+            : 'bg-zinc-800/50 border-zinc-700'
+            }`}>
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <Icon className={`w-5 h-5 ${value ? `text-${color}-400` : 'text-zinc-500'}`} />
+                    <div>
+                        <p className="text-white font-medium">{platform}</p>
+                        <p className={`text-sm ${value ? `text-${color}-300` : 'text-zinc-500 italic'}`}>
+                            {value || 'Not connected'}
+                        </p>
+                    </div>
                 </div>
+                {value && (
+                    <a
+                        href={finalUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                    >
+                        <ExternalLink className="w-4 h-4 text-zinc-400" />
+                    </a>
+                )}
             </div>
-            {value && (
-                <a
-                    href={value.startsWith('http') ? value : '#'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
-                >
-                    <ExternalLink className="w-4 h-4 text-zinc-400" />
-                </a>
-            )}
         </div>
-    </div>
-);
+    );
+};
 
 export default DetailedPlayerProfile;
