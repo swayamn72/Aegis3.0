@@ -246,18 +246,11 @@ const AegisSignup = () => {
       try {
         setIsLoading(true);
 
-        // Get user info from Google
-        const userInfo = await axios.get(
-          'https://www.googleapis.com/oauth2/v3/userinfo',
-          { headers: { Authorization: `Bearer ${tokenResponse.access_token}` } }
-        );
-
-        // Send to backend with the access token to verify
+        // Send access_token to backend — server verifies it
         const response = await axios.post(
           `${API_URL}/api/auth/google`,
           {
             credential: tokenResponse.access_token,
-            userInfo: userInfo.data,
             role: formData.role
           },
           { withCredentials: true }

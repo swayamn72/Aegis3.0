@@ -25,13 +25,17 @@ export const SocketProvider = ({ children, userId }) => {
 
         console.log('🔌 Initializing persistent socket connection for user:', userId);
 
-        // Create single socket instance
+        // Create single socket instance with JWT auth
+        const token = localStorage.getItem('token');
         socketRef.current = io(API_URL, {
             withCredentials: true,
             transports: ['websocket', 'polling'],
             reconnection: true,
             reconnectionDelay: 1000,
-            reconnectionAttempts: 5
+            reconnectionAttempts: 5,
+            auth: {
+                token: token, // JWT token for server-side authentication
+            }
         });
 
         // Connection event handlers

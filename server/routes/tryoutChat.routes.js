@@ -7,8 +7,29 @@ import TeamApplication from '../models/teamApplication.model.js';
 import Player from '../models/player.model.js';
 import auth from '../middleware/auth.js';
 import notificationService from '../services/notification.service.js';
+import {
+  createTryoutMessage,
+  fetchTryoutMessages,
+} from '../services/tryoutMessage.service.js';
 
 const router = express.Router();
+const LIST_PREVIEW_MESSAGE_LIMIT = 30;
+
+const hydrateChatWithMessages = async (chat, { previewLimit = null } = {}) => {
+  const mergedMessages = await fetchTryoutMessages(chat._id || chat.id, {
+    includeLegacy: true,
+    legacyMessages: chat.messages || [],
+  });
+
+  const messages = previewLimit != null
+    ? mergedMessages.slice(-previewLimit)
+    : mergedMessages;
+
+  return {
+    ...chat,
+    messages,
+  };
+};
 
 // IMPORTANT: /my-chats MUST come BEFORE /:chatId
 // GET /api/tryout-chats/my-chats - Get all active tryout chats user is part of
@@ -27,7 +48,11 @@ router.get('/my-chats', auth, async (req, res) => {
       .limit(limit)
       .lean();
 
-    res.json({ chats });
+    const hydratedChats = await Promise.all(
+      chats.map((chat) => hydrateChatWithMessages(chat, { previewLimit: LIST_PREVIEW_MESSAGE_LIMIT }))
+    );
+
+    res.json({ chats: hydratedChats });
   } catch (error) {
     console.error('Error fetching tryout chats:', error);
     res.status(500).json({ error: 'Failed to fetch tryout chats' });
@@ -51,10 +76,6 @@ router.get('/:chatId', auth, async (req, res) => {
       .populate('team', 'teamName teamTag logo captain')
       .populate('applicant', 'username profilePicture')
       .populate('participants', 'username profilePicture')
-      .populate({
-        path: 'messages.sender',
-        select: 'username profilePicture',
-      })
       .lean();
 
     if (!chat) {
@@ -62,7 +83,8 @@ router.get('/:chatId', auth, async (req, res) => {
       return res.status(404).json({ error: 'Chat not found' });
     }
 
-    res.json({ chat });
+    const hydratedChat = await hydrateChatWithMessages(chat);
+    res.json({ chat: hydratedChat });
   } catch (error) {
     console.error('Error fetching tryout chat:', error);
     res.status(500).json({ error: 'Failed to fetch chat' });
@@ -119,9 +141,8 @@ router.post('/:chatId/end-tryout', auth, async (req, res) => {
       messageType: 'system',
       timestamp: new Date()
     };
-    chat.messages.push(systemMessage);
-
     await chat.save();
+    await createTryoutMessage({ chatId, ...systemMessage });
 
     const io = req.app.get('io');
     if (io) {
@@ -143,9 +164,10 @@ router.post('/:chatId/end-tryout', auth, async (req, res) => {
       { type: 'tryout_ended', chatId }
     ).catch(err => console.error('FCM tryout_ended error:', err));
 
+    const hydratedChat = await hydrateChatWithMessages(chat.toObject());
     res.json({
       message: 'Tryout ended successfully',
-      chat
+      chat: hydratedChat
     });
   } catch (error) {
     console.error('Error ending tryout:', error);
@@ -216,9 +238,8 @@ router.post('/:chatId/send-offer', auth, async (req, res) => {
       },
       timestamp: new Date()
     };
-    chat.messages.push(systemMessage);
-
     await chat.save();
+    await createTryoutMessage({ chatId, ...systemMessage });
 
     const io = req.app.get('io');
     if (io) {
@@ -237,9 +258,10 @@ router.post('/:chatId/send-offer', auth, async (req, res) => {
       { type: 'team_offer', chatId }
     ).catch(err => console.error('FCM team_offer error:', err));
 
+    const hydratedChat = await hydrateChatWithMessages(chat.toObject());
     res.json({
       message: 'Team offer sent successfully',
-      chat
+      chat: hydratedChat
     });
   } catch (error) {
     console.error('Error sending team offer:', error);
@@ -330,9 +352,8 @@ router.post('/:chatId/accept-offer', auth, async (req, res) => {
       messageType: 'system',
       timestamp: new Date()
     };
-    chat.messages.push(systemMessage);
-
     await chat.save();
+    await createTryoutMessage({ chatId, ...systemMessage });
 
     // Mark team application accepted if exists
     const application = await TeamApplication.findOne({
@@ -369,8 +390,8 @@ router.post('/:chatId/accept-offer', auth, async (req, res) => {
         messageType: 'system',
         timestamp: new Date()
       };
-      otherChat.messages.push(endMessage);
       await otherChat.save();
+      await createTryoutMessage({ chatId: otherChat._id, ...endMessage });
 
       // Notify participants in each ended tryout room
       if (io) {
@@ -405,9 +426,10 @@ router.post('/:chatId/accept-offer', auth, async (req, res) => {
       { type: 'offer_accepted', chatId }
     ).catch(err => console.error('FCM offer_accepted error:', err));
 
+    const hydratedChat = await hydrateChatWithMessages(chat.toObject());
     res.json({
       message: 'Team offer accepted successfully',
-      chat,
+      chat: hydratedChat,
       team
     });
   } catch (error) {
@@ -473,9 +495,8 @@ router.post('/:chatId/reject-offer', auth, async (req, res) => {
       messageType: 'system',
       timestamp: new Date()
     };
-    chat.messages.push(systemMessage);
-
     await chat.save();
+    await createTryoutMessage({ chatId, ...systemMessage });
 
     const io = req.app.get('io');
     if (io) {
@@ -494,9 +515,10 @@ router.post('/:chatId/reject-offer', auth, async (req, res) => {
       { type: 'offer_rejected', chatId }
     ).catch(err => console.error('FCM offer_rejected error:', err));
 
+    const hydratedChat = await hydrateChatWithMessages(chat.toObject());
     res.json({
       message: 'Team offer rejected',
-      chat
+      chat: hydratedChat
     });
   } catch (error) {
     console.error('Error rejecting team offer:', error);

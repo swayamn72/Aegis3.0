@@ -30,32 +30,38 @@ router.get('/all', async (req, res) => {
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Fetch main tournaments (without participatingTeams population)
-    const tournaments = await Tournament.find(filter)
-      .sort({ startDate: -1, featured: -1, createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit))
-      .select(`
-        tournamentName shortName gameTitle region subRegion tier status startDate endDate
-        prizePool media.logo organizer participatingTeamsCount slots featured verified tags
-      `)
-      .lean();
+    // PARALLELIZED: Run all four queries simultaneously instead of sequentially
+    const [tournaments, liveTournaments, upcomingTournaments, total] = await Promise.all([
+      // Query 1: Main filtered tournaments
+      Tournament.find(filter)
+        .sort({ startDate: -1, featured: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .select(`
+          tournamentName shortName gameTitle region subRegion tier status startDate endDate
+          prizePool media.logo organizer participatingTeamsCount slots featured verified tags
+        `)
+        .lean(),
 
-    // Fetch live tournaments
-    const liveTournaments = await Tournament.findLive(10)
-      .select(`
-        tournamentName shortName gameTitle region subRegion tier status startDate endDate
-        prizePool media.logo organizer participatingTeamsCount streamLinks tags
-      `)
-      .lean();
+      // Query 2: Live tournaments
+      Tournament.findLive(10)
+        .select(`
+          tournamentName shortName gameTitle region subRegion tier status startDate endDate
+          prizePool media.logo organizer participatingTeamsCount streamLinks tags
+        `)
+        .lean(),
 
-    // Fetch upcoming tournaments
-    const upcomingTournaments = await Tournament.findUpcoming(20)
-      .select(`
-        tournamentName shortName gameTitle region subRegion tier status startDate endDate
-        prizePool media.logo organizer participatingTeamsCount slots registrationStartDate registrationEndDate tags
-      `)
-      .lean();
+      // Query 3: Upcoming tournaments
+      Tournament.findUpcoming(20)
+        .select(`
+          tournamentName shortName gameTitle region subRegion tier status startDate endDate
+          prizePool media.logo organizer participatingTeamsCount slots registrationStartDate registrationEndDate tags
+        `)
+        .lean(),
+
+      // Query 4: Total count for pagination
+      Tournament.countDocuments(filter),
+    ]);
 
     // Get all tournament IDs for batch registration count query
     const allTournamentIds = [
@@ -145,8 +151,6 @@ router.get('/all', async (req, res) => {
           Math.ceil((new Date(tournament.startDate) - new Date()) / (1000 * 60 * 60 * 24)) : null
       };
     });
-
-    const total = await Tournament.countDocuments(filter);
 
     res.json({
       success: true,
@@ -597,10 +601,10 @@ router.put('/:id/groups', async (req, res) => {
       return res.status(404).json({ error: 'Tournament not found' });
     }
 
-    // Check authorization (admin only for now) - temporarily disabled for testing
-    // if (!req.user.isAdmin) {
-    //   return res.status(403).json({ error: 'Admin access required to update groups' });
-    // }
+    // Check authorization — only the tournament's organization can update groups
+    if (tournament.organization && req.user && tournament.organization.toString() !== req.user.id) {
+      return res.status(403).json({ error: 'Only the tournament organizer can update groups' });
+    }
 
     // Validate phase exists
     const phaseIndex = tournament.phases.findIndex(p => p._id.toString() === phaseId);

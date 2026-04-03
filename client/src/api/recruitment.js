@@ -68,3 +68,13 @@ export const approachTeam = async (teamId, message) => {
     );
     return data;
 };
+
+// Apply to Team from LFP card
+export const applyToTeam = async ({ teamId, message, appliedRoles }) => {
+    const { data } = await axiosInstance.post('/api/team-applications/apply', {
+        teamId,
+        message,
+        appliedRoles,
+    });
+    return data;
+};

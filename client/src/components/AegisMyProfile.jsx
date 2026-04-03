@@ -829,43 +829,61 @@ const AegisMyProfile = () => {
 const SocialLinkCard = ({ icon: Icon, platform, value, color }) => {
   const urlPrefixMap = {
     'Instagram': 'https://instagram.com/',
-    'Twitter': 'https://twitter.com/',
+    'Twitter': 'https://x.com/',
     'YouTube': 'https://youtube.com/@',
     'Discord': 'https://discord.gg/',
   };
 
-  const cleanValue = value ? String(value).replace(/^@+/, '') : '';
+  const cleanValue = value ? String(value).replace(/^@+/, '').trim() : '';
   let finalUrl = value;
+
   if (value && !String(value).startsWith('http')) {
-    const prefix = urlPrefixMap[platform] || 'https://';
-    finalUrl = `${prefix}${cleanValue}`;
+    if (platform === 'YouTube' && cleanValue.startsWith('UC')) {
+      finalUrl = `https://youtube.com/channel/${cleanValue}`;
+    } else {
+      const prefix = urlPrefixMap[platform] || 'https://';
+      finalUrl = `${prefix}${cleanValue}`;
+    }
+  }
+
+  if (!value) {
+    return (
+      <div className="p-4 rounded-xl border bg-zinc-800/30 border-zinc-800/50 opacity-40">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-zinc-800 rounded-lg">
+            <Icon className="w-5 h-5 text-zinc-600" />
+          </div>
+          <div>
+            <p className="text-zinc-500 font-medium text-sm">{platform}</p>
+            <p className="text-[10px] text-zinc-600 italic">Not connected</p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className={`p-4 rounded-lg border ${value
-      ? `bg-${color}-500/10 border-${color}-500/30`
-      : 'bg-zinc-800/50 border-zinc-700'
-      }`}>
+    <div className={`p-4 rounded-xl border bg-${color}-500/5 border-${color}-500/20 hover:border-${color}-500/40 hover:bg-${color}-500/10 transition-all duration-300 group`}>
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Icon className={`w-5 h-5 ${value ? `text-${color}-400` : 'text-zinc-500'}`} />
-          <div>
-            <p className="text-white font-medium">{platform}</p>
-            <p className={`text-sm ${value ? `text-${color}-300` : 'text-zinc-500 italic'}`}>
-              {value || 'Not connected'}
+        <div className="flex items-center gap-3 min-w-0">
+          <div className={`p-2 bg-${color}-500/10 rounded-lg group-hover:scale-110 transition-transform duration-300`}>
+            <Icon className={`w-5 h-5 text-${color}-400`} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-white font-semibold text-sm">{platform}</p>
+            <p className={`text-[11px] text-${color}-400/70 truncate`}>
+              {value.startsWith('http') ? 'Official Link' : `@${cleanValue}`}
             </p>
           </div>
         </div>
-        {value && (
-          <a
-            href={finalUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
-          >
-            <ExternalLink className="w-4 h-4 text-zinc-400" />
-          </a>
-        )}
+        <a
+          href={finalUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`p-2.5 bg-zinc-800 hover:bg-${color}-500 text-zinc-400 hover:text-white rounded-lg transition-all duration-300 shadow-lg shadow-black/20`}
+        >
+          <ExternalLink className="w-4 h-4" />
+        </a>
       </div>
     </div>
   );

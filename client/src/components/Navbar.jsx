@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, MessageCircle, Coins, User, Users, Settings, LogOut, Trophy, Star, Bell, Gamepad2 } from 'lucide-react';
+import { Menu, X, MessageCircle, User, Users, Settings, LogOut, Trophy, Star, Bell, Gamepad2 } from 'lucide-react';
 import logo from '../assets/newlogo.png';
 import { useAuth } from '../context/AuthContext';
 import ProfileDropdown from './ProfileDropdown';
@@ -17,7 +17,6 @@ const Navbar = () => {
     { to: "/", text: "Dashboard" },
     { to: "/recruitment", text: "Opportunities" },
     { to: "/tournaments", text: "Tournaments" },
-    { to: "/rewards", text: "Rewards" },
   ];
 
   const CustomNavLink = ({ to, text }) => {
@@ -63,8 +62,8 @@ const Navbar = () => {
       <div className="container mx-auto flex items-center justify-between h-20 px-6">
 
         {/* Logo */}
-        <NavLink to="/" className="flex items-center">
-          <img src={logo} alt="Aegis Logo" className="h-[120px] mt-[5px] mr-[15px] transition-transform duration-300 hover:scale-105" />
+        <NavLink to="/" className="flex items-center shrink-0">
+          <img src={logo} alt="Aegis Logo" className="h-[110px] w-auto object-contain transition-transform duration-300 hover:scale-105" />
         </NavLink>
 
         {/* Nav Links - Desktop */}
@@ -88,23 +87,6 @@ const Navbar = () => {
               </button>
             )}
           </div>
-
-          {/* Coin Display */}
-          {isAuthenticated && (
-            <div
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-950 border border-zinc-900
-              text-yellow-400 font-bold text-sm cursor-pointer transition-all duration-300 
-              hover:border-yellow-500/50 hover:bg-zinc-900/50 hover:shadow-[0_0_12px_rgba(234,179,8,0.2)] group"
-              title="Your Coins"
-              onClick={() => navigate("/rewards")}
-            >
-              <Coins
-                size={18}
-                className="text-yellow-500 transition-transform duration-300 group-hover:rotate-12"
-              />
-              <span className="transition-all duration-300 group-hover:text-yellow-300 font-mono">{coins}</span>
-            </div>
-          )}
 
           {/* Auth Buttons or Profile */}
           {!isAuthenticated ? (
@@ -164,18 +146,6 @@ const Navbar = () => {
                 </>
               ) : (
                 <>
-                  {/* Mobile coin display */}
-                  <div
-                    className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-zinc-950 border border-zinc-900 text-yellow-400 font-bold text-sm cursor-pointer"
-                    onClick={() => {
-                      navigate("/rewards");
-                      setIsOpen(false);
-                    }}
-                  >
-                    <Coins size={18} className="text-yellow-500" />
-                    <span className="font-mono">{coins}</span>
-                  </div>
-
                   {/* Mobile Chat Button */}
                   <button
                     onClick={() => {

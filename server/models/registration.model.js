@@ -256,7 +256,7 @@ registrationSchema.statics.getLeaderboard = function (tournamentId, limit = 20) 
 // Count registrations by status
 registrationSchema.statics.countByStatus = function (tournamentId) {
   return this.aggregate([
-    { $match: { tournament: mongoose.Types.ObjectId(tournamentId) } },
+    { $match: { tournament: new mongoose.Types.ObjectId(tournamentId) } },
     { $group: { _id: '$status', count: { $sum: 1 } } },
   ]);
 };

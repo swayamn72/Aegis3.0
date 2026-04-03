@@ -9,6 +9,7 @@ import {
     deleteLFPPost,
     approachPlayer,
     approachTeam,
+    applyToTeam,
 } from '../api/recruitment';
 import { recruitmentKeys } from './queryKeys';
 
@@ -132,6 +133,23 @@ export const useApproachTeam = () => {
         onError: (error) => {
             console.error('Error approaching team:', error);
             toast.error(error.error || 'Failed to send tryout request');
+        },
+    });
+};
+
+// Hook to apply to team from LFP posts
+export const useApplyToTeam = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: ({ teamId, message, appliedRoles }) => applyToTeam({ teamId, message, appliedRoles }),
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: recruitmentKeys.all });
+            toast.success(data?.message || 'Application submitted successfully');
+        },
+        onError: (error) => {
+            console.error('Error applying to team:', error);
+            toast.error(error?.error || error?.message || 'Failed to submit application');
         },
     });
 };

@@ -5,7 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import botLogo from '../assets/bot_logo.png';
 import groupChatIcon from '../assets/group_chat.png';
 import {
-  Send, Search, MoreVertical, Settings, Users, Hash, Activity, Crown, Shield, Gamepad2, Bell, Check, X, UserPlus,
+  Send, Search, MoreVertical, Users, Hash, Crown, Shield, Gamepad2, Bell, Check, X, UserPlus,
   AlertCircle, Ban, CheckCircle, XCircle, ArrowLeft, LogOut
 } from 'lucide-react';
 import ChatMessage from '../components/ChatMessage';
@@ -405,9 +405,6 @@ export default function ChatPage() {
                   )}
                 </button>
               )}
-              <button className="p-2 hover:bg-zinc-800 rounded-lg transition-colors">
-                <Settings className="w-4 h-4 text-zinc-400" />
-              </button>
             </div>
           </div>
 
@@ -522,12 +519,6 @@ export default function ChatPage() {
           </div>
         </div>
 
-        <div className="p-3 md:p-4 border-t border-zinc-800">
-          <div className="flex items-center gap-2 text-xs md:text-sm text-zinc-400">
-            <Activity className="w-3 h-3 md:w-4 md:h-4 text-green-400" />
-            <span>{onlineUsers.size} online</span>
-          </div>
-        </div>
       </div>
 
       {/* Chat Window - Hidden on mobile when sidebar is shown */}

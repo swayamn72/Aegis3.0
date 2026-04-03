@@ -98,9 +98,6 @@ const SettingsComponent = () => {
     instagram: '',
     youtube: '',
     twitter: '',
-    profileVisibility: 'public',
-
-    // Appearance
     cardTheme: 'orange'
   });
 
@@ -147,7 +144,6 @@ const SettingsComponent = () => {
         instagram: user.instagram || '',
         youtube: user.youtube || user.YouTube || '', 
         twitter: user.twitter || '',
-        profileVisibility: user.profileVisibility || 'public',
         cardTheme: user.cardTheme || 'orange',
       });
     }
@@ -684,30 +680,6 @@ const SettingsComponent = () => {
                           placeholder="twitter.com/username"
                           className="w-full px-4 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white focus:border-orange-500 focus:outline-none"
                         />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-zinc-300 font-medium mb-3">Profile Visibility</label>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {[
-                          { value: 'public', label: 'Public', desc: 'Anyone can view your profile' },
-                          { value: 'friends', label: 'Friends Only', desc: 'Only friends can see details' },
-                          { value: 'private', label: 'Private', desc: 'Hidden from searches' }
-                        ].map(option => (
-                          <button
-                            key={option.value}
-                            type="button"
-                            onClick={() => setProfileSettings({ ...profileSettings, profileVisibility: option.value })}
-                            className={`p-4 rounded-xl border transition-all text-left ${profileSettings.profileVisibility === option.value
-                              ? 'bg-orange-500/20 border-orange-500/50 text-orange-400'
-                              : 'bg-zinc-800/50 border-zinc-600 text-zinc-300 hover:border-zinc-500'
-                              }`}
-                          >
-                            <div className="font-medium">{option.label}</div>
-                            <div className="text-sm text-zinc-400">{option.desc}</div>
-                          </button>
-                        ))}
                       </div>
                     </div>
                   </div>

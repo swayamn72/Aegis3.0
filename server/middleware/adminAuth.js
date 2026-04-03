@@ -23,7 +23,7 @@ export const adminAuth = (req, res, next) => {
 
 // Generate JWT token for admin
 export const generateAdminToken = (adminId) => {
-  return jwt.sign({ adminId }, process.env.JWT_SECRET, { expiresIn: '24h' });
+  return jwt.sign({ adminId }, process.env.JWT_SECRET, { expiresIn: '1h' });
 };
 
 // Verify admin token middleware

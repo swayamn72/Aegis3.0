@@ -7,9 +7,13 @@ import Team from '../models/team.model.js';
 import Player from '../models/player.model.js';
 import auth from '../middleware/auth.js';
 import { deactivateLFTPost, deactivateLFPPost } from '../utils/recruitmentHelpers.js';
+import { createTryoutMessage, fetchTryoutMessages } from '../services/tryoutMessage.service.js';
 
 
 const router = express.Router();
+const MAX_APPLICATION_MESSAGE_LEN = 500;
+const MAX_APPLIED_ROLES = 5;
+const ALLOWED_ROLES = ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger'];
 
 router.get('/recruiting-teams', async (req, res) => {
   try {
@@ -121,6 +125,113 @@ router.get('/recruiting-teams', async (req, res) => {
   }
 });
 
+// POST /api/team-applications/apply - Apply to a team (player only)
+router.post('/apply', auth, async (req, res) => {
+  try {
+    const { teamId, message = '', appliedRoles = [] } = req.body || {};
+
+    if (!teamId || !mongoose.Types.ObjectId.isValid(teamId)) {
+      return res.status(400).json({ error: 'Invalid team ID' });
+    }
+
+    const player = await Player.findById(req.user.id).select('username team inGameRole');
+    if (!player) {
+      return res.status(404).json({ error: 'Player profile not found' });
+    }
+
+    if (player.team) {
+      return res.status(400).json({ error: 'You are already in a team' });
+    }
+
+    const team = await Team.findById(teamId).select('captain players teamName status profileVisibility');
+    if (!team) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+
+    if (team.status !== 'active' || team.profileVisibility !== 'public') {
+      return res.status(400).json({ error: 'Team is not accepting applications right now' });
+    }
+
+    if (team.captain?.toString() === req.user.id.toString()) {
+      return res.status(400).json({ error: 'You cannot apply to your own team' });
+    }
+
+    if (Array.isArray(team.players) && team.players.some((p) => p.toString() === req.user.id.toString())) {
+      return res.status(400).json({ error: 'You are already in this team' });
+    }
+
+    if (Array.isArray(team.players) && team.players.length >= 5) {
+      return res.status(400).json({ error: 'Team roster is full' });
+    }
+
+    const cleanMessage = String(message).trim().slice(0, MAX_APPLICATION_MESSAGE_LEN);
+    let cleanRoles = [];
+    if (Array.isArray(appliedRoles)) {
+      cleanRoles = appliedRoles
+        .map((role) => String(role).trim())
+        .filter((role) => ALLOWED_ROLES.includes(role))
+        .slice(0, MAX_APPLIED_ROLES);
+    }
+
+    const existingApplication = await TeamApplication.findOne({
+      team: team._id,
+      player: player._id,
+    });
+
+    if (existingApplication) {
+      if (existingApplication.status === 'pending' || existingApplication.status === 'in_tryout') {
+        return res.status(400).json({ error: 'You already have an active application for this team' });
+      }
+
+      if (existingApplication.status === 'accepted') {
+        return res.status(400).json({ error: 'Your application to this team has already been accepted' });
+      }
+
+      existingApplication.status = 'pending';
+      existingApplication.message = cleanMessage;
+      existingApplication.appliedRoles = cleanRoles;
+      existingApplication.tryoutChatId = null;
+      existingApplication.rejectionReason = '';
+      existingApplication.tryoutStartedAt = undefined;
+      existingApplication.tryoutEndedAt = undefined;
+      await existingApplication.save();
+
+      const updatedApplication = await TeamApplication.findById(existingApplication._id)
+        .populate('team', 'teamName teamTag logo')
+        .populate('player', 'username profilePicture inGameRole');
+
+      return res.json({
+        message: 'Application submitted successfully',
+        application: updatedApplication,
+      });
+    }
+
+    const application = await TeamApplication.create({
+      team: team._id,
+      player: player._id,
+      message: cleanMessage,
+      appliedRoles: cleanRoles,
+      status: 'pending',
+    });
+
+    const populatedApplication = await TeamApplication.findById(application._id)
+      .populate('team', 'teamName teamTag logo')
+      .populate('player', 'username profilePicture inGameRole');
+
+    return res.status(201).json({
+      message: 'Application submitted successfully',
+      application: populatedApplication,
+    });
+  } catch (error) {
+    if (error && error.code === 11000) {
+      return res.status(400).json({ error: 'You already applied to this team' });
+    }
+
+    console.error('Error applying to team:', error);
+    return res.status(500).json({ error: 'Failed to submit application' });
+  }
+});
+
 // GET /api/team-applications/team/:teamId - Get applications for a team (captain only)
 router.get('/team/:teamId', auth, async (req, res) => {
   try {
@@ -211,17 +322,17 @@ router.post('/:applicationId/start-tryout', auth, async (req, res) => {
       team: application.team._id,
       applicant: application.player._id,
       participants,
-      messages: [
-        {
-          sender: req.user.id,
-          message: `Tryout started for ${application.player.username}. Welcome to the team tryout!`,
-          messageType: 'system',
-        },
-      ],
       status: 'active',
     });
 
     await tryoutChat.save();
+    await createTryoutMessage({
+      chatId: tryoutChat._id,
+      sender: req.user.id,
+      message: `Tryout started for ${application.player.username}. Welcome to the team tryout!`,
+      messageType: 'system',
+      timestamp: new Date(),
+    });
 
     // Update application
     application.status = 'in_tryout';
@@ -234,10 +345,15 @@ router.post('/:applicationId/start-tryout', auth, async (req, res) => {
       .populate('team', 'teamName teamTag logo')
       .populate('applicant', 'username profilePicture');
 
+    const hydratedTryoutChat = {
+      ...tryoutChat.toObject(),
+      messages: await fetchTryoutMessages(tryoutChat._id),
+    };
+
     res.json({
       message: 'Tryout started successfully',
       application,
-      tryoutChat,
+      tryoutChat: hydratedTryoutChat,
     });
   } catch (error) {
     console.error('Error starting tryout:', error);
@@ -311,13 +427,13 @@ router.post('/:applicationId/accept', auth, async (req, res) => {
       await TryoutChat.findByIdAndUpdate(application.tryoutChatId, {
         status: 'completed',
         endedAt: new Date(),
-        $push: {
-          messages: {
-            sender: req.user.id,
-            message: `${application.player.username} has been accepted to the team! Welcome aboard! 🎉`,
-            messageType: 'system',
-          },
-        },
+      });
+      await createTryoutMessage({
+        chatId: application.tryoutChatId,
+        sender: req.user.id,
+        message: `${application.player.username} has been accepted to the team! Welcome aboard! 🎉`,
+        messageType: 'system',
+        timestamp: new Date(),
       });
     }
 
@@ -382,13 +498,13 @@ router.post('/:applicationId/reject', auth, async (req, res) => {
       await TryoutChat.findByIdAndUpdate(application.tryoutChatId, {
         status: 'completed',
         endedAt: new Date(),
-        $push: {
-          messages: {
-            sender: req.user.id,
-            message: `Tryout has ended. Thank you for your time, ${application.player.username}.`,
-            messageType: 'system',
-          },
-        },
+      });
+      await createTryoutMessage({
+        chatId: application.tryoutChatId,
+        sender: req.user.id,
+        message: `Tryout has ended. Thank you for your time, ${application.player.username}.`,
+        messageType: 'system',
+        timestamp: new Date(),
       });
     }
 

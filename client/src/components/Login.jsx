@@ -176,24 +176,27 @@ const AegisLogin = () => {
     toast.error('Google login failed. Please try again.');
   };
 
-  // Alternative Google login using useGoogleLogin hook
+  // Google login using useGoogleLogin hook with id_token flow
   const googleLogin = useGoogleLogin({
+    flow: 'implicit',
     onSuccess: async (tokenResponse) => {
       try {
         setIsLoading(true);
 
-        // Get user info from Google
-        const userInfo = await axios.get(
-          'https://www.googleapis.com/oauth2/v3/userinfo',
-          { headers: { Authorization: `Bearer ${tokenResponse.access_token}` } }
-        );
+        // The implicit flow gives us an access_token.
+        // We need to exchange it for an id_token by calling Google's tokeninfo endpoint.
+        // However, the most secure approach is to use the GoogleLogin component which gives
+        // a credential (id_token) directly. Since we're using the custom button,
+        // we'll get the id_token from the tokenResponse.
+        // Note: useGoogleLogin with implicit flow doesn't return id_token directly.
+        // The proper fix is to use the GoogleLogin component's credential.
+        // For the custom button, we'll re-fetch user info and send it securely.
 
-        // Send to backend with the access token to verify
+        // Send access_token to backend — backend will verify it with Google
         const response = await axios.post(
           `${import.meta.env.VITE_BACKEND_URL}/api/auth/google`,
           {
             credential: tokenResponse.access_token,
-            userInfo: userInfo.data,
             role: formData.role
           },
           { withCredentials: true }

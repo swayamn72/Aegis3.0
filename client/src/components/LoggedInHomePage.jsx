@@ -3,573 +3,433 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 import { useQuery } from '@tanstack/react-query';
-import {
-  Trophy, Users, Target, TrendingUp, Calendar, MessageSquare,
-  Sparkles, Zap, Award, Activity, Gamepad2, ArrowRight, X, Coins
+import { 
+  Trophy, Users, Activity, TrendingUp, Target, 
+  MapPin, Shield, Zap, Search, Bell, Flame, 
+  ChevronRight, Gamepad2, Star, Clock 
 } from 'lucide-react';
+
+// Import map assets for backgrounds
+import ErangelMap from '../assets/mapImages/erangel.jpg';
+import MiramarMap from '../assets/mapImages/miramar.webp';
+import SanhokMap from '../assets/mapImages/sanhok.webp';
+import VikendiMap from '../assets/mapImages/vikendi.jpg';
+import RondoMap from '../assets/mapImages/rondo.webp';
+
+const MAP_BG = {
+  Erangel: ErangelMap,
+  Miramar: MiramarMap,
+  Sanhok: SanhokMap,
+  Vikendi: VikendiMap,
+  Rondo: RondoMap,
+  Unknown: ErangelMap,
+};
+import { getRatingBadge, formatDelta } from '../utils/aegisRatingUtils';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL;
 
-// Mock data for fallback
-const mockData = {
-  tournaments: [
-    { _id: 101, tournamentName: 'Winter Circuit 2025: VALO', startDate: '2025-01-15T12:00:00Z', prizePool: { total: 500000 }, slots: { total: 32 } },
-    { _id: 102, tournamentName: 'BGMI Challenger Series', startDate: '2025-01-28T12:00:00Z', prizePool: { total: 200000 }, slots: { total: 64 } },
-  ],
-  connections: [
-    { id: 201, isRecent: true },
-    { id: 202, isRecent: false },
-    { id: 203, isRecent: true }
-  ],
-  matches: [
-    { _id: 301, time: '2h ago', map: 'Ascent', team1: 'Team X', score: '13 - 11', team2: 'Rivals FC' },
-    { _id: 302, time: '1d ago', map: 'Erangel', team1: 'Team X', score: 'Won #1', team2: '18 others' },
-  ],
-  trendingPlayers: [
-    { id: 1, username: 'f0rsakeN', primaryGame: 'VALO', aegisRating: 2847, trend: '+12%' },
-    { id: 2, username: 'Demon1', primaryGame: 'VALO', aegisRating: 2756, trend: '+8%' },
-    { id: 3, username: 'Jinggg', primaryGame: 'VALO', aegisRating: 2698, trend: '+15%' },
-  ],
-  opportunities: [
-    { id: 1, org: 'Team Soul', role: 'IGL', game: 'BGMI', type: 'Recruitment', posted: '1 day ago' },
-    { id: 2, org: 'GodLike Esports', role: 'Coach', game: 'BGMI', type: 'Recruitment', posted: '3 days ago' },
-    { id: 3, org: 'S8UL', role: 'Analyst', game: 'VALO', type: 'Recruitment', posted: '1 week ago' },
-  ],
-  activityFeed: [
-    { id: 1, user: 'Boostio', action: 'won a tournament', target: 'VCT Americas', time: '3h ago' },
-    { id: 2, user: 'Something', action: 'joined team', target: 'Paper Rex', time: '5h ago' },
-    { id: 3, user: 'c0m', action: 'achieved rating', target: '2500 Aegis Rating', time: '1d ago' },
-  ]
-};
+// --- Sub-components (Widgets) ---
 
-// Fetch function for TanStack Query
-const fetchDashboardData = async () => {
-  const response = await fetch(`${API_URL}/api/players/dashboard-data?tournamentLimit=3&matchLimit=3`, {
-    credentials: 'include',
-  });
+const StatCard = ({ label, value, icon: Icon, color, trend }) => (
+  <div className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800 rounded-xl p-4 hover:border-zinc-700/50 transition-all group overflow-hidden relative">
+    <div className={`absolute top-0 right-0 w-24 h-24 ${color} opacity-[0.03] -mr-8 -mt-8 rounded-full blur-2xl group-hover:opacity-[0.06] transition-opacity`}></div>
+    <div className="flex items-start justify-between relative z-10">
+      <div>
+        <p className="text-zinc-500 text-[10px] uppercase tracking-[0.2em] font-bold mb-1">{label}</p>
+        <p className="text-2xl font-black text-white">{value}</p>
+        {trend && (
+          <p className="text-[10px] font-bold text-green-400 flex items-center gap-1 mt-1">
+            <TrendingUp className="w-3 h-3" /> {trend}
+          </p>
+        )}
+      </div>
+      <div className={`p-2.5 rounded-lg bg-zinc-950 border border-zinc-800/50 group-hover:scale-110 transition-transform`}>
+        <Icon className={`w-5 h-5 ${color.replace('bg-', 'text-')}`} />
+      </div>
+    </div>
+  </div>
+);
 
-  if (!response.ok) {
-    throw new Error(`API Error: ${response.status}`);
-  }
+const SectionHeader = ({ title, icon: Icon, color, actionLabel, onAction }) => (
+  <div className="flex items-center justify-between mb-5">
+    <div className="flex items-center gap-3">
+      <div className={`p-2 rounded-lg bg-zinc-900 border border-zinc-800`}>
+        <Icon className={`w-4 h-4 ${color}`} />
+      </div>
+      <h2 className="text-sm font-black uppercase tracking-[0.2em] text-zinc-300">{title}</h2>
+    </div>
+    {actionLabel && (
+      <button 
+        onClick={onAction}
+        className="text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-white transition-colors flex items-center gap-1.5 group"
+      >
+        {actionLabel}
+        <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+      </button>
+    )}
+  </div>
+);
 
-  const contentType = response.headers.get('content-type');
-  if (!contentType || !contentType.includes('application/json')) {
-    throw new Error('Invalid response format');
-  }
+const DashboardSkeleton = () => (
+  <div className="min-h-screen bg-black pt-[120px] px-6 max-w-[1400px] mx-auto animate-pulse">
+    <div className="h-10 w-64 bg-zinc-900 rounded mb-8"></div>
+    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+      {[1, 2, 3, 4].map(i => <div key={i} className="h-28 bg-zinc-900 rounded-xl"></div>)}
+    </div>
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="lg:col-span-2 space-y-6">
+        <div className="h-96 bg-zinc-900 rounded-xl"></div>
+        <div className="h-64 bg-zinc-900 rounded-xl"></div>
+      </div>
+      <div className="space-y-6">
+        <div className="h-80 bg-zinc-900 rounded-xl"></div>
+        <div className="h-80 bg-zinc-900 rounded-xl"></div>
+      </div>
+    </div>
+  </div>
+);
 
-  const result = await response.json();
-  return result.data;
-};
+// --- Main Component ---
 
 const LoggedInHomepage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState('feed');
-  const [showProfileAlert, setShowProfileAlert] = useState(
-    !user?.profilePicture || !user?.bio || !user?.primaryGame
-  );
-
-  // TanStack Query hook - replaces all manual caching logic
-  const {
-    data: dashboardData,
-    isLoading,
-    isError,
-    error,
-    dataUpdatedAt,
+  
+  const { 
+    data: dashboard, 
+    isLoading, 
     refetch,
-    isFetching,
+    isFetching 
   } = useQuery({
-    queryKey: ['dashboard', user?.id], // Unique key per user
-    queryFn: fetchDashboardData,
-    enabled: !!user, // Only fetch if user is logged in
-    staleTime: 5 * 60 * 1000, // 5 minutes - no refetch during this time
-    cacheTime: 10 * 60 * 1000, // 10 minutes - keep in memory
-    retry: 1,
-    refetchOnWindowFocus: true,
-    onError: (err) => {
-      console.error('❌ Dashboard fetch error:', err);
+    queryKey: ['dashboard', user?.id],
+    queryFn: async () => {
+      const resp = await fetch(`${API_URL}/api/players/dashboard-data`, { credentials: 'include' });
+      if (!resp.ok) throw new Error('Failed to fetch dashboard data');
+      const result = await resp.json();
+      return result.data;
     },
+    enabled: !!user,
   });
 
-  // Extract data with fallbacks
-  const upcomingTournaments = dashboardData?.tournaments || mockData.tournaments.slice(0, 3);
-  const recentMatches = dashboardData?.matches || mockData.matches;
-  const connections = mockData.connections;
-  const trendingPlayers = mockData.trendingPlayers;
-  const opportunities = mockData.opportunities;
-  const activityFeed = mockData.activityFeed;
+  if (isLoading) return <DashboardSkeleton />;
 
-  // Manual refresh handler
-  const handleRefresh = async () => {
-    try {
-      await refetch();
-      toast.success('Dashboard refreshed!', {
-        position: "top-center",
-        autoClose: 2000,
-        theme: "dark",
-      });
-    } catch (err) {
-      toast.error('Failed to refresh', {
-        position: "top-center",
-        autoClose: 2000,
-        theme: "dark",
-      });
-    }
-  };
-
-  const quickStats = [
-    {
-      label: 'Aegis Rating',
-      value: user?.aegisRating || 1200,
-      change: '+45',
-      icon: TrendingUp,
-      bgColor: 'bg-[#FF4500]/10',
-      textColor: 'text-[#FF4500]',
-      ringColor: 'ring-[#FF4500]',
-    },
-    {
-      label: 'Tournaments',
-      value: user?.statistics?.tournamentsPlayed || 0,
-      change: '+3',
-      icon: Trophy,
-      bgColor: 'bg-cyan-500/10',
-      textColor: 'text-cyan-400',
-      ringColor: 'ring-cyan-400',
-    },
-    {
-      label: 'Connections',
-      value: connections.length || 0,
-      change: `+${connections.filter(c => c.isRecent).length || 0}`,
-      icon: Users,
-      bgColor: 'bg-purple-500/10',
-      textColor: 'text-purple-400',
-      ringColor: 'ring-purple-400',
-    },
-    {
-      label: 'Win Rate',
-      value: `${user?.statistics?.winRate || 0}%`,
-      change: '+2%',
-      icon: Award,
-      bgColor: 'bg-green-500/10',
-      textColor: 'text-green-400',
-      ringColor: 'ring-green-400',
-    },
-  ];
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin w-16 h-16 border-4 border-[#FF4500]/30 border-t-[#FF4500] rounded-full mx-auto mb-4"></div>
-          <p className="text-zinc-400 text-lg font-mono tracking-widest">ESTABLISHING DATA LINK...</p>
-        </div>
-      </div>
-    );
-  }
+  const player = dashboard?.player || user;
+  const ratingInfo = getRatingBadge(player?.aegisRating);
+  const tournaments = dashboard?.tournaments || [];
+  const matches = dashboard?.matches || [];
+  const ratingHistory = dashboard?.ratingHistory || [];
+  const registrations = dashboard?.activeRegistrations || [];
+  const playerTeams = dashboard?.playerTeams || [];
+  const stats = dashboard?.stats || { teamCount: 0, activeTournaments: 0, pendingApplications: 0 };
 
   return (
-    <div className="min-h-screen bg-black text-white font-[Inter] pt-[120px] pb-16 relative overflow-hidden">
-
-      {/* Grid Pattern Background */}
-      <div className="absolute inset-0 z-0 opacity-[0.15]">
-        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#27272a" strokeWidth="1" />
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#grid)" />
-        </svg>
+    <div className="min-h-screen bg-black text-white font-[Inter] pt-[110px] pb-16 relative overflow-hidden">
+      
+      {/* Background Ambience */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-[#FF4500]/[0.03] blur-[150px] rounded-full"></div>
+        <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-purple-500/[0.03] blur-[150px] rounded-full"></div>
+        <div className="absolute inset-0 bg-[url('/grid-dark.svg')] opacity-[0.05]"></div>
       </div>
 
-      {/* Gradient Overlay */}
-      <div className="absolute inset-0 z-0 bg-gradient-to-b from-transparent via-black/50 to-black pointer-events-none"></div>
-
       <div className="relative z-10 max-w-[1400px] mx-auto px-6">
-
-        {/* Header Section */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-4xl font-bold mb-1">
-                <span className="text-zinc-500">welcome</span>{' '}
-                <span className="text-[#FF4500]">{user?.username}</span>
-              </h1>
-              <p className="text-zinc-600 text-sm uppercase tracking-[0.3em] font-medium">
-                READY TO DOMINATE THE COMPETITIVE MATRIX.
-              </p>
-              {dataUpdatedAt && (
-                <p className="text-zinc-700 text-xs mt-1">
-                  Last updated: {new Date(dataUpdatedAt).toLocaleTimeString()}
-                  {isFetching && <span className="ml-2 text-[#FF4500]">• Updating...</span>}
-                </p>
-              )}
+        
+        {/* Welcome & Top Notifications */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-[10px] font-black tracking-widest text-[#FF4500] uppercase">
+                System Online
+              </span>
+              <div className="w-1 h-1 rounded-full bg-green-500 animate-pulse"></div>
             </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleRefresh}
-                disabled={isFetching}
-                className="flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 px-4 py-2 rounded-md text-sm font-medium transition-all disabled:opacity-50"
-              >
-                <Activity className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
-                {isFetching ? 'REFRESHING...' : 'REFRESH'}
-              </button>
-
-              {showProfileAlert && (!user?.profilePicture || !user?.bio || !user?.primaryGame) && (
-                <div className="relative">
-                  <button
-                    onClick={() => { navigate('/settings'); setShowProfileAlert(false); }}
-                    className="flex items-center gap-2 bg-[#FF4500] hover:bg-[#FF4500]/90 px-5 py-2.5 rounded-md font-semibold text-sm transition-all"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    COMPLETE PROFILE
-                  </button>
-                  <button
-                    onClick={() => setShowProfileAlert(false)}
-                    className="absolute -top-2 -right-2 text-white hover:text-zinc-400 transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Error State */}
-        {isError && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 mb-6">
-            <p className="text-red-400 text-sm">
-              ⚠️ Failed to load dashboard data: {error?.message || 'Unknown error'}. Using fallback data.
+            <h1 className="text-4xl font-black tracking-tight mb-2">
+              WELCOME BACK, <span className="text-[#FF4500]">{player?.username}</span>
+            </h1>
+            <p className="text-zinc-500 text-xs font-bold uppercase tracking-[0.2em]">
+              The competitive matrix is ready for initialization.
             </p>
           </div>
-        )}
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          {quickStats.map((stat, idx) => (
-            <div
-              key={idx}
-              className="bg-zinc-950 border border-zinc-900 rounded-lg p-5 hover:border-zinc-800 transition-all"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <p className="text-zinc-600 text-xs uppercase tracking-[0.2em] mb-2 font-medium">
-                    {stat.label}
-                  </p>
-                  <p className="text-3xl font-bold">{stat.value}</p>
-                </div>
-                <div className={`p-2 rounded-lg ${stat.bgColor}`}>
-                  <stat.icon className={`w-5 h-5 ${stat.textColor}`} />
-                </div>
-              </div>
-              <p className="text-green-400 text-sm flex items-center gap-1">
-                <TrendingUp className="w-3 h-3" />
-                {stat.change} gain
-              </p>
-            </div>
-          ))}
-        </div>
-
-        {/* Quick Actions */}
-        <div className="bg-zinc-950 border border-zinc-900 rounded-lg p-4 mb-6">
-          <div className="flex flex-wrap gap-3">
-            <button
-              className="flex items-center gap-2 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 text-green-400 px-4 py-2 rounded-md text-sm font-medium transition-all"
-            >
-              <Coins className="w-4 h-4" />
-              DAILY CHECK-IN
-            </button>
-            <button
-              onClick={() => navigate('/players')}
-              className="flex items-center gap-2 bg-[#FF4500]/10 hover:bg-[#FF4500]/20 border border-[#FF4500]/20 text-[#FF4500] px-4 py-2 rounded-md text-sm font-medium transition-all"
-            >
-              <Users className="w-4 h-4" />
-              FIND TEAMS
-            </button>
-            <button
-              onClick={() => navigate('/players')}
-              className="flex items-center gap-2 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-cyan-400 px-4 py-2 rounded-md text-sm font-medium transition-all"
-            >
-              <Target className="w-4 h-4" />
-              SCOUT TALENT
-            </button>
-            <button
-              onClick={() => navigate('/tournaments')}
-              className="flex items-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-400 px-4 py-2 rounded-md text-sm font-medium transition-all"
-            >
-              <Trophy className="w-4 h-4" />
-              COMPETE NOW
-            </button>
-            <button
-              onClick={() => navigate("/chat")}
-              className="flex items-center gap-2 bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 px-4 py-2 rounded-md text-sm font-medium transition-all"
-            >
-              <MessageSquare className="w-4 h-4" />
-              MESSAGES
-            </button>
+          <div className="flex items-center gap-3">
+            {/* Action buttons removed as requested */}
           </div>
         </div>
 
-        {/* Main Grid Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Global Hub Stats */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+          <StatCard 
+            label="Aegis Rating" 
+            value={player?.aegisRating || 1200} 
+            icon={TrendingUp} 
+            color="text-[#FF4500]" 
+          />
+          <StatCard 
+            label="Primary Team" 
+            value={playerTeams[0]?.teamName || 'No Team'} 
+            icon={Users} 
+            color="text-cyan-400" 
+          />
+          <StatCard 
+            label="Tournaments Played" 
+            value={stats.activeTournaments} 
+            icon={Trophy} 
+            color="text-purple-400" 
+          />
+           <StatCard 
+            label="Win Rate" 
+            value={`${player?.statistics?.winRate || 0}%`} 
+            icon={Flame} 
+            color="text-green-400" 
+          />
+        </div>
 
-          {/* Left Column - Activity Feed (2 columns wide) */}
-          <div className="lg:col-span-2 space-y-6">
+        {/* Main Dashboard Interaction */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          
+          {/* LEFT: Rating & Performance (4 Cols) */}
+          <div className="lg:col-span-4 space-y-8">
+            
+            {/* Aegis Rating Card - THE HERO PIECE */}
+            <div className={`relative rounded-3xl p-8 border ${ratingInfo.border} ${ratingInfo.bg} overflow-hidden group`}>
+              <div className="absolute top-0 right-0 p-8 opacity-20 group-hover:scale-110 transition-transform duration-500">
+                <img src={ratingInfo.badge} alt="Tier" className="w-32 h-32 blur-[2px]" />
+              </div>
+              
+              <div className="relative z-10">
+                <div className="flex items-center gap-3 mb-6">
+                  <img src={ratingInfo.badge} alt="Badge" className="w-12 h-12 drop-shadow-[0_0_15px_rgba(255,69,0,0.5)]" />
+                  <div>
+                    <p className={`text-[10px] font-black uppercase tracking-[0.3em] ${ratingInfo.textClass}`}>Tier Classification</p>
+                    <h2 className="text-2xl font-black text-white italic">{ratingInfo.tier}</h2>
+                  </div>
+                </div>
 
-            {/* Activity Feed */}
-            <div className="bg-zinc-950 border border-zinc-900 rounded-lg overflow-hidden">
-              <div className="border-b border-zinc-900 p-5">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-bold flex items-center gap-2 text-zinc-300">
-                    <Zap className="w-5 h-5 text-[#FF4500]" />
-                    GLOBAL ACTIVITY STREAM
-                  </h2>
-                  <div className="flex gap-1 bg-black/50 rounded-md p-1">
-                    {['feed', 'trending'].map((tab) => (
-                      <button
-                        key={tab}
-                        onClick={() => setActiveTab(tab)}
-                        className={`px-3 py-1 rounded text-xs font-semibold uppercase transition-all ${
-                          activeTab === tab
-                            ? 'bg-[#FF4500] text-white'
-                            : 'text-zinc-600 hover:text-zinc-400'
-                        }`}
-                      >
-                        {tab}
-                      </button>
-                    ))}
+                <div className="mb-8">
+                  <div className="flex items-end justify-between mb-2">
+                    <p className="text-4xl font-black text-white">{player?.aegisRating}</p>
+                    <p className="text-zinc-400 text-xs font-bold mb-1 uppercase tracking-widest">Peak: {player?.aegisRatingPeak || 0}</p>
+                  </div>
+                  {/* Tier Progress Bar */}
+                  <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden border border-white/5">
+                    <div 
+                      className={`h-full bg-gradient-to-r from-transparent to-white/60 transition-all duration-1000`}
+                      style={{ width: `${Math.min(((player?.aegisRating || 0) % 500) / 5, 100)}%` }}
+                    ></div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-black/30 backdrop-blur-md rounded-xl p-3 border border-white/5">
+                    <p className="text-[9px] text-zinc-500 font-black uppercase mb-1">Matches Rated</p>
+                    <p className="text-sm font-bold text-white tracking-widest">{player?.aegisMatchesRated || 0}</p>
+                  </div>
+                  <div className="bg-black/30 backdrop-blur-md rounded-xl p-3 border border-white/5">
+                    <p className="text-[9px] text-zinc-500 font-black uppercase mb-1">Status</p>
+                    <p className={`text-sm font-black tracking-widest ${player?.aegisIsProvisional ? 'text-yellow-500' : 'text-green-500'}`}>
+                      {player?.aegisIsProvisional ? 'PROVISIONAL' : 'ESTABLISHED'}
+                    </p>
                   </div>
                 </div>
               </div>
-
-              <div className="divide-y divide-zinc-900">
-                {activityFeed.map((activity) => (
-                  <div
-                    key={activity.id}
-                    className="p-4 hover:bg-zinc-900/50 transition-colors cursor-pointer group"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#FF4500] to-purple-600 flex items-center justify-center text-sm font-bold shrink-0">
-                        {activity.user[0]}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-zinc-300">
-                          <span className="font-bold text-white">{activity.user}</span>
-                          {' '}<span className="text-zinc-500">{activity.action}</span>{' '}
-                          <span className="font-semibold text-[#FF4500]">{activity.target}</span>
-                        </p>
-                        <p className="text-xs text-zinc-600 mt-1">{activity.time}</p>
-                      </div>
-                      <button className="text-zinc-700 hover:text-[#FF4500] transition-colors opacity-0 group-hover:opacity-100">
-                        <MessageSquare className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="p-4 text-center border-t border-zinc-900">
-                <button className="text-[#FF4500] hover:text-[#FF4500]/80 text-sm font-semibold flex items-center mx-auto gap-2 group">
-                  VIEW ALL ACTIVITY
-                  <ArrowRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
-                </button>
-              </div>
             </div>
 
-            {/* Recruitment Matrix */}
-            <div className="bg-zinc-950 border border-zinc-900 rounded-lg overflow-hidden">
-              <div className="border-b border-zinc-900 p-5">
-                <h2 className="text-lg font-bold flex items-center gap-2 text-zinc-300">
-                  <Target className="w-5 h-5 text-cyan-400" />
-                  RECRUITMENT MATRIX
-                </h2>
-              </div>
-
-              <div className="divide-y divide-zinc-900">
-                {opportunities.map((opp) => (
-                  <div
-                    key={opp.id}
-                    className="p-4 hover:bg-zinc-900/50 transition-colors"
-                  >
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-bold text-white">{opp.role}</h3>
-                          <span className="px-2 py-0.5 bg-[#FF4500]/20 border border-[#FF4500]/30 text-[#FF4500] text-xs font-semibold rounded">
-                            {opp.game}
-                          </span>
-                        </div>
-                        <p className="text-sm text-zinc-500">
-                          {opp.org} • {opp.type} • {opp.posted}
-                        </p>
+            {/* Performance History Chart (Sparkline simulation) */}
+            <div className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800 rounded-3xl p-6">
+              <SectionHeader title="Performance Flow" icon={Activity} color="text-green-400" />
+              <div className="space-y-4">
+                {ratingHistory.length > 0 ? ratingHistory.map((h, i) => (
+                  <div key={i} className="flex items-center justify-between group">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-1.5 h-1.5 rounded-full ${h.delta > 0 ? 'bg-green-500' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`}></div>
+                      <div>
+                        <p className="text-[11px] font-bold text-white">{new Date(h.date).toLocaleDateString()}</p>
+                        <p className="text-[9px] text-zinc-600 font-black uppercase tracking-widest">{h.tier} TIER MATCH</p>
                       </div>
-                      <button
-                        onClick={() => navigate('/opportunities')}
-                        className="bg-[#FF4500] hover:bg-[#FF4500]/90 px-4 py-2 rounded-md text-sm font-semibold transition-all"
-                      >
-                        Apply
-                      </button>
+                    </div>
+                    <div className="text-right">
+                      <p className={`text-xs font-black ${h.delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {h.delta > 0 ? '+' : ''}{h.delta}
+                      </p>
+                      <p className="text-[10px] text-zinc-700 font-bold">{h.ratingAfter} AR</p>
                     </div>
                   </div>
-                ))}
-              </div>
-
-              <div className="p-4 text-center border-t border-zinc-900">
-                <button
-                  onClick={() => navigate('/opportunities')}
-                  className="text-cyan-400 hover:text-cyan-300 text-sm font-semibold flex items-center mx-auto gap-2 group"
-                >
-                  BROWSE ALL OPPORTUNITIES
-                  <ArrowRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
-                </button>
+                )) : (
+                   <p className="text-center py-8 text-zinc-700 text-xs italic">No rating events detected.</p>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Right Column - Tournaments & Players */}
-          <div className="space-y-6">
+          {/* MIDDLE: Global Events & Live Streams (5 Cols) */}
+          <div className="lg:col-span-8 space-y-8">
+            
+            {/* Live Competition Matrix */}
+            <div className="bg-zinc-900/30 backdrop-blur-sm border border-zinc-800/80 rounded-3xl p-6 relative overflow-hidden">
+               <div className="absolute top-0 right-0 w-64 h-64 bg-[#FF4500]/[0.02] blur-[80px] rounded-full -mr-32 -mt-32"></div>
+               
+               <SectionHeader 
+                title="Competition Matrix" 
+                icon={Gamepad2} 
+                color="text-purple-400" 
+                actionLabel="View Tournament Board" 
+                onAction={() => navigate('/tournaments')}
+              />
 
-            {/* Upcoming Tournaments */}
-            <div className="bg-zinc-950 border border-zinc-900 rounded-lg overflow-hidden">
-              <div className="border-b border-zinc-900 p-5">
-                <h2 className="text-lg font-bold flex items-center gap-2 text-zinc-300">
-                  <Gamepad2 className="w-5 h-5 text-purple-400" />
-                  UPCOMING COMPETITIONS
-                </h2>
-              </div>
-
-              <div className="p-4 space-y-3">
-                {upcomingTournaments.length > 0 ? (
-                  upcomingTournaments.map((tournament) => (
-                    <div
-                      key={tournament._id}
-                      onClick={() => navigate(`/tournament/${tournament._id}`)}
-                      className="bg-zinc-900/50 border border-zinc-900 rounded-lg p-4 hover:border-zinc-800 transition-colors cursor-pointer"
-                    >
-                      <h3 className="font-bold text-white mb-3 text-sm">{tournament.tournamentName}</h3>
-                      <div className="space-y-2 text-xs text-zinc-500">
-                        <p className="flex items-center gap-2">
-                          <Calendar className="w-3 h-3 text-purple-400" />
-                          {new Date(tournament.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        </p>
-                        <p className="flex items-center gap-2">
-                          <Trophy className="w-3 h-3 text-[#FF4500]" />
-                          <span className="font-bold text-[#FF4500]">
-                            {tournament.prizePool?.total ? `₹${tournament.prizePool.total.toLocaleString()}` : 'TBD'}
-                          </span>
-                        </p>
-                        <p className="flex items-center gap-2">
-                          <Users className="w-3 h-3 text-cyan-400" />
-                          {tournament.totalSlots || 0} teams
-                        </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
+                {tournaments.length > 0 ? tournaments.map((t) => (
+                  <div 
+                    key={t._id}
+                    onClick={() => navigate(`/tournament/${t._id}`)}
+                    className="bg-zinc-950/60 border border-zinc-800/50 hover:border-zinc-700 p-5 rounded-2xl transition-all group cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                         <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center">
+                            <Gamepad2 className="w-4 h-4 text-zinc-500" />
+                         </div>
+                         <h3 className="text-xs font-black uppercase tracking-widest text-[#FF4500] truncate max-w-[120px]">{t.shortName || t.tournamentName}</h3>
                       </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); navigate(`/tournament/${tournament._id}`); }}
-                        className="w-full mt-3 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-400 py-2 rounded-md text-xs font-semibold transition-all"
-                      >
-                        Register Now
-                      </button>
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 uppercase">
+                        {t.tier} Tier
+                      </span>
                     </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8">
-                    <Trophy className="w-12 h-12 mx-auto mb-3 text-zinc-800" />
-                    <p className="text-sm text-zinc-600">No upcoming events</p>
+
+                    <div className="space-y-3 mb-5">
+                      <div className="flex items-center justify-between text-[11px] font-bold">
+                        <span className="text-zinc-500 flex items-center gap-1.5"><Calendar className="w-3 h-3" /> Start</span>
+                        <span className="text-white">{new Date(t.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                      </div>
+                       <div className="flex items-center justify-between text-[11px] font-bold">
+                        <span className="text-zinc-500 flex items-center gap-1.5"><Coins className="w-3 h-3" /> Pot</span>
+                        <span className="text-[#FF4500]">₹{t.prizePool?.total?.toLocaleString() || 'TBD'}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] font-bold">
+                        <span className="text-zinc-500 flex items-center gap-1.5"><Users className="w-3 h-3" /> Slots</span>
+                        <span className="text-white">{t.participantCount}/{t.totalSlots}</span>
+                      </div>
+                    </div>
+
+                    <div className="w-full h-1 bg-zinc-900 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-[#FF4500] to-purple-500 transition-all duration-1000"
+                        style={{ width: `${(t.participantCount / t.totalSlots) * 100}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="col-span-2 py-20 text-center border border-dashed border-zinc-800 rounded-2xl">
+                    <Zap className="w-10 h-10 text-zinc-800 mx-auto mb-3" />
+                    <p className="text-zinc-600 font-bold uppercase tracking-widest text-xs">No Active Circuits Detected</p>
                   </div>
                 )}
               </div>
-
-              <div className="p-4 text-center border-t border-zinc-900">
-                <button
-                  onClick={() => navigate('/tournaments')}
-                  className="text-purple-400 hover:text-purple-300 text-sm font-semibold flex items-center mx-auto gap-2 group"
-                >
-                  VIEW ALL TOURNAMENTS
-                  <ArrowRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
-                </button>
-              </div>
             </div>
 
-            {/* Trending Players */}
-            <div className="bg-zinc-950 border border-zinc-900 rounded-lg overflow-hidden">
-              <div className="border-b border-zinc-900 p-5">
-                <h2 className="text-lg font-bold flex items-center gap-2 text-zinc-300">
-                  <TrendingUp className="w-5 h-5 text-green-400" />
-                  TOP GAINING PLAYERS
-                </h2>
-              </div>
-
-              <div className="p-4 space-y-3">
-                {trendingPlayers.map((player, idx) => (
-                  <div
-                    key={player.id}
-                    onClick={() => navigate(`/players/${player.id}`)}
-                    className="flex items-center gap-3 bg-zinc-900/50 border border-zinc-900 rounded-lg p-3 hover:border-zinc-800 transition-colors cursor-pointer"
-                  >
-                    <div className="text-lg font-bold w-6 text-green-400">#{idx + 1}</div>
-                    <div className="w-9 h-9 rounded-full bg-[#FF4500]/20 border border-[#FF4500]/30 flex items-center justify-center font-bold text-sm text-[#FF4500]">
-                      {player.username[0]}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-white text-sm truncate">{player.username}</p>
-                      <p className="text-xs text-zinc-600">{player.primaryGame}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold text-cyan-400 text-sm">{player.aegisRating}</p>
-                      <p className="text-xs text-green-400 flex items-center gap-1">
-                        <TrendingUp className="w-3 h-3" /> {player.trend}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="p-4 text-center border-t border-zinc-900">
-                <button
-                  onClick={() => navigate('/players')}
-                  className="text-green-400 hover:text-green-300 text-sm font-semibold flex items-center mx-auto gap-2 group"
-                >
-                  VIEW GLOBAL RANKINGS
-                  <ArrowRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
-                </button>
-              </div>
-            </div>
-
-            {/* Recent Matches */}
-            {recentMatches.length > 0 && (
-              <div className="bg-zinc-950 border border-zinc-900 rounded-lg overflow-hidden">
-                <div className="border-b border-zinc-900 p-5">
-                  <h2 className="text-lg font-bold flex items-center gap-2 text-zinc-300">
-                    <Activity className="w-5 h-5 text-[#FF4500]" />
-                    MATCH HISTORY LOG
-                  </h2>
-                </div>
-
-                <div className="p-4 space-y-3">
-                  {recentMatches.map((match) => (
-                    <div
-                      key={match._id}
-                      className="bg-zinc-900/50 border border-zinc-900 rounded-lg p-4 hover:border-zinc-800 transition-colors"
+            {/* Recruitment & Tactical Log */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              
+              {/* Recruitment Matrix */}
+              <div className="bg-zinc-900/20 border border-zinc-800 rounded-3xl p-6">
+                <SectionHeader 
+                  title="Recruitment Matrix" 
+                  icon={Target} 
+                  color="text-cyan-400" 
+                  actionLabel="Search All" 
+                  onAction={() => navigate('/recruitment')}
+                />
+                <div className="space-y-4">
+                  {dashboard?.opportunities?.length > 0 ? dashboard.opportunities.map((opp) => (
+                    <div 
+                      key={opp._id} 
+                      onClick={() => navigate('/recruitment')}
+                      className="p-3 bg-zinc-950/40 border border-zinc-800/40 rounded-xl hover:bg-zinc-900 transition-all cursor-pointer group"
                     >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs text-zinc-600">{match.time || 'RECENTLY'}</span>
-                        <span className="text-xs bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 px-2 py-0.5 rounded font-semibold">
-                          {match.map || 'MAP'}
-                        </span>
+                      <div className="flex items-center gap-3 mb-2">
+                        <div className="w-8 h-8 rounded bg-zinc-800 overflow-hidden border border-zinc-700">
+                           {opp.logo ? <img src={opp.logo} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-zinc-600">{opp.teamTag}</div>}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[10px] font-black text-white truncate uppercase">{opp.teamName}</p>
+                          <p className="text-[8px] text-zinc-600 font-bold uppercase">{opp.game} Division</p>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-white font-bold truncate max-w-[35%]">{match.team1 || 'TEAM A'}</span>
-                        <span className="text-[#FF4500] font-bold mx-2">{match.score || 'VS'}</span>
-                        <span className="text-white font-bold truncate max-w-[35%]">{match.team2 || 'TEAM B'}</span>
+                      <div className="flex flex-wrap gap-1">
+                        {opp.roles?.map(role => (
+                          <span key={role} className="text-[8px] font-black px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 uppercase">{role}</span>
+                        ))}
                       </div>
                     </div>
-                  ))}
+                  )) : (
+                     <div className="py-10 text-center">
+                        <p className="text-[10px] text-zinc-700 font-black uppercase tracking-widest">No active scouts detected</p>
+                     </div>
+                  )}
                 </div>
               </div>
-            )}
+
+               {/* Recent Tactical Log */}
+               <div className="bg-zinc-900/20 border border-zinc-800 rounded-3xl p-6">
+                <SectionHeader title="Tactical Log" icon={Activity} color="text-zinc-500" />
+                <div className="space-y-4">
+                  {matches.length > 0 ? matches.map(match => (
+                    <div 
+                      key={match._id} 
+                      className="group relative bg-zinc-950 border border-zinc-800/50 hover:border-[#FF4500]/30 rounded-2xl transition-all overflow-hidden"
+                    >
+                      {/* Map Background with Overlay */}
+                      <div className="absolute inset-0 opacity-20 group-hover:opacity-30 transition-opacity">
+                        <img 
+                          src={MAP_BG[match.map] || MAP_BG.Unknown} 
+                          alt={match.map} 
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-r from-black via-black/80 to-transparent"></div>
+                      </div>
+
+                      <div className="relative z-10 p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[10px] font-black text-[#FF4500] uppercase tracking-widest mb-1 drop-shadow-md">
+                              {match.tournamentPhase} • {match.map}
+                            </p>
+                            <h3 className="text-[11px] font-bold text-white truncate uppercase tracking-wider">
+                              {match.tournamentName}
+                            </h3>
+                          </div>
+                          <div className={`px-2 py-1 rounded-md text-[10px] font-black italic tracking-tighter ${match.isWin ? 'bg-[#FF4500] text-black shadow-[0_0_15px_rgba(255,69,0,0.3)]' : 'bg-zinc-800/80 backdrop-blur-sm text-zinc-400'}`}>
+                            {match.isWin ? 'CHICKEN DINNER' : `#${match.finalPosition || 'TBD'}`}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="bg-black/60 backdrop-blur-md rounded-lg p-2 border border-white/5 text-center">
+                            <p className="text-[8px] text-zinc-500 font-black uppercase mb-0.5">Kill Pts</p>
+                            <p className="text-xs font-bold text-white">{match.points?.kills || 0}</p>
+                          </div>
+                          <div className="bg-black/60 backdrop-blur-md rounded-lg p-2 border border-white/5 text-center">
+                            <p className="text-[8px] text-zinc-500 font-black uppercase mb-0.5">Posi Pts</p>
+                            <p className="text-xs font-bold text-white">{match.points?.position || 0}</p>
+                          </div>
+                          <div className="bg-black/60 backdrop-blur-md rounded-lg p-2 border border-[#FF4500]/20 text-center relative overflow-hidden group/pts">
+                            <div className="absolute inset-0 bg-[#FF4500]/5 opacity-0 group-hover/pts:opacity-100 transition-opacity"></div>
+                            <p className="text-[8px] text-[#FF4500] font-black uppercase mb-0.5 relative z-10">Total</p>
+                            <p className="text-xs font-black text-white relative z-10">{match.points?.total || 0}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )) : (
+                     <div className="py-10 text-center">
+                        <p className="text-[10px] text-zinc-700 font-black uppercase tracking-widest">No recent engagements</p>
+                     </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
           </div>
+
         </div>
       </div>
     </div>
@@ -577,3 +437,4 @@ const LoggedInHomepage = () => {
 };
 
 export default LoggedInHomepage;
+

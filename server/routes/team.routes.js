@@ -650,8 +650,7 @@ router.put('/:id', auth, upload.single('logo'), async (req, res) => {
       'region',
       'bio',
       'status',         // if you have status (active/disbanded/etc.)
-      'socials',        // if you allow editing socials
-      'profileVisibility' // only if you want captain to control this
+      'socials'         // if you allow editing socials
       // add more explicitly allowed fields here as needed
     ];
 
@@ -660,6 +659,9 @@ router.put('/:id', auth, upload.single('logo'), async (req, res) => {
         updateData[field] = bodyData[field];
       }
     }
+
+    // Force public visibility for all team updates
+    updateData.profileVisibility = 'public';
 
     // 5. If nothing to update, return 400
     if (Object.keys(updateData).length === 0) {
@@ -693,6 +695,44 @@ router.put('/:id', auth, upload.single('logo'), async (req, res) => {
     }
 
     res.status(500).json({ message: 'Server error updating team' });
+  }
+});
+
+
+// PUT /api/teams/:id/transfer-captain - Transfer captaincy to another player
+router.put('/:id/transfer-captain', auth, async (req, res) => {
+  try {
+    const teamId = req.params.id;
+    const { newCaptainId } = req.body;
+
+    if (!newCaptainId) {
+      return res.status(400).json({ message: 'New captain ID is required' });
+    }
+
+    const team = await Team.findById(teamId);
+    if (!team) {
+      return res.status(404).json({ message: 'Team not found' });
+    }
+
+    if (team.captain.toString() !== req.user.id.toString()) {
+      return res.status(403).json({ message: 'Only current captain can transfer captaincy' });
+    }
+
+    if (!team.players.some(p => p.toString() === newCaptainId)) {
+      return res.status(400).json({ message: 'New captain must be a current member of the team' });
+    }
+
+    team.captain = newCaptainId;
+    await team.save();
+
+    await team.populate('captain', 'username profilePicture primaryGame');
+    await team.populate('players', 'username profilePicture primaryGame');
+    await team.populate('organization', 'orgName logo');
+
+    res.json({ message: 'Captaincy transferred successfully', team });
+  } catch (error) {
+    console.error('Error transferring captaincy:', error);
+    res.status(500).json({ message: 'Server error transferring captaincy' });
   }
 });
 

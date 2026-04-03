@@ -92,6 +92,10 @@ export const AuthProvider = ({ children }) => {
         setIsAuthenticated(true);
         setUserRole(role);
         localStorage.setItem('userRole', role);
+        // Store token for socket auth and API requests
+        if (data.token) {
+          localStorage.setItem('token', data.token);
+        }
 
         if (role === 'organization') {
           setUser(data.organization);
@@ -137,6 +141,7 @@ export const AuthProvider = ({ children }) => {
       setUserRole(null);
       setIsAuthenticated(false);
       localStorage.removeItem('userRole');
+      localStorage.removeItem('token');
     }
   };
 

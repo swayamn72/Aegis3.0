@@ -215,127 +215,139 @@ router.post('/decline-invitation/:tournamentId/:invitationId', verifyTeamCaptain
 // ============================================================================
 
 router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
+  const session = await mongoose.startSession();
   try {
     const { tournamentId } = req.params;
+    let responsePayload = null;
+    let tournamentForEmail = null;
+    let registrationForEmail = null;
+    let organizerNameForEmail = 'AEGIS Esports';
 
-    // Fetch tournament (minimal data needed)
-    const tournament = await Tournament.findById(tournamentId)
-      .select(`
+    await session.withTransaction(async () => {
+      // Fetch tournament (minimal data needed)
+      const tournament = await Tournament.findById(tournamentId)
+        .session(session)
+        .select(`
         tournamentName status registrationEndDate slots gameTitle 
         phases organizer isOpenForAll requiresApproval
       `)
-      .populate('organizer', 'orgName')
-      .lean();
+        .populate('organizer', 'orgName')
+        .lean();
 
-    if (!tournament) {
-      return res.status(404).json({ error: 'Tournament not found' });
-    }
+      if (!tournament) {
+        throw new Error('TOURNAMENT_NOT_FOUND');
+      }
 
-    // Verify tournament accepts open registrations
-    if (tournament.status !== 'registration_open' && tournament.status !== 'announced') {
-      return res.status(400).json({ error: 'Tournament registration is closed' });
-    }
+      // Verify tournament accepts open registrations
+      if (tournament.status !== 'registration_open' && tournament.status !== 'announced') {
+        throw new Error('REGISTRATION_CLOSED');
+      }
 
-    // Check registration deadline
-    const now = new Date();
-    if (tournament.registrationEndDate && now > new Date(tournament.registrationEndDate)) {
-      return res.status(400).json({ error: 'Registration deadline has passed' });
-    }
+      // Check registration deadline
+      const now = new Date();
+      if (tournament.registrationEndDate && now > new Date(tournament.registrationEndDate)) {
+        throw new Error('REGISTRATION_DEADLINE_PASSED');
+      }
 
-    // NEW: Check current registration count
-    const currentCount = await Registration.countDocuments({
-      tournament: tournamentId,
-      status: { $in: ['approved', 'checked_in', 'pending'] }
-    });
+      // Check current registration count
+      const currentCount = await Registration.countDocuments({
+        tournament: tournamentId,
+        status: { $in: ['approved', 'checked_in', 'pending'] }
+      }).session(session);
 
-    if (currentCount >= tournament.slots.total) {
-      return res.status(400).json({ error: 'Tournament is full' });
-    }
+      if (currentCount >= tournament.slots.total) {
+        throw new Error('TOURNAMENT_FULL');
+      }
 
-    // NEW: Check if team already registered
-    const existingRegistration = await Registration.findOne({
-      tournament: tournamentId,
-      team: req.team._id
-    });
+      // Check if team already registered
+      const existingRegistration = await Registration.findOne({
+        tournament: tournamentId,
+        team: req.team._id
+      }).session(session).lean();
 
-    if (existingRegistration) {
-      return res.status(400).json({
-        error: 'Team already registered for this tournament',
-        status: existingRegistration.status
-      });
-    }
+      if (existingRegistration) {
+        const err = new Error('TEAM_ALREADY_REGISTERED');
+        err.meta = { existingStatus: existingRegistration.status };
+        throw err;
+      }
 
-    // Check team has minimum required members
-    if (req.team.players.length < 4) {
-      return res.status(400).json({
-        error: 'Team must have at least 4 members to register for tournaments'
-      });
-    }
+      // Check team has minimum required members
+      if (req.team.players.length < 4) {
+        throw new Error('TEAM_TOO_SMALL');
+      }
 
-    // Check if all players have at least one game ID
-    const playersWithGameIds = await Player.find({
-      _id: { $in: req.team.players },
-      'gameIds.0': { $exists: true }
-    }).select('_id username').lean();
+      // Check if all players have at least one game ID
+      const playersWithoutGameIds = await Player.find({
+        _id: { $in: req.team.players },
+        $or: [
+          { gameIds: { $exists: false } },
+          { gameIds: { $size: 0 } }
+        ]
+      }).session(session).select('_id username').lean();
 
-    const playersWithoutGameIds = await Player.find({
-      _id: { $in: req.team.players },
-      $or: [
-        { gameIds: { $exists: false } },
-        { gameIds: { $size: 0 } }
-      ]
-    }).select('_id username').lean();
+      if (playersWithoutGameIds.length > 0) {
+        const err = new Error('PLAYERS_MISSING_GAME_ID');
+        err.meta = { playersWithoutGameIds };
+        throw err;
+      }
 
-    if (playersWithoutGameIds.length > 0) {
-      const playerNames = playersWithoutGameIds.map(p => p.username).join(', ');
-      return res.status(400).json({
-        error: `The following players don't have a game ID registered: ${playerNames}`,
-        message: 'All team members must register at least one game ID before tournament registration',
-        playersWithoutGameIds: playersWithoutGameIds.map(p => ({
-          id: p._id,
-          username: p.username
-        }))
-      });
-    }
+      // Check game compatibility
+      if (tournament.gameTitle !== req.team.primaryGame) {
+        const err = new Error('GAME_MISMATCH');
+        err.meta = { tournamentGame: tournament.gameTitle, teamGame: req.team.primaryGame };
+        throw err;
+      }
 
-    // Check game compatibility
-    if (tournament.gameTitle !== req.team.primaryGame) {
-      return res.status(400).json({
-        error: `Team primary game (${req.team.primaryGame}) does not match tournament game (${tournament.gameTitle})`
-      });
-    }
+      // Fetch players with full game ID info for roster
+      const playersWithGameIdsFull = await Player.find({
+        _id: { $in: req.team.players }
+      }).session(session).select('_id gameIds inGameRole').lean();
 
-    // Fetch players with full game ID info for roster
-    const playersWithGameIdsFull = await Player.find({
-      _id: { $in: req.team.players }
-    }).select('_id gameIds inGameRole').lean();
+      // Phase assignment is intentionally deferred — the org calls
+      // POST /:tournamentId/lock-registrations after registration closes,
+      // which bulk-assigns all approved teams to phase 1 at once.
+      // This prevents stale phase references if the org restructures phases
+      // or renames them before the tournament begins.
+      //
+      // Auto-approval logic:
+      //   isOpenForAll=false          → pending  (invite-only or closed, org reviews)
+      //   isOpenForAll=true + requiresApproval=true  → pending  (org manually reviews each)
+      //   isOpenForAll=true + requiresApproval=false → approved (first-come-first-served)
+      const autoApprove = tournament.isOpenForAll && !tournament.requiresApproval;
+      const registrations = await Registration.create([{
+        tournament: tournamentId,
+        team: req.team._id,
+        status: autoApprove ? 'approved' : 'pending',
+        qualifiedThrough: 'open_registration',
+        currentStage: 'Registered',
+        phase: null,
+        approvedAt: autoApprove ? new Date() : undefined,
+        roster: playersWithGameIdsFull.map(player => {
+          const primaryGameId = player.gameIds?.find(gid => gid.isPrimary) || player.gameIds?.[0];
+          return {
+            player: player._id,
+            inGameName: primaryGameId?.inGameName || 'Unknown'
+          };
+        })
+      }], { session });
 
-    // Phase assignment is intentionally deferred — the org calls
-    // POST /:tournamentId/lock-registrations after registration closes,
-    // which bulk-assigns all approved teams to phase 1 at once.
-    // This prevents stale phase references if the org restructures phases
-    // or renames them before the tournament begins.
-    //
-    // Auto-approval logic:
-    //   isOpenForAll=false          → pending  (invite-only or closed, org reviews)
-    //   isOpenForAll=true + requiresApproval=true  → pending  (org manually reviews each)
-    //   isOpenForAll=true + requiresApproval=false → approved (first-come-first-served)
-    const autoApprove = tournament.isOpenForAll && !tournament.requiresApproval;
-    const registration = await Registration.create({
-      tournament: tournamentId,
-      team: req.team._id,
-      status: autoApprove ? 'approved' : 'pending',
-      qualifiedThrough: 'open_registration',
-      currentStage: 'Registered',
-      phase: null,
-      approvedAt: autoApprove ? new Date() : undefined,
-      roster: playersWithGameIdsFull.map(player => {
-        const primaryGameId = player.gameIds?.find(gid => gid.isPrimary) || player.gameIds?.[0];
-        return {
-          player: player._id,
-          inGameName: primaryGameId?.inGameName || 'Unknown'
-        };
-      })
+      const registration = registrations[0];
+      tournamentForEmail = tournament;
+      registrationForEmail = registration;
+      organizerNameForEmail = tournament.organizer?.orgName || 'AEGIS Esports';
+
+      responsePayload = {
+        message: 'Team registered successfully',
+        registration: {
+          _id: registration._id,
+          status: registration.status,
+          registeredAt: registration.registeredAt
+        },
+        tournament: {
+          _id: tournament._id,
+          name: tournament.tournamentName
+        }
+      };
     });
 
     // Send registration confirmation emails
@@ -347,7 +359,7 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
         .select('email username')
         .lean();
 
-      const organizerName = tournament.organizer?.orgName || 'AEGIS Esports';
+      const organizerName = organizerNameForEmail || 'AEGIS Esports';
 
       for (const player of players) {
         if (player.email) {
@@ -355,7 +367,7 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
             player.email,
             player.username,
             req.team.teamName,
-            tournament.tournamentName
+            tournamentForEmail?.tournamentName
           );
         }
       }
@@ -364,21 +376,60 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
       // Don't fail the request if emails fail
     }
 
-    res.json({
-      message: 'Team registered successfully',
-      registration: {
-        _id: registration._id,
-        status: registration.status,
-        registeredAt: registration.registeredAt
-      },
-      tournament: {
-        _id: tournament._id,
-        name: tournament.tournamentName
-      }
-    });
+    res.json(responsePayload);
   } catch (error) {
     console.error('Error registering for tournament:', error);
+
+    if (error.message === 'TOURNAMENT_NOT_FOUND') {
+      return res.status(404).json({ error: 'Tournament not found' });
+    }
+    if (error.message === 'REGISTRATION_CLOSED') {
+      return res.status(400).json({ error: 'Tournament registration is closed' });
+    }
+    if (error.message === 'REGISTRATION_DEADLINE_PASSED') {
+      return res.status(400).json({ error: 'Registration deadline has passed' });
+    }
+    if (error.message === 'TOURNAMENT_FULL') {
+      return res.status(400).json({ error: 'Tournament is full' });
+    }
+    if (error.message === 'TEAM_ALREADY_REGISTERED') {
+      return res.status(400).json({
+        error: 'Team already registered for this tournament',
+        status: error.meta?.existingStatus
+      });
+    }
+    if (error.message === 'TEAM_TOO_SMALL') {
+      return res.status(400).json({
+        error: 'Team must have at least 4 members to register for tournaments'
+      });
+    }
+    if (error.message === 'PLAYERS_MISSING_GAME_ID') {
+      const playersWithoutGameIds = error.meta?.playersWithoutGameIds || [];
+      const playerNames = playersWithoutGameIds.map(p => p.username).join(', ');
+      return res.status(400).json({
+        error: `The following players don't have a game ID registered: ${playerNames}`,
+        message: 'All team members must register at least one game ID before tournament registration',
+        playersWithoutGameIds: playersWithoutGameIds.map(p => ({
+          id: p._id,
+          username: p.username
+        }))
+      });
+    }
+    if (error.message === 'GAME_MISMATCH') {
+      return res.status(400).json({
+        error: `Team primary game (${error.meta?.teamGame}) does not match tournament game (${error.meta?.tournamentGame})`
+      });
+    }
+    if (error.message?.includes('Transaction numbers are only allowed')) {
+      return res.status(500).json({
+        error: 'Database transaction not supported by current MongoDB topology',
+        message: 'Enable replica set or sharded cluster for atomic team registration.'
+      });
+    }
+
     res.status(500).json({ error: 'Failed to register for tournament' });
+  } finally {
+    await session.endSession();
   }
 });
 

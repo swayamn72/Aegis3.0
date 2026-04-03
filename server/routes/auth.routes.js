@@ -35,7 +35,7 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 // Strict rate limiter for auth endpoints (login/signup)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // limit each IP to 5 requests per windowMs
+  max: 5, // limit each IP to 5 requests per windowMs
   message: 'Too many authentication attempts, please try again after 15 minutes',
   standardHeaders: true,
   legacyHeaders: false,
@@ -160,12 +160,17 @@ router.post('/login', authLimiter, validateLogin, asyncHandler(async (req, res) 
       email: user.email,
       username: user.username,
       realName: user.realName,
+      profilePicture: user.profilePicture,
       age: user.age,
       location: user.location,
       country: user.country,
       primaryGame: user.primaryGame,
       teamStatus: user.teamStatus,
       availability: user.availability,
+      discordTag: user.discordTag,
+      instagram: user.instagram,
+      youtube: user.youtube,
+      twitter: user.twitter,
     },
   });
 }));
@@ -175,21 +180,18 @@ router.post('/login', authLimiter, validateLogin, asyncHandler(async (req, res) 
 // ==========================
 router.post('/google', authLimiter, async (req, res) => {
   try {
-    const { credential, userInfo, role = 'player' } = req.body;
+    const { credential, role = 'player' } = req.body;
 
-    if (!credential && !userInfo) {
-      return res.status(400).json({ message: "Google credential or user info is required" });
+    if (!credential) {
+      return res.status(400).json({ message: "Google credential is required" });
     }
 
     let googleId, email, name, picture;
 
-    // Logic to verify Google credential...
-    if (userInfo) {
-      googleId = userInfo.sub;
-      email = userInfo.email;
-      name = userInfo.name;
-      picture = userInfo.picture;
-    } else {
+    // ALWAYS verify server-side — supports both idToken and access_token
+    // Path 1: Try as idToken (from GoogleLogin component on web)
+    // Path 2: Fall back to access_token verification via Google API (from useGoogleLogin / Flutter)
+    try {
       const ticket = await client.verifyIdToken({
         idToken: credential,
         audience: process.env.GOOGLE_CLIENT_ID,
@@ -199,6 +201,33 @@ router.post('/google', authLimiter, async (req, res) => {
       email = payload.email;
       name = payload.name;
       picture = payload.picture;
+    } catch (idTokenError) {
+      // Not a valid idToken — try as access_token
+      try {
+        const { default: fetch } = await import('node-fetch');
+        const userInfoResponse = await fetch(
+          'https://www.googleapis.com/oauth2/v3/userinfo',
+          { headers: { Authorization: `Bearer ${credential}` } }
+        );
+
+        if (!userInfoResponse.ok) {
+          return res.status(401).json({ message: "Invalid Google credential" });
+        }
+
+        const payload = await userInfoResponse.json();
+
+        if (!payload.sub || !payload.email) {
+          return res.status(401).json({ message: "Invalid Google credential — missing user info" });
+        }
+
+        googleId = payload.sub;
+        email = payload.email;
+        name = payload.name;
+        picture = payload.picture;
+      } catch (accessTokenError) {
+        console.error('Google verification failed:', accessTokenError.message);
+        return res.status(401).json({ message: "Invalid Google credential" });
+      }
     }
 
     const Model = role === 'organization' ? Organization : Player;
@@ -293,6 +322,10 @@ router.post('/google', authLimiter, async (req, res) => {
         profilePicture: user.profilePicture,
         usernameCustomized: user.usernameCustomized,
         primaryGame: user.primaryGame,
+        discordTag: user.discordTag,
+        instagram: user.instagram,
+        youtube: user.youtube,
+        twitter: user.twitter,
       };
     } else {
       responseData.organization = {

@@ -25,7 +25,7 @@ const lftPostSchema = new mongoose.Schema({
     region: {
         type: String,
         enum: ['India', 'Asia', 'Europe', 'North America', 'Global'],
-        default: 'Global',
+        default: 'India',
     },
     status: {
         type: String,

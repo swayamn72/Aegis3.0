@@ -8,6 +8,7 @@ import TryoutChat from '../models/tryoutChat.model.js';
 import ChatMessage from '../models/chat.model.js';
 import auth from '../middleware/auth.js';
 import mongoose from 'mongoose';
+import { createTryoutMessage, fetchTryoutMessages } from '../services/tryoutMessage.service.js';
 
 const router = express.Router();
 
@@ -329,18 +330,33 @@ const ALLOWED_GAMES = ['VALO', 'CS2', 'BGMI']; // Strictly matching model enums
 const ALLOWED_REGIONS = ['India', 'Asia', 'Europe', 'North America', 'Global']; // Strictly matching model enums
 const ALLOWED_ROLES = ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger']; // Matching model enums
 
+const normalizeRegion = (input, fallback = 'Global') => {
+  const raw = String(input || '').trim();
+  if (!raw) return fallback;
+
+  if (ALLOWED_REGIONS.includes(raw)) return raw;
+
+  const value = raw.toLowerCase();
+  if (value === 'india' || value === 'in') return 'India';
+  if (value === 'asia' || value === 'sea' || value === 'apac') return 'Asia';
+  if (value === 'europe' || value === 'eu' || value === 'emea') return 'Europe';
+  if (
+    value === 'north america' || value === 'na' || value === 'usa' || value === 'us' || value === 'canada'
+  ) {
+    return 'North America';
+  }
+  if (value === 'global' || value === 'world' || value === 'international') return 'Global';
+
+  return fallback;
+};
+
 router.post('/lft-posts', auth, async (req, res) => {
   const session = await mongoose.startSession().catch(() => null);
   try {
-    const { description = '', roles = [], region } = req.body || {};
+    const { description = '', roles = [] } = req.body || {};
 
     // Basic validation + sanitization
     const desc = String(description).trim().slice(0, MAX_DESC_LEN);
-
-    // Validate region if provided
-    if (region && !ALLOWED_REGIONS.includes(region)) {
-      return res.status(400).json({ error: 'Invalid region' });
-    }
 
     // Validate roles: ensure array of short strings and cap
     let cleanRoles = [];
@@ -369,6 +385,9 @@ router.post('/lft-posts', auth, async (req, res) => {
       return res.status(400).json({ error: 'Player profile not found' });
     }
 
+    // Region is always derived server-side to avoid client-side invalid values.
+    const postRegion = normalizeRegion(player.country, 'Global');
+
     // Prevent duplicates - prefer DB unique partial index but attempt transactional guard
     // If you don't have replica set, session may be null, fall back to simpler check + error handling
     let createdPost;
@@ -386,7 +405,7 @@ router.post('/lft-posts', auth, async (req, res) => {
         description: desc,
         game: 'BGMI',
         roles: cleanRoles,
-        region,
+        region: postRegion,
         status: 'active',
       }], { session });
 
@@ -403,7 +422,7 @@ router.post('/lft-posts', auth, async (req, res) => {
         description: desc,
         game: 'BGMI',
         roles: cleanRoles,
-        region,
+        region: postRegion,
         status: 'active',
       });
 
@@ -485,18 +504,17 @@ router.post('/approach/:approachId/accept', auth, async (req, res) => {
       metadata: {
         approachId: approach._id,
         initiatedBy: 'team'
-      },
-      messages: [
-        {
-          sender: 'system',
-          message: `${approach.player.username} has accepted the recruitment approach from ${team.teamName}. All team members can now discuss opportunities.`,
-          messageType: 'system',
-          timestamp: new Date()
-        }
-      ]
+      }
     });
 
     await tryoutChat.save();
+    await createTryoutMessage({
+      chatId: tryoutChat._id,
+      sender: 'system',
+      message: `${approach.player.username} has accepted the recruitment approach from ${team.teamName}. All team members can now discuss opportunities.`,
+      messageType: 'system',
+      timestamp: new Date(),
+    });
 
     // Link tryout chat back to approach
     approach.tryoutChatId = tryoutChat._id;
@@ -508,10 +526,14 @@ router.post('/approach/:approachId/accept', auth, async (req, res) => {
     );
 
     await tryoutChat.populate('team applicant participants');
+    const hydratedTryoutChat = {
+      ...tryoutChat.toObject(),
+      messages: await fetchTryoutMessages(tryoutChat._id),
+    };
 
     res.json({
       message: 'Approach accepted and tryout chat created',
-      tryoutChat
+      tryoutChat: hydratedTryoutChat
     });
   } catch (error) {
     console.error('Error accepting approach:', error);
@@ -657,7 +679,7 @@ router.get('/lfp-posts', async (req, res) => {
 router.post('/lfp-posts', auth, async (req, res) => {
   const session = await mongoose.startSession().catch(() => null);
   try {
-    const { description = '', game, openRoles = [], region } = req.body || {};
+    const { description = '', game, openRoles = [] } = req.body || {};
 
     // Sanitize input
     const desc = String(description).trim().slice(0, MAX_LFP_DESC_LEN);
@@ -679,7 +701,7 @@ router.post('/lfp-posts', auth, async (req, res) => {
 
     // Determine game and region
     const postGame = game || player.team.primaryGame;
-    const postRegion = region || player.team.region;
+    const postRegion = normalizeRegion(player.team.region, 'Global');
 
     // Validate inputs
     if (!desc) {
@@ -690,9 +712,6 @@ router.post('/lfp-posts', auth, async (req, res) => {
     }
     if (!ALLOWED_GAMES.includes(postGame)) {
       return res.status(400).json({ error: 'Invalid game' });
-    }
-    if (postRegion && !ALLOWED_REGIONS.includes(postRegion)) {
-      return res.status(400).json({ error: 'Invalid region' });
     }
 
     // Validate roles

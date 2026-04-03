@@ -317,4 +317,12 @@ const playerSchema = new mongoose.Schema(
 
 const Player = mongoose.model('Player', playerSchema);
 
+// --- Performance Indexes ---
+// Leaderboard sorting (GET /api/players/leaderboard/aegis)
+playerSchema.index({ aegisRating: -1 });
+// Team lookups (used in team member queries, team stats)
+playerSchema.index({ team: 1 });
+// Recruitment search pattern
+playerSchema.index({ profileVisibility: 1, primaryGame: 1, aegisRating: -1 });
+
 export default Player;

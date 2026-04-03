@@ -54,6 +54,15 @@ const tryoutChatSchema = new mongoose.Schema(
         },
       },
     ],
+    messagesMigratedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    legacyMessageCount: {
+      type: Number,
+      default: 0,
+    },
     expiresAt: {
       type: Date,
       default: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days

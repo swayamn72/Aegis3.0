@@ -1,13 +1,15 @@
 import express from 'express';
 import Organization from '../models/organization.model.js';
 import { verifyOrgToken } from '../middleware/orgAuth.js';
+import { verifyAdminToken } from '../middleware/adminAuth.js';
 import cloudinary from '../config/cloudinary.js';
 import upload from '../config/multer.js';
+import { validateUploadedImage } from '../utils/imageValidation.js';
 
 const router = express.Router();
 
 // Get all pending organizations (for admin review)
-router.get('/pending', async (req, res) => {
+router.get('/pending', verifyAdminToken, async (req, res) => {
   try {
     // Use index and lean for performance
     const pendingOrgs = await Organization.find({ approvalStatus: 'pending' })
@@ -15,23 +17,25 @@ router.get('/pending', async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    res.json({ organizations: pendingOrgs });
+    res.success({ organizations: pendingOrgs });
   } catch (error) {
     console.error('Error fetching pending organizations:', error);
-    res.status(500).json({ message: 'Error fetching pending organizations' });
+    res.fail(500, 'Error fetching pending organizations');
   }
 });
 
 // Get current organization profile (for session check)
 router.get('/me', verifyOrgToken, async (req, res) => {
   try {
-    const org = await Organization.findById(req.organization._id).select('-password');
+    const org = await Organization.findById(req.organization._id)
+      .select('-password')
+      .lean();
     if (!org) {
-      return res.status(404).json({ message: 'Organization not found' });
+      return res.fail(404, 'Organization not found');
     }
-    res.json(org);
+    res.success(org);
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.fail(500, 'Server error');
   }
 });
 
@@ -41,14 +45,11 @@ router.get('/profile', verifyOrgToken, async (req, res) => {
     const organization = await Organization.findById(req.organization._id)
       .populate('teams', 'teamName logo');
 
-    res.json({ organization });
+    res.success({ organization });
 
   } catch (error) {
     console.error('Error fetching organization profile:', error);
-    res.status(500).json({
-      message: 'Error fetching profile',
-      error: error.message
-    });
+    res.fail(500, 'Error fetching profile', { error: error.message });
   }
 });
 
@@ -60,13 +61,10 @@ router.post(
   async (req, res) => {
     try {
       if (!req.file) {
-        return res.status(400).json({ message: 'No file uploaded' });
+        return res.fail(400, 'No file uploaded');
       }
 
-      // Basic file type validation
-      if (!req.file.mimetype.startsWith('image/')) {
-        return res.status(400).json({ message: 'Only image files are allowed' });
-      }
+      await validateUploadedImage(req.file);
 
       const organization = req.organization;
 
@@ -95,15 +93,16 @@ router.post(
         { new: true }
       );
 
-      res.status(200).json({
+      res.success({
         message: 'Logo uploaded successfully',
         logoUrl: uploadResult.secure_url
-      });
+      }, 200);
     } catch (error) {
       console.error('Logo upload error:', error);
-      res.status(500).json({
-        message: 'Error uploading logo'
-      });
+      if (error.message?.includes('image')) {
+        return res.fail(400, error.message);
+      }
+      res.fail(500, 'Error uploading logo');
     }
   }
 );

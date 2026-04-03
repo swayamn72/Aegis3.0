@@ -10,9 +10,12 @@ import helmet from "helmet";
 import compression from "compression";
 import cookieParser from "cookie-parser";
 import rateLimit from 'express-rate-limit';
-import serverless from 'serverless-http';
+import mongoose from 'mongoose';
+import { randomUUID } from 'crypto';
 
 import connectDB from './config/db.js';
+import corsOptions from './config/cors.js';
+import logger from './config/logger.js';
 import "./config/cloudinary.js";
 import './config/firebase.js';
 import initChat from './config/chat.js';
@@ -35,12 +38,13 @@ import orgTournamentRoutes from './routes/orgTournament.routes.js';
 import notificationRoutes from './routes/notification.routes.js';
 import organizationAuthRoutes from './routes/organizationAuth.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { responseHelpers } from './middleware/responseHelpers.js';
 
 const app = express();
 const httpServer = createServer(app);
 
 // Initialize Socket.io with chat configuration
-const io = initChat(httpServer);
+const io = await initChat(httpServer);
 
 // Make io available to routes
 app.set('io', io);
@@ -50,42 +54,82 @@ connectDB();
 
 // MIDDLEWARES
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' }, // allow images/assets to load cross-origin
-  contentSecurityPolicy: false, // disable CSP — the frontend manages its own CSP
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: false,
 }));
 app.use(compression());
-app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'http://localhost:3000',
-    'http://swayam-vite-site-12345.s3-website.ap-south-1.amazonaws.com',
-    'http://13.232.101.212:5173',
-    'http://13.232.101.212:5174'
-  ],
-  credentials: true
-}));
+app.use(cors(corsOptions)); // Centralized CORS — single source of truth
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
+app.use(responseHelpers);
 
-// Simple API logger
+// Request ID + structured request logging
 app.use((req, res, next) => {
-  console.log(`${req.method} ${req.url}`);
+  const requestId = req.headers['x-request-id'] || randomUUID();
+  req.requestId = requestId;
+  res.setHeader('x-request-id', requestId);
+
+  const startedAt = Date.now();
+  res.on('finish', () => {
+    const durationMs = Date.now() - startedAt;
+    logger.info('http_request', {
+      requestId,
+      method: req.method,
+      path: req.originalUrl,
+      statusCode: res.statusCode,
+      durationMs,
+      userAgent: req.headers['user-agent'],
+    });
+  });
+
   next();
 });
 
-// RATE LIMIT
+// RATE LIMIT — relaxed for production scale (per IP)
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: process.env.NODE_ENV === 'production' ? 300 : 1000, // tighter in prod, relaxed in dev
   message: 'Too many requests from this IP, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
+  handler: (req, res) => {
+    logger.warn('rate_limit_exceeded', {
+      requestId: req.requestId,
+      method: req.method,
+      path: req.originalUrl,
+      ip: req.ip,
+    });
+    res.status(429).json({
+      message: 'Too many requests from this IP, please try again later',
+      requestId: req.requestId,
+    });
+  },
 });
 
 app.use('/api/', apiLimiter);
+
+// ============================================================================
+// Health Check Endpoint — required by load balancers, monitoring, and k8s
+// ============================================================================
+app.get('/health', async (req, res) => {
+  const dbState = mongoose.connection.readyState;
+  const dbStatus = dbState === 1 ? 'connected' : dbState === 2 ? 'connecting' : 'disconnected';
+
+  const isHealthy = dbState === 1;
+
+  res.status(isHealthy ? 200 : 503).json({
+    status: isHealthy ? 'healthy' : 'unhealthy',
+    timestamp: new Date().toISOString(),
+    uptime: Math.floor(process.uptime()),
+    database: dbStatus,
+    memory: {
+      used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB',
+      total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + 'MB',
+    },
+  });
+});
 
 // ROUTES
 app.use('/api/auth', authRoutes);
@@ -113,17 +157,67 @@ app.get("/", (req, res) => {
 // Global error handler (must be last)
 app.use(errorHandler);
 
-// LAMBDA EXPORT
-export const handler = serverless(app);
+// ============================================================================
+// LAMBDA EXPORT — only loaded when running in AWS Lambda
+// ============================================================================
+let handler;
+if (process.env.AWS_EXECUTION_ENV) {
+  const serverless = (await import('serverless-http')).default;
+  handler = serverless(app);
+}
+export { handler };
 
-// LOCAL DEV ONLY
+// ============================================================================
+// LOCAL / EC2 SERVER — with graceful shutdown
+// ============================================================================
 const PORT = process.env.PORT || 5000;
 
 if (!process.env.AWS_EXECUTION_ENV) {
   const { startDecayCron } = await import('./cron/aegisDecay.js');
+
   httpServer.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`🔌 Socket.io server ready`);
+    logger.info('server_started', { port: PORT });
+    logger.info('socket_server_ready');
     startDecayCron();
   });
+
+  // =========================================================================
+  // Graceful Shutdown — cleanly close DB, sockets, and drain HTTP connections
+  // =========================================================================
+  const gracefulShutdown = async (signal) => {
+    logger.warn('graceful_shutdown_started', { signal });
+
+    // 1. Stop accepting new connections
+    httpServer.close(() => {
+      logger.info('http_server_closed');
+    });
+
+    // 2. Close Socket.IO connections
+    io.close(() => {
+      logger.info('socket_server_closed');
+    });
+
+    // 2.1 Close Redis adapter clients (if enabled)
+    if (io.redisClients) {
+      await Promise.allSettled([
+        io.redisClients.redisPubClient.quit(),
+        io.redisClients.redisSubClient.quit(),
+      ]);
+      logger.info('socket_redis_clients_closed');
+    }
+
+    // 3. Close MongoDB connection
+    try {
+      await mongoose.connection.close();
+      logger.info('mongodb_connection_closed');
+    } catch (err) {
+      logger.error('mongodb_close_error', { error: err.message });
+    }
+
+    // 4. Exit
+    process.exit(0);
+  };
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 }

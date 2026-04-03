@@ -120,7 +120,7 @@ const TournamentCard = ({ tournament, onClick }) => {
     if (tournament.participatingTeams && Array.isArray(tournament.participatingTeams)) {
       return tournament.participatingTeams.length;
     }
-    return tournament.statistics?.totalParticipatingTeams || 0;
+    return tournament.participatingTeamsCount || tournament.statistics?.totalParticipatingTeams || 0;
   };
 
   const getTotalSlots = () => {
@@ -428,7 +428,7 @@ const Tournaments = () => {
                 </span>
                 <span className="flex items-center gap-2">
                   <Users className="w-5 h-5 text-orange-400" />
-                  {featuredTournament.participatingTeams?.length || featuredTournament.statistics?.totalParticipatingTeams || 0} Teams
+                  {featuredTournament.participatingTeams?.length || featuredTournament.participatingTeamsCount || featuredTournament.statistics?.totalParticipatingTeams || 0} Teams
                 </span>
                 <span className="flex items-center gap-2">
                   <Clock className="w-5 h-5 text-orange-400" />

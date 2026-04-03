@@ -5,6 +5,12 @@ import { chatKeys } from './queryKeys';
 
 export const useChatData = (user) => {
     const enabled = !!user?._id;
+    const teamCaptainId = user?.team?.captain?._id || user?.team?.captain;
+    const isTeamCaptain = !!(
+        user?._id &&
+        teamCaptainId &&
+        teamCaptainId.toString() === user._id.toString()
+    );
 
     const { data: connections = [], refetch: refetchConnections } = useQuery({
         queryKey: chatKeys.connections(),
@@ -31,11 +37,11 @@ export const useChatData = (user) => {
     const { data: teamApplications = [], refetch: refetchApplications } = useQuery({
         queryKey: chatKeys.teamApplications(user?.team?._id),
         queryFn: async () => {
-            if (!user?.team?._id) return [];
+            if (!user?.team?._id || !isTeamCaptain) return [];
             const { data } = await axios.get(`/api/team-applications/team/${user.team._id}`);
             return data.applications || [];
         },
-        enabled: enabled && !!user?.team?._id,
+        enabled: enabled && !!user?.team?._id && isTeamCaptain,
         staleTime: 5 * 60 * 1000, // ✅ Increase to 5 minutes
         refetchOnWindowFocus: false,
     });

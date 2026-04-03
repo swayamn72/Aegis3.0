@@ -67,7 +67,7 @@ router.post('/login', adminLoginLimiter, async (req, res) => {
       httpOnly: true, // Prevent client-side JS access
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      maxAge: 60 * 60 * 1000 // 1 hour
     });
 
     res.json({

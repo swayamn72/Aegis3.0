@@ -6,7 +6,7 @@ import axiosInstance from '../utils/axiosConfig';
 import Navbar from '../components/Navbar';
 import {
     Gamepad2, Plus, Edit, Trash2, Star, AlertCircle,
-    Trophy, Calendar, Shield, X, Zap, Lock, CheckCircle
+    Trophy, Calendar, Shield, X, Lock, CheckCircle
 } from 'lucide-react';
 
 // ─── API Functions ──────────────────────────────────────────────
@@ -85,7 +85,7 @@ const GameIdModal = ({ mode, initialData, onClose, onSubmit, isLoading }) => {
                                 value={formData.inGameName}
                                 onChange={(e) => setFormData({ ...formData, inGameName: e.target.value })}
                                 className="w-full bg-zinc-900 border border-zinc-800 focus:border-[#FF4500]/50 rounded-lg px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-[#FF4500]/30 transition-all font-mono text-sm"
-                                placeholder="YourGameTag#1234"
+                                placeholder="In-Game Name"
                             />
                         </div>
 
@@ -239,9 +239,6 @@ const MyGameIdsPage = () => {
 
                 {/* ── Page Header ── */}
                 <div className="mb-10">
-                    <p className="text-xs font-bold uppercase tracking-widest text-[#FF4500] mb-2 flex items-center gap-2">
-                        <Zap className="w-3 h-3" /> IDENTITY MANAGEMENT
-                    </p>
                     <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tight text-white mb-3">
                         MY GAME IDs
                     </h1>

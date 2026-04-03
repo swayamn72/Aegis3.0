@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Users, Trophy, Calendar, MapPin, Shield,
-  Award, Star, Target, TrendingUp, Share2, MessageCircle,
+  Award, Target, TrendingUp,
   Check, Gamepad2, Briefcase, Copy, Twitter, Youtube, Instagram, Lock, Edit, UserPlus, Upload,
   Search, X, Send, Crown, AlertCircle, User, Medal, Globe, Save, ChevronDown, Loader2, Zap
 } from 'lucide-react';
@@ -79,7 +79,10 @@ const DetailedTeamInfo = () => {
   const [searching, setSearching] = useState(false);
   const [showKickConfirm, setShowKickConfirm] = useState(false);
   const [kickPlayerData, setKickPlayerData] = useState(null);
+  const [showTransferConfirm, setShowTransferConfirm] = useState(false);
+  const [transferPlayerData, setTransferPlayerData] = useState(null);
   const [brokenImages, setBrokenImages] = useState({});
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
 
   const handleImageError = (id) => {
     setBrokenImages(prev => ({ ...prev, [id]: true }));
@@ -366,6 +369,19 @@ const DetailedTeamInfo = () => {
     setShowKickConfirm(true);
   };
 
+  const handleTransferCaptain = (teamId, playerId, playerUsername) => {
+    setTransferPlayerData({ teamId, playerId, playerUsername });
+    setShowTransferConfirm(true);
+  };
+
+  const confirmTransferCaptain = () => {
+    if (!transferPlayerData) return;
+    transferCaptainMutation.mutate({
+      teamId: transferPlayerData.teamId,
+      newCaptainId: transferPlayerData.playerId,
+    });
+  };
+
   const confirmKickPlayer = () => {
     if (!kickPlayerData) return;
     kickPlayerMutation.mutate({
@@ -373,6 +389,54 @@ const DetailedTeamInfo = () => {
       playerId: kickPlayerData.playerId,
     });
   };
+
+  const leaveTeamMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`${API_URL}/api/teams/${id}/players/${user._id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to leave team');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast.success(`You have left ${teamData.teamName}`);
+      setShowLeaveConfirm(false);
+      queryClient.invalidateQueries({ queryKey: ['teamData', id] });
+      window.location.href = '/my-teams';
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to leave team');
+    },
+  });
+
+  const transferCaptainMutation = useMutation({
+    mutationFn: async ({ teamId, newCaptainId }) => {
+      const response = await fetch(`${API_URL}/api/teams/${teamId}/transfer-captain`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ newCaptainId }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to transfer captaincy');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast.success(`Captaincy transferred successfully`);
+      setShowTransferConfirm(false);
+      setTransferPlayerData(null);
+      queryClient.invalidateQueries({ queryKey: ['teamData', id] });
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to transfer captaincy');
+    },
+  });
 
   // ── Phase Status Pill ────────────────────────────────────────────────────────
   const PhaseStatusPill = ({ phaseStatus, tournamentStatus }) => {
@@ -454,18 +518,28 @@ const DetailedTeamInfo = () => {
 
         {/* Action Buttons */}
         {showActions && (
-          <div>
+          <div className="flex gap-2">
             {teamData.captain && teamData.captain._id === player._id ? (
               <span className="text-amber-400 text-xs font-medium px-3 py-1 bg-amber-500/10 rounded-lg">
                 Captain
               </span>
             ) : isCaptain && player._id !== user._id ? (
-              <button
-                onClick={() => handleKickPlayer(teamData._id, player._id, player.username)}
-                className="text-red-400 hover:text-red-300 text-xs px-3 py-1 rounded-lg hover:bg-red-500/20 transition-colors border border-red-500/30"
-              >
-                Kick
-              </button>
+              <>
+                <button
+                  onClick={() => handleTransferCaptain(teamData._id, player._id, player.username)}
+                  className="text-amber-400 hover:text-amber-300 text-xs px-2 py-1 flex items-center gap-1 rounded-lg hover:bg-amber-500/20 transition-colors border border-amber-500/30"
+                  title="Make Captain"
+                >
+                  <Crown className="w-3 h-3" />
+                  Make Capt
+                </button>
+                <button
+                  onClick={() => handleKickPlayer(teamData._id, player._id, player.username)}
+                  className="text-red-400 hover:text-red-300 text-xs px-3 py-1 rounded-lg hover:bg-red-500/20 transition-colors border border-red-500/30"
+                >
+                  Kick
+                </button>
+              </>
             ) : null}
           </div>
         )}
@@ -498,21 +572,34 @@ const DetailedTeamInfo = () => {
   );
 
   const SocialLinkCard = ({ icon: Icon, platform, value, color }) => {
-    const colorMap = {
-      indigo: { bg: 'bg-indigo-600/20', border: 'border-indigo-500/30', text: 'text-indigo-400', hover: 'hover:bg-indigo-600/30', urlPrefix: 'https://discord.gg/' },
-      pink:   { bg: 'bg-pink-600/20',   border: 'border-pink-500/30',   text: 'text-pink-400',   hover: 'hover:bg-pink-600/30', urlPrefix: 'https://instagram.com/' },
-      blue:   { bg: 'bg-blue-600/20',   border: 'border-blue-500/30',   text: 'text-blue-400',   hover: 'hover:bg-blue-600/30', urlPrefix: 'https://twitter.com/' },
-      red:    { bg: 'bg-red-600/20',    border: 'border-red-500/30',    text: 'text-red-400',    hover: 'hover:bg-red-600/30', urlPrefix: 'https://youtube.com/@' },
+    const urlPrefixMap = {
+      'Instagram': 'https://instagram.com/',
+      'Twitter': 'https://x.com/',
+      'YouTube': 'https://youtube.com/@',
+      'Discord': 'https://discord.gg/',
+      'Website': '',
     };
+
+    const colorMap = {
+      indigo: { bg: 'bg-indigo-600/10', border: 'border-indigo-500/20', text: 'text-indigo-400', hover: 'hover:bg-indigo-600/20', hoverBorder: 'hover:border-indigo-500/40' },
+      pink:   { bg: 'bg-pink-600/10',   border: 'border-pink-500/20',   text: 'text-pink-400',   hover: 'hover:bg-pink-600/20',   hoverBorder: 'hover:border-pink-500/40' },
+      blue:   { bg: 'bg-blue-600/10',   border: 'border-blue-500/20',   text: 'text-blue-400',   hover: 'hover:bg-blue-600/20',   hoverBorder: 'hover:border-blue-500/40' },
+      red:    { bg: 'bg-red-600/10',    border: 'border-red-500/20',    text: 'text-red-400',    hover: 'hover:bg-red-600/20',    hoverBorder: 'hover:border-red-500/40' },
+      emerald:{ bg: 'bg-emerald-600/10', border: 'border-emerald-500/20', text: 'text-emerald-400', hover: 'hover:bg-emerald-600/20', hoverBorder: 'hover:border-emerald-500/40' },
+      purple: { bg: 'bg-purple-600/10', border: 'border-purple-500/20', text: 'text-purple-400', hover: 'hover:bg-purple-600/20', hoverBorder: 'hover:border-purple-500/40' },
+    };
+    
     const c = colorMap[color] || colorMap.blue;
+    const cleanValue = value ? String(value).replace(/^@+/, '').trim() : '';
     
-    // Clean handle: trim leading '@'
-    const cleanValue = value ? String(value).replace(/^@+/, '') : '';
-    
-    // Construct final URL
     let finalUrl = value;
     if (value && !String(value).startsWith('http')) {
-      finalUrl = `${c.urlPrefix}${cleanValue}`;
+      if (platform === 'YouTube' && cleanValue.startsWith('UC')) {
+        finalUrl = `https://youtube.com/channel/${cleanValue}`;
+      } else {
+        const prefix = urlPrefixMap[platform] || '';
+        finalUrl = `${prefix}${cleanValue}`;
+      }
     }
 
     return (
@@ -520,18 +607,23 @@ const DetailedTeamInfo = () => {
         href={value ? finalUrl : '#'} 
         target={value ? "_blank" : "_self"} 
         rel="noopener noreferrer"
-        className={`${c.bg} border ${c.border} rounded-xl p-5 flex flex-col items-center gap-3 ${value ? c.hover : 'opacity-40 cursor-not-allowed'} transition-colors no-underline`}
+        className={`${value ? `${c.bg} ${c.border} ${c.hover} ${c.hoverBorder}` : 'bg-zinc-900/40 border-zinc-800 opacity-40 cursor-not-allowed'} border rounded-2xl p-6 flex flex-col items-center gap-4 transition-all duration-300 no-underline group shadow-lg shadow-black/10`}
         onClick={(e) => !value && e.preventDefault()}
       >
-        <Icon className={`w-8 h-8 ${c.text}`} />
-        <div className="text-center">
-          <div className="text-white font-semibold mb-1">{platform}</div>
+        <div className={`p-3 rounded-xl ${value ? `${c.bg} group-hover:scale-110` : 'bg-zinc-800'} transition-all duration-300`}>
+          <Icon className={`w-8 h-8 ${value ? c.text : 'text-zinc-600'}`} />
+        </div>
+        <div className="text-center w-full min-w-0">
+          <div className="text-white font-bold mb-1 tracking-tight">{platform}</div>
           {value ? (
-            <span className={`text-sm ${c.text} hover:underline break-all block max-w-full truncate px-2`}>
-              {value}
-            </span>
+            <div className="flex items-center justify-center gap-1.5 min-w-0">
+              <span className={`text-xs ${c.text} font-medium truncate px-1`}>
+                {value.startsWith('http') ? 'Official Site' : `@${cleanValue}`}
+              </span>
+              <ExternalLink className={`w-3 h-3 ${c.text} opacity-50 group-hover:opacity-100 transition-opacity`} />
+            </div>
           ) : (
-            <span className="text-zinc-600 text-sm">Not linked</span>
+            <span className="text-zinc-600 text-[10px] uppercase tracking-widest font-bold">Not linked</span>
           )}
         </div>
       </a>
@@ -646,6 +738,20 @@ const DetailedTeamInfo = () => {
               >
                 <UserPlus className="w-4 h-4" />
                 <span className="hidden sm:inline">Invite Player</span>
+              </button>
+            </div>
+          )}
+
+          {/* Player (Non-Captain) Actions */}
+          {!isCaptain && user && teamData && teamData.players?.some(p => p._id === user._id) && (
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowLeaveConfirm(true)}
+                className="px-4 py-2 bg-red-600/20 text-red-400 hover:bg-red-600/40 border border-red-500/30 rounded-lg transition-colors flex items-center gap-2"
+                title="Leave Team"
+              >
+                <AlertCircle className="w-4 h-4" />
+                <span className="hidden sm:inline">Leave Team</span>
               </button>
             </div>
           )}
@@ -1262,18 +1368,6 @@ const DetailedTeamInfo = () => {
 
         {/* Action Buttons Section */}
         <div className="mt-8 flex flex-wrap gap-4 justify-center">
-          <button className="bg-cyan-600 hover:bg-cyan-700 text-white font-medium px-8 py-3 rounded-lg transition-colors flex items-center gap-2">
-            <MessageCircle className="w-4 h-4" />
-            Contact Team
-          </button>
-          <button className="bg-zinc-800 hover:bg-zinc-700 text-white font-medium px-8 py-3 rounded-lg transition-colors border border-zinc-700 flex items-center gap-2">
-            <Star className="w-4 h-4" />
-            Follow Team
-          </button>
-          <button className="bg-zinc-800 hover:bg-zinc-700 text-white font-medium px-6 py-3 rounded-lg transition-colors border border-zinc-700 flex items-center gap-2">
-            <Share2 className="w-4 h-4" />
-            Share
-          </button>
           <button
             onClick={() => {
               navigator.clipboard.writeText(window.location.href);
@@ -1536,29 +1630,23 @@ const DetailedTeamInfo = () => {
         {/* Kick Player Confirmation Modal */}
         {showKickConfirm && kickPlayerData && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl max-w-md w-full">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl max-w-sm w-full animate-in fade-in zoom-in duration-200">
               <div className="p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-3">
-                    <AlertCircle className="w-6 h-6 text-red-400" />
-                    <h2 className="text-xl font-bold">Kick Player</h2>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setShowKickConfirm(false);
-                      setKickPlayerData(null);
-                    }}
-                    className="text-zinc-400 hover:text-white transition-colors"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
+                <div className="flex items-center justify-center w-12 h-12 rounded-full bg-red-500/20 mb-4 mx-auto">
+                  <AlertCircle className="w-6 h-6 text-red-500" />
                 </div>
+                
+                <h3 className="text-xl font-bold text-center mb-2">Kick {kickPlayerData.playerUsername}?</h3>
+                <p className="text-zinc-400 text-center text-sm mb-6">
+                  Are you sure you want to remove <span className="text-white font-medium">{kickPlayerData.playerUsername}</span> from the team? 
+                  They will need to be re-invited to join again.
+                </p>
 
-                <div className="space-y-4">
-                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
-                    <p className="text-red-400 text-sm">
-                      Are you sure you want to kick <span className="font-bold text-white">{kickPlayerData.playerUsername}</span> from the team?
-                      This action cannot be undone.
+                <div className="flex flex-col gap-3">
+                  <div className="bg-zinc-800/50 rounded-lg p-3 border border-zinc-700/50">
+                    <p className="text-xs text-zinc-400">
+                      <span className="text-red-400 font-medium whitespace-nowrap overflow-hidden text-clip w-full block">Warning:</span> 
+                      They will lose access to team chat and upcoming tournament registrations.
                     </p>
                   </div>
 
@@ -1586,6 +1674,105 @@ const DetailedTeamInfo = () => {
                         <>
                           <AlertCircle className="w-4 h-4" />
                           Kick Player
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Leave Team Confirmation Modal */}
+        {showLeaveConfirm && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl max-w-sm w-full animate-in fade-in zoom-in duration-200">
+              <div className="p-6">
+                <div className="flex items-center justify-center w-12 h-12 rounded-full bg-red-500/20 mb-4 mx-auto">
+                  <AlertCircle className="w-6 h-6 text-red-500" />
+                </div>
+                
+                <h3 className="text-xl font-bold text-center mb-2">Leave Team</h3>
+                <p className="text-zinc-400 text-center text-sm mb-6">
+                  Are you sure you want to leave <span className="text-white font-medium">{teamData?.teamName}</span>? 
+                  You will need an invitation to join again.
+                </p>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowLeaveConfirm(false)}
+                    className="flex-1 px-4 py-3 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => leaveTeamMutation.mutate()}
+                    disabled={leaveTeamMutation.isLoading}
+                    className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {leaveTeamMutation.isLoading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Leaving...
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="w-4 h-4" />
+                        Leave Team
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Transfer Captaincy Confirmation Modal */}
+        {showTransferConfirm && transferPlayerData && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl max-w-sm w-full animate-in fade-in zoom-in duration-200">
+              <div className="p-6">
+                <div className="flex items-center justify-center w-12 h-12 rounded-full bg-amber-500/20 mb-4 mx-auto">
+                  <Crown className="w-6 h-6 text-amber-500" />
+                </div>
+                
+                <h3 className="text-xl font-bold text-center mb-2">Transfer Captaincy?</h3>
+                <p className="text-zinc-400 text-center text-sm mb-6">
+                  Are you sure you want to make <span className="text-white font-medium">{transferPlayerData.playerUsername}</span> the new team captain? 
+                </p>
+
+                <div className="flex flex-col gap-3">
+                  <div className="bg-amber-500/10 rounded-lg p-3 border border-amber-500/30">
+                    <p className="text-xs text-amber-400">
+                      <span className="font-bold">Warning:</span> You will lose all captain privileges immediately, including the ability to edit team details, invite players, or accept matches.
+                    </p>
+                  </div>
+
+                  <div className="flex gap-3 mt-2">
+                    <button
+                      onClick={() => {
+                        setShowTransferConfirm(false);
+                        setTransferPlayerData(null);
+                      }}
+                      className="flex-1 px-4 py-3 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white rounded-lg transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={confirmTransferCaptain}
+                      disabled={transferCaptainMutation.isLoading}
+                      className="flex-1 px-4 py-3 bg-amber-600 hover:bg-amber-700 text-black font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {transferCaptainMutation.isLoading ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                          Transferring...
+                        </>
+                      ) : (
+                        <>
+                          Transfer
                         </>
                       )}
                     </button>

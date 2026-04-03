@@ -9,7 +9,8 @@ import {
     useRecruitingTeams,
     useCreateLFTPost,
     useCreateLFPPost,
-    useApproachPlayer
+    useApproachPlayer,
+    useApplyToTeam
 } from '../hooks/useRecruitment';
 import { useDebounce } from '../hooks/useDebounce';
 
@@ -66,7 +67,7 @@ const LFTPostForm = React.memo(({ onSubmit, onClose }) => {
         const postData = {
             ...formData,
             game: user?.primaryGame || '',
-            region: user?.country || 'Global'
+            region: user?.country || 'India'
         };
 
         onSubmit(postData);
@@ -165,7 +166,7 @@ const LFPPostForm = React.memo(({ onSubmit, onClose, userTeam }) => {
         const postData = {
             ...formData,
             game: userTeam?.primaryGame || '',
-            region: userTeam?.region || 'Global'
+            region: userTeam?.region || 'India'
         };
 
         onSubmit(postData);
@@ -363,7 +364,7 @@ const LFTPostCard = React.memo(({ post, onApproach }) => {
 LFTPostCard.displayName = 'LFTPostCard';
 
 // LFP Post Card Component (Team Looking For Players)
-const LFPPostCard = React.memo(({ post, onApproach }) => {
+const LFPPostCard = React.memo(({ post, onApproach, isApplying }) => {
     const navigate = useNavigate();
 
     return (
@@ -433,10 +434,11 @@ const LFPPostCard = React.memo(({ post, onApproach }) => {
                     </button>
                     <button
                         onClick={() => onApproach(post)}
-                        className="flex-1 px-4 py-2 bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2"
+                        disabled={isApplying}
+                        className="flex-1 px-4 py-2 bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 disabled:from-zinc-700 disabled:to-zinc-700 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2"
                     >
                         <Send className="w-4 h-4" />
-                        Apply
+                        {isApplying ? 'Applying...' : 'Apply'}
                     </button>
                 </div>
             </div>
@@ -551,6 +553,7 @@ const RecruitmentPage = () => {
     const createLFTPostMutation = useCreateLFTPost();
     const createLFPPostMutation = useCreateLFPPost();
     const approachPlayerMutation = useApproachPlayer();
+    const applyToTeamMutation = useApplyToTeam();
 
     // Determine loading state based on active tab
     const loading = activeTab === 'find-players' ? loadingLFTPosts : (activeTab === 'find-teams' ? (loadingTeams || loadingLFPPosts) : false);
@@ -609,6 +612,28 @@ const RecruitmentPage = () => {
         // This would need backend support to initiate tryout chat
         toast.info('Tryout initiation feature coming soon');
     }, []);
+
+    const handleApplyToTeam = useCallback((post) => {
+        if (!user) {
+            toast.error('Please login to apply');
+            return;
+        }
+
+        if (user.team) {
+            toast.error('You are already in a team');
+            return;
+        }
+
+        const userRoles = Array.isArray(user.inGameRole) ? user.inGameRole : [];
+        const openRoles = Array.isArray(post?.openRoles) ? post.openRoles : [];
+        const matchedRoles = userRoles.filter((role) => openRoles.includes(role));
+
+        applyToTeamMutation.mutate({
+            teamId: post?.team?._id,
+            message: `Hi ${post?.team?.teamName || 'Team'}, I would like to apply for your roster.`,
+            appliedRoles: matchedRoles,
+        });
+    }, [applyToTeamMutation, user]);
 
     const handleOrgFilterChange = useCallback((filterName, value) => {
         setOrgFilters(prev => ({ ...prev, [filterName]: prev[filterName] === value ? '' : value }));
@@ -715,7 +740,6 @@ const RecruitmentPage = () => {
                                     />
                                 </div>
                                 <FilterDropdown options={['VALO', 'CS2', 'BGMI']} selected={playerFilters.game} onSelect={(v) => handlePlayerFilterChange('game', v)} placeholder="All Games" icon={Gamepad2} />
-                                <FilterDropdown options={['India', 'Asia', 'Europe', 'North America', 'Global']} selected={playerFilters.region} onSelect={(v) => handlePlayerFilterChange('region', v)} placeholder="All Regions" icon={MapPin} />
                                 <FilterDropdown options={['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger']} selected={playerFilters.role} onSelect={(v) => handlePlayerFilterChange('role', v)} placeholder="All Roles" icon={User} />
                             </div>
                         </div>
@@ -799,7 +823,6 @@ const RecruitmentPage = () => {
                                     />
                                 </div>
                                 <FilterDropdown options={['VALO', 'CS2', 'BGMI']} selected={orgFilters.game} onSelect={(v) => handleOrgFilterChange('game', v)} placeholder="All Games" icon={Gamepad2} />
-                                <FilterDropdown options={['India', 'Asia', 'Europe', 'North America', 'Global']} selected={orgFilters.region} onSelect={(v) => handleOrgFilterChange('region', v)} placeholder="All Regions" icon={MapPin} />
                                 <FilterDropdown options={['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger']} selected={orgFilters.role} onSelect={(v) => handleOrgFilterChange('role', v)} placeholder="All Roles" icon={Target} />
                             </div>
                         </div>
@@ -818,15 +841,20 @@ const RecruitmentPage = () => {
                                             Teams Looking for Players
                                         </h3>
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                            {lfpPosts.map(post => (
-                                                <LFPPostCard
-                                                    key={post._id}
-                                                    post={post}
-                                                    onApproach={() => {
-                                                        toast.info('Apply feature coming soon!');
-                                                    }}
-                                                />
-                                            ))}
+                                            {lfpPosts.map((post) => {
+                                                const isApplyingThisTeam =
+                                                    applyToTeamMutation.isPending &&
+                                                    applyToTeamMutation.variables?.teamId === post.team?._id;
+
+                                                return (
+                                                    <LFPPostCard
+                                                        key={post._id}
+                                                        post={post}
+                                                        onApproach={handleApplyToTeam}
+                                                        isApplying={isApplyingThisTeam}
+                                                    />
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 )}
