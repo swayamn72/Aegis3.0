@@ -22,7 +22,7 @@ const notificationSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['match_scheduled', 'room_credentials', 'team_offer', 'tryout_ended', 'offer_accepted', 'offer_rejected', 'system', 'test'],
+      enum: ['match_scheduled', 'room_credentials', 'team_offer', 'recruitment_approach', 'team_application', 'tryout_started', 'tryout_ended', 'offer_accepted', 'offer_rejected', 'approach_rejected', 'chat_message', 'tryout_chat_message', 'system', 'test'],
       default: 'system',
     },
     data: {

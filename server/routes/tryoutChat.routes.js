@@ -15,6 +15,10 @@ import {
 const router = express.Router();
 const LIST_PREVIEW_MESSAGE_LIMIT = 30;
 
+const getMutedTryoutChatIdSet = (playerDoc) => {
+  return new Set((playerDoc?.mutedTryoutChats || []).map((id) => id.toString()));
+};
+
 const hydrateChatWithMessages = async (chat, { previewLimit = null } = {}) => {
   const mergedMessages = await fetchTryoutMessages(chat._id || chat.id, {
     includeLegacy: true,
@@ -37,6 +41,10 @@ router.get('/my-chats', auth, async (req, res) => {
   try {
     const rawLimit = parseInt(req.query.limit, 10);
     const limit = Math.min(isNaN(rawLimit) ? 20 : rawLimit, 50);
+    const currentPlayer = await Player.findById(req.user.id)
+      .select('mutedTryoutChats')
+      .lean();
+    const mutedSet = getMutedTryoutChatIdSet(currentPlayer);
 
     const chats = await TryoutChat.find({
       participants: req.user.id,
@@ -49,7 +57,13 @@ router.get('/my-chats', auth, async (req, res) => {
       .lean();
 
     const hydratedChats = await Promise.all(
-      chats.map((chat) => hydrateChatWithMessages(chat, { previewLimit: LIST_PREVIEW_MESSAGE_LIMIT }))
+      chats.map(async (chat) => {
+        const hydrated = await hydrateChatWithMessages(chat, { previewLimit: LIST_PREVIEW_MESSAGE_LIMIT });
+        return {
+          ...hydrated,
+          isMuted: mutedSet.has((chat._id || chat.id).toString()),
+        };
+      })
     );
 
     res.json({ chats: hydratedChats });
@@ -83,11 +97,62 @@ router.get('/:chatId', auth, async (req, res) => {
       return res.status(404).json({ error: 'Chat not found' });
     }
 
+    const currentPlayer = await Player.findById(req.user.id)
+      .select('mutedTryoutChats')
+      .lean();
+    const mutedSet = getMutedTryoutChatIdSet(currentPlayer);
+
     const hydratedChat = await hydrateChatWithMessages(chat);
-    res.json({ chat: hydratedChat });
+    res.json({
+      chat: {
+        ...hydratedChat,
+        isMuted: mutedSet.has(chatId.toString()),
+      },
+    });
   } catch (error) {
     console.error('Error fetching tryout chat:', error);
     res.status(500).json({ error: 'Failed to fetch chat' });
+  }
+});
+
+// PATCH /api/tryout-chats/:chatId/mute
+// Mute/unmute push notifications for a specific tryout chat for current user
+router.patch('/:chatId/mute', auth, async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const { muted = true } = req.body || {};
+
+    if (!mongoose.Types.ObjectId.isValid(chatId)) {
+      return res.status(400).json({ error: 'Invalid chat ID' });
+    }
+
+    if (typeof muted !== 'boolean') {
+      return res.status(400).json({ error: 'muted must be a boolean' });
+    }
+
+    const chat = await TryoutChat.findOne({
+      _id: chatId,
+      participants: req.user.id,
+    }).select('_id');
+
+    if (!chat) {
+      return res.status(404).json({ error: 'Tryout chat not found' });
+    }
+
+    const update = muted
+      ? { $addToSet: { mutedTryoutChats: chat._id } }
+      : { $pull: { mutedTryoutChats: chat._id } };
+
+    await Player.findByIdAndUpdate(req.user.id, update, { new: true });
+
+    res.json({
+      success: true,
+      chatId: chatId.toString(),
+      muted,
+    });
+  } catch (error) {
+    console.error('Error updating tryout mute preference:', error);
+    res.status(500).json({ error: 'Failed to update mute preference' });
   }
 });
 
@@ -450,7 +515,7 @@ router.post('/:chatId/reject-offer', auth, async (req, res) => {
     }
 
     const chat = await TryoutChat.findById(chatId)
-      .populate('team', 'teamName')
+      .populate('team', 'teamName captain')
       .populate('applicant', 'username');
 
     if (!chat) {

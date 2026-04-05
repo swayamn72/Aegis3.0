@@ -4,6 +4,7 @@ import ChatMessage from "../models/chat.model.js";
 import Player from "../models/player.model.js";
 import Tournament from "../models/tournament.model.js";
 import auth from "../middleware/auth.js";
+import notificationService from '../services/notification.service.js';
 
 const router = express.Router();
 
@@ -313,6 +314,27 @@ router.post("/send-notification", auth, async (req, res) => {
         timestamp: new Date()
       });
     }
+
+    // Respect recipient notification settings for push delivery.
+    const senderName = senderId === 'system'
+      ? 'System'
+      : (await Player.findById(req.user.id).select('username').lean())?.username || 'New message';
+
+    notificationService
+      .sendToPlayer(
+        receiverId,
+        senderName,
+        String(message || ''),
+        {
+          type: 'chat_message',
+          directUserId: senderId === 'system' ? 'system' : req.user.id,
+          senderId: senderId === 'system' ? 'system' : req.user.id,
+          senderName,
+        }
+      )
+      .catch((err) => {
+        console.error('Direct message push notification error:', err);
+      });
 
     res.json({ message: 'Notification sent successfully', chatMessage: notificationMessage });
   } catch (error) {

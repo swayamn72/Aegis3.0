@@ -3,6 +3,62 @@ import Player from '../models/player.model.js';
 import Notification from '../models/notification.model.js';
 
 class NotificationService {
+  _defaultPrefs() {
+    return {
+      enabled: true,
+      directMessages: true,
+      tryoutMessages: true,
+      eventNotifications: true,
+    };
+  }
+
+  _getPreferenceCategory(type = '') {
+    const t = String(type).toLowerCase();
+    if (t === 'chat_message') return 'directMessages';
+    if (t === 'tryout_chat_message') return 'tryoutMessages';
+    return 'eventNotifications';
+  }
+
+  _extractTryoutChatId(dataPayload = {}) {
+    const raw = dataPayload.chatId || dataPayload.tryoutChatId || null;
+    return raw ? raw.toString() : null;
+  }
+
+  _normalizeFcmData(dataPayload = {}) {
+    const output = {};
+    for (const [key, value] of Object.entries(dataPayload || {})) {
+      if (value === undefined || value === null) continue;
+      output[key] = typeof value === 'string' ? value : JSON.stringify(value);
+    }
+    return output;
+  }
+
+  _canNotifyPlayer(playerDoc, dataPayload = {}) {
+    if (!playerDoc) return false;
+
+    const prefs = {
+      ...this._defaultPrefs(),
+      ...(playerDoc.notificationPreferences || {}),
+    };
+
+    if (!prefs.enabled) return false;
+
+    const category = this._getPreferenceCategory(dataPayload.type);
+    if (prefs[category] === false) return false;
+
+    if (category === 'tryoutMessages') {
+      const chatId = this._extractTryoutChatId(dataPayload);
+      if (chatId) {
+        const mutedSet = new Set(
+          (playerDoc.mutedTryoutChats || []).map((id) => id.toString())
+        );
+        if (mutedSet.has(chatId)) return false;
+      }
+    }
+
+    return true;
+  }
+
   /**
    * Send a push notification to a specific player
    * @param {string} playerId - The MongoDB ID of the player
@@ -12,26 +68,18 @@ class NotificationService {
    */
   async sendToPlayer(playerId, title, body, dataPayload = {}) {
     try {
-      const player = await Player.findById(playerId).select('fcmToken');
-      
-      if (!player || !player.fcmToken) {
-        // Player not found or has no active FCM token
-        return { success: false, reason: 'No FCM token' };
+      const player = await Player.findById(playerId)
+        .select('fcmToken notificationPreferences mutedTryoutChats');
+
+      if (!player) {
+        return { success: false, reason: 'Player not found' };
       }
 
-      const message = {
-        notification: {
-          title,
-          body,
-        },
-        data: dataPayload,
-        token: player.fcmToken,
-      };
+      if (!this._canNotifyPlayer(player, dataPayload)) {
+        return { success: false, reason: 'Notification disabled by user preferences' };
+      }
 
-      const response = await admin.messaging().send(message);
-
-      // Persist in DB for Notification Center (fire-and-forget)
-      Notification.create({
+      await Notification.create({
         recipient: playerId,
         title,
         body,
@@ -39,10 +87,26 @@ class NotificationService {
         data: dataPayload
       }).catch(err => console.error('Notification persist error:', err));
 
+      if (!player.fcmToken) {
+        // Player not found or has no active FCM token
+        return { success: false, reason: 'No FCM token', persisted: true };
+      }
+
+      const message = {
+        notification: {
+          title,
+          body,
+        },
+        data: this._normalizeFcmData(dataPayload),
+        token: player.fcmToken,
+      };
+
+      const response = await admin.messaging().send(message);
+
       return { success: true, response };
     } catch (error) {
       console.error(`FCM send error for player ${playerId}:`, error.message);
-      
+
       // Cleanup token if it's invalid/unregistered
       if (
         error.code === 'messaging/invalid-registration-token' ||
@@ -67,16 +131,36 @@ class NotificationService {
    */
   async sendToMultiplePlayers(playerIds, title, body, dataPayload = {}) {
     try {
-      const players = await Player.find({ 
-        _id: { $in: playerIds }, 
-        fcmToken: { $exists: true, $ne: null } 
-      }).select('fcmToken');
-
-      if (!players.length) {
-        return { success: false, reason: 'No FCM tokens found' };
+      if (!Array.isArray(playerIds) || playerIds.length === 0) {
+        return { success: false, reason: 'No recipients provided' };
       }
 
-      const tokens = players.map(p => p.fcmToken);
+      const players = await Player.find({
+        _id: { $in: playerIds },
+      }).select('fcmToken notificationPreferences mutedTryoutChats');
+
+      const eligiblePlayers = players.filter((p) => this._canNotifyPlayer(p, dataPayload));
+      const eligiblePlayerIds = eligiblePlayers.map((p) => p._id.toString());
+
+      if (eligiblePlayerIds.length > 0) {
+        const notificationDocs = eligiblePlayerIds.map(id => ({
+          recipient: id,
+          title,
+          body,
+          type: dataPayload.type || 'system',
+          data: dataPayload
+        }));
+
+        Notification.insertMany(notificationDocs, { ordered: false }).catch(err => console.error('Notification batch persist error:', err));
+      }
+
+      const tokenPlayers = eligiblePlayers.filter((p) => p.fcmToken);
+
+      if (!tokenPlayers.length) {
+        return { success: false, reason: 'No eligible recipients with FCM tokens' };
+      }
+
+      const tokens = tokenPlayers.map(p => p.fcmToken);
 
       // Create chunks of 500 tokens (Firebase multicast limit)
       const chunkSize = 500;
@@ -85,27 +169,17 @@ class NotificationService {
 
       for (let i = 0; i < tokens.length; i += chunkSize) {
         const chunkTokens = tokens.slice(i, i + chunkSize);
-        const chunkPlayers = players.slice(i, i + chunkSize);
-        
+        const chunkPlayers = tokenPlayers.slice(i, i + chunkSize);
+
         const message = {
           notification: { title, body },
-          data: dataPayload,
+          data: this._normalizeFcmData(dataPayload),
           tokens: chunkTokens,
         };
 
         const response = await admin.messaging().sendEachForMulticast(message);
         totalSuccess += response.successCount;
         totalFailure += response.failureCount;
-
-        // Persist in DB for Notification Center (fire-and-forget)
-        const notificationDocs = chunkPlayers.map(p => ({
-          recipient: p._id,
-          title,
-          body,
-          type: dataPayload.type || 'system',
-          data: dataPayload
-        }));
-        Notification.insertMany(notificationDocs, { ordered: false }).catch(err => console.error('Notification batch persist error:', err));
 
         // Cleanup invalid tokens in the background
         if (response.failureCount > 0) {

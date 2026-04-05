@@ -1,12 +1,14 @@
 // Firebase Admin SDK singleton initialized in firebase.js
-import admin from './firebase.js';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import { Server } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { createClient } from 'redis';
 import Player from '../models/player.model.js';
 import TryoutChat from '../models/tryoutChat.model.js';
+import ChatMessage from '../models/chat.model.js';
 import { createTryoutMessage } from '../services/tryoutMessage.service.js';
+import notificationService from '../services/notification.service.js';
 import { allowedOrigins } from './cors.js';
 import logger from './logger.js';
 
@@ -213,6 +215,93 @@ const initChat = async (server) => {
       socket.leave(roomName);
     });
 
+    // Send direct message
+    socket.on('sendMessage', async ({ receiverId, message }) => {
+      try {
+        if (isSocketTokenExpired(socket)) {
+          rejectExpiredSocket(socket);
+          return;
+        }
+
+        const senderId = socket.userId;
+
+        if (!receiverId || !mongoose.Types.ObjectId.isValid(receiverId)) {
+          socket.emit('error', { message: 'Invalid receiverId' });
+          return;
+        }
+
+        if (receiverId.toString() === senderId.toString()) {
+          socket.emit('error', { message: 'Cannot send message to yourself' });
+          return;
+        }
+
+        const trimmedMessage = (message || '').trim();
+        if (!trimmedMessage) {
+          socket.emit('error', { message: 'Message cannot be empty' });
+          return;
+        }
+
+        const chatMessage = await ChatMessage.create({
+          senderId,
+          receiverId: receiverId.toString(),
+          message: trimmedMessage,
+          messageType: 'text',
+          timestamp: new Date(),
+        });
+
+        const payload = {
+          _id: chatMessage._id,
+          senderId,
+          receiverId: receiverId.toString(),
+          message: trimmedMessage,
+          messageType: 'text',
+          timestamp: chatMessage.timestamp,
+        };
+
+        io.to(receiverId.toString()).emit('receiveMessage', payload);
+
+        const senderSockets = io.sockets.adapter.rooms.get(senderId.toString());
+        if (senderSockets && senderSockets.size > 0) {
+          socket.to(senderId.toString()).emit('receiveMessage', payload);
+        }
+
+        const receiverSockets = io.sockets.adapter.rooms.get(receiverId.toString());
+        const receiverIsOnline = receiverSockets && receiverSockets.size > 0;
+
+        if (!receiverIsOnline) {
+          const sender = await Player.findById(senderId).select('username').lean();
+          const senderName = sender?.username || 'New message';
+
+          notificationService
+            .sendToPlayer(
+              receiverId.toString(),
+              senderName,
+              trimmedMessage,
+              {
+                type: 'chat_message',
+                directUserId: senderId.toString(),
+                senderId: senderId.toString(),
+                senderName,
+              }
+            )
+            .catch((err) => {
+              logger.error('chat_direct_push_error', {
+                senderId,
+                receiverId: receiverId.toString(),
+                error: err.message,
+              });
+            });
+        }
+      } catch (error) {
+        logger.error('socket_send_direct_message_error', {
+          socketId: socket.id,
+          userId: socket.userId,
+          error: error.message,
+        });
+        socket.emit('error', { message: 'Failed to send message' });
+      }
+    });
+
     // Send message in tryout chat
     socket.on('sendTryoutMessage', async ({ chatId, message }) => {
       try {
@@ -265,75 +354,37 @@ const initChat = async (server) => {
           message: populatedMessage
         });
 
-        // Push Notification (FCM) for all mobile recipients except sender
-        const PlayerModel = (await import('../models/player.model.js')).default;
-        const recipientIds = chat.participants.filter(p => p.toString() !== authenticatedSenderId);
+        // Push notification for participants not currently online.
+        const sender = await Player.findById(authenticatedSenderId).select('username').lean();
+        const senderName = sender?.username || 'Someone';
+        const recipientIds = chat.participants
+          .map((p) => p.toString())
+          .filter((id) => id !== authenticatedSenderId.toString())
+          .filter((id) => {
+            const sockets = io.sockets.adapter.rooms.get(id);
+            return !(sockets && sockets.size > 0);
+          });
+
         if (recipientIds.length > 0) {
-          const recipients = await PlayerModel.find({ _id: { $in: recipientIds } }).select('fcmToken username');
-          const tokens = recipients.map(r => r.fcmToken).filter(Boolean);
-          if (tokens.length > 0) {
-            const sender = await PlayerModel.findById(authenticatedSenderId).select('username');
-            const senderName = sender ? sender.username : 'Someone';
-            try {
-              const response = await admin.messaging().sendEachForMulticast({
-                notification: {
-                  title: 'New Chat Message',
-                  body: `${senderName}: ${trimmedMessage}`
-                },
-                data: {
-                  type: 'chat_message',
-                  chatId: chatId.toString(),
-                  senderId: authenticatedSenderId.toString(),
-                  senderName: senderName,
-                  message: trimmedMessage,
-                  timestamp: new Date().toISOString()
-                },
-                android: {
-                  priority: 'high',
-                  notification: {
-                    channelId: 'high_importance_channel',
-                    priority: 'high',
-                    sound: 'default',
-                    defaultVibrateTimings: true
-                  }
-                },
-                apns: {
-                  payload: {
-                    aps: {
-                      contentAvailable: true,
-                      sound: 'default'
-                    }
-                  },
-                  headers: {
-                    'apns-priority': '10'
-                  }
-                },
-                tokens
-              });
-
-              // Clean up invalid tokens
-              if (response.failureCount > 0) {
-                response.responses.forEach((resp, idx) => {
-                  if (!resp.success &&
-                    (resp.error?.code === 'messaging/invalid-registration-token' ||
-                      resp.error?.code === 'messaging/registration-token-not-registered')) {
-                    // Remove invalid token from database
-                    PlayerModel.updateOne(
-                      { fcmToken: tokens[idx] },
-                      { $unset: { fcmToken: '' } }
-                    ).catch(() => { });
-                  }
-                });
+          notificationService
+            .sendToMultiplePlayers(
+              recipientIds,
+              `${senderName} in tryout chat`,
+              trimmedMessage,
+              {
+                type: 'tryout_chat_message',
+                chatId: chatId.toString(),
+                senderId: authenticatedSenderId.toString(),
+                senderName,
               }
-
-            } catch (err) {
-              logger.error('chat_fcm_send_error', {
+            )
+            .catch((err) => {
+              logger.error('chat_tryout_push_error', {
                 chatId,
                 userId: authenticatedSenderId,
                 error: err.message,
               });
-            }
-          }
+            });
         }
 
       } catch (error) {

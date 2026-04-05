@@ -106,6 +106,7 @@ const ProfileDropdown = ({ user, logout }) => {
                     setIsOpen(false);
                     if (item.isLogout) {
                       logout();
+                      navigate('/login');
                     } else if (item.href && item.href !== '#') {
                       navigate(item.href);
                     }

@@ -5,6 +5,13 @@ import auth from '../middleware/auth.js';
 
 const router = express.Router();
 
+const defaultPreferences = {
+    enabled: true,
+    directMessages: true,
+    tryoutMessages: true,
+    eventNotifications: true,
+};
+
 // POST /api/notifications/update-fcm-token
 router.post('/update-fcm-token', auth, async (req, res) => {
     try {
@@ -32,28 +39,111 @@ router.post('/update-fcm-token', auth, async (req, res) => {
     }
 });
 
+// GET /api/notifications/settings
+// Fetch notification preferences + muted tryout chat ids
+router.get('/settings', auth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const player = await Player.findById(userId)
+            .select('notificationPreferences mutedTryoutChats')
+            .lean();
+
+        if (!player) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const preferences = {
+            ...defaultPreferences,
+            ...(player.notificationPreferences || {}),
+        };
+
+        res.json({
+            preferences,
+            mutedTryoutChats: (player.mutedTryoutChats || []).map((id) => id.toString()),
+        });
+    } catch (error) {
+        console.error('Error fetching notification settings:', error);
+        res.status(500).json({ error: 'Failed to fetch notification settings' });
+    }
+});
+
+// PATCH /api/notifications/settings
+// Update notification preferences toggles
+router.patch('/settings', auth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const payload = req.body || {};
+        const keys = ['enabled', 'directMessages', 'tryoutMessages', 'eventNotifications'];
+        const updates = {};
+
+        for (const key of keys) {
+            if (payload[key] !== undefined) {
+                if (typeof payload[key] !== 'boolean') {
+                    return res.status(400).json({ error: `${key} must be a boolean` });
+                }
+                updates[`notificationPreferences.${key}`] = payload[key];
+            }
+        }
+
+        if (Object.keys(updates).length === 0) {
+            return res.status(400).json({ error: 'No valid preference fields provided' });
+        }
+
+        const player = await Player.findByIdAndUpdate(
+            userId,
+            { $set: updates },
+            { new: true }
+        )
+            .select('notificationPreferences mutedTryoutChats')
+            .lean();
+
+        if (!player) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        res.json({
+            success: true,
+            preferences: {
+                ...defaultPreferences,
+                ...(player.notificationPreferences || {}),
+            },
+            mutedTryoutChats: (player.mutedTryoutChats || []).map((id) => id.toString()),
+        });
+    } catch (error) {
+        console.error('Error updating notification settings:', error);
+        res.status(500).json({ error: 'Failed to update notification settings' });
+    }
+});
+
 // GET /api/notifications
 // Fetch paginated notification history for the logged-in player
 router.get('/', auth, async (req, res) => {
     try {
-        const { limit = 20, offset = 0 } = req.query;
+        const limit = Math.max(1, parseInt(req.query.limit, 10) || 20);
+        const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+        const hasOffset = req.query.offset !== undefined;
+        const offset = hasOffset
+            ? Math.max(0, parseInt(req.query.offset, 10) || 0)
+            : (page - 1) * limit;
         const userId = req.user.id;
 
         const notifications = await Notification.find({ recipient: userId })
             .sort({ createdAt: -1 })
-            .skip(parseInt(offset))
-            .limit(parseInt(limit))
+            .skip(offset)
+            .limit(limit)
             .lean();
 
         const total = await Notification.countDocuments({ recipient: userId });
+        const hasMore = (offset + limit) < total;
 
         res.json({
             notifications,
             pagination: {
                 total,
-                limit: parseInt(limit),
-                offset: parseInt(offset),
-                hasMore: (parseInt(offset) + parseInt(limit)) < total
+                limit,
+                offset,
+                page: Math.floor(offset / limit) + 1,
+                hasMore
             }
         });
     } catch (error) {
@@ -128,7 +218,7 @@ router.post('/test-notification', auth, async (req, res) => {
         let data = { type: type || 'test' };
 
         // Mock IDs for testing deep linking
-        const mockId = '65f1a2b3c4d5e6f7a8b9c0d1'; 
+        const mockId = '65f1a2b3c4d5e6f7a8b9c0d1';
 
         switch (type) {
             case 'match_scheduled':

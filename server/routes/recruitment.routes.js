@@ -9,6 +9,7 @@ import ChatMessage from '../models/chat.model.js';
 import auth from '../middleware/auth.js';
 import mongoose from 'mongoose';
 import { createTryoutMessage, fetchTryoutMessages } from '../services/tryoutMessage.service.js';
+import notificationService from '../services/notification.service.js';
 
 const router = express.Router();
 
@@ -218,6 +219,23 @@ router.post('/approach-player/:playerId', auth, async (req, res) => {
       });
     }
 
+    notificationService
+      .sendToPlayer(
+        String(targetPlayer._id),
+        'New Recruitment Approach',
+        `${team.teamName} wants to recruit you.`,
+        {
+          type: 'recruitment_approach',
+          directUserId: 'system',
+          approachId: String(approachDoc._id),
+          teamId: String(team._id),
+          teamName: team.teamName,
+        }
+      )
+      .catch((err) => {
+        console.error('Recruitment approach notification error:', err);
+      });
+
     // Minimal response
     await approachDoc.populate('team', 'teamName logo');
     res.status(201).json({ message: 'Approach request sent successfully', approach: approachDoc });
@@ -330,7 +348,7 @@ const ALLOWED_GAMES = ['VALO', 'CS2', 'BGMI']; // Strictly matching model enums
 const ALLOWED_REGIONS = ['India', 'Asia', 'Europe', 'North America', 'Global']; // Strictly matching model enums
 const ALLOWED_ROLES = ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger']; // Matching model enums
 
-const normalizeRegion = (input, fallback = 'Global') => {
+const normalizeRegion = (input, fallback = 'India') => {
   const raw = String(input || '').trim();
   if (!raw) return fallback;
 
@@ -380,13 +398,21 @@ router.post('/lft-posts', auth, async (req, res) => {
     }
 
     // Optional: check player exists (should always, but defensive)
-    const player = await Player.findById(req.user.id).select('_id username profilePicture aegisRating verified');
+    const player = await Player.findById(req.user.id).select('_id username profilePicture aegisRating verified team teamStatus country');
     if (!player) {
       return res.status(400).json({ error: 'Player profile not found' });
     }
 
+    const hasTeamRef = Boolean(player.team);
+    const isMarkedInTeam = String(player.teamStatus || '').toLowerCase() === 'in a team';
+    if (hasTeamRef || isMarkedInTeam) {
+      return res.status(400).json({
+        error: 'You are already in a team. Leave your current team before posting LFT.'
+      });
+    }
+
     // Region is always derived server-side to avoid client-side invalid values.
-    const postRegion = normalizeRegion(player.country, 'Global');
+    const postRegion = normalizeRegion(player.country, 'India');
 
     // Prevent duplicates - prefer DB unique partial index but attempt transactional guard
     // If you don't have replica set, session may be null, fall back to simpler check + error handling
@@ -531,6 +557,26 @@ router.post('/approach/:approachId/accept', auth, async (req, res) => {
       messages: await fetchTryoutMessages(tryoutChat._id),
     };
 
+    const captainId = team?.captain?._id?.toString() || team?.captain?.toString();
+    if (captainId) {
+      notificationService
+        .sendToPlayer(
+          captainId,
+          'Tryout Chat Created',
+          `${approach.player.username} accepted your approach. Tryout chat is now active.`,
+          {
+            type: 'tryout_started',
+            chatId: String(tryoutChat._id),
+            approachId: String(approach._id),
+            playerId: String(approach.player._id),
+            playerName: approach.player.username,
+          }
+        )
+        .catch((err) => {
+          console.error('Approach accept notification error:', err);
+        });
+    }
+
     res.json({
       message: 'Approach accepted and tryout chat created',
       tryoutChat: hydratedTryoutChat
@@ -570,6 +616,29 @@ router.post('/approach/:approachId/reject', auth, async (req, res) => {
       { 'metadata.approachId': new mongoose.Types.ObjectId(approachId) },
       { $set: { 'metadata.approachStatus': 'rejected' } }
     );
+
+    await approach.populate('team', 'captain teamName').populate('player', 'username');
+
+    const captainId = approach?.team?.captain?.toString();
+    if (captainId) {
+      notificationService
+        .sendToPlayer(
+          captainId,
+          'Approach Rejected',
+          `${approach.player?.username || 'The player'} declined your recruitment approach.`,
+          {
+            type: 'approach_rejected',
+            approachId: String(approach._id),
+            playerId: String(approach.player?._id || ''),
+            teamId: String(approach.team?._id || ''),
+            teamName: approach.team?.teamName,
+            directUserId: 'system',
+          }
+        )
+        .catch((err) => {
+          console.error('Approach reject notification error:', err);
+        });
+    }
 
     res.json({ message: 'Approach rejected' });
   } catch (error) {
@@ -701,7 +770,7 @@ router.post('/lfp-posts', auth, async (req, res) => {
 
     // Determine game and region
     const postGame = game || player.team.primaryGame;
-    const postRegion = normalizeRegion(player.team.region, 'Global');
+    const postRegion = normalizeRegion(player.team.region, 'India');
 
     // Validate inputs
     if (!desc) {

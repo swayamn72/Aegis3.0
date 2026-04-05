@@ -148,6 +148,18 @@ const playerSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    notificationPreferences: {
+      enabled: { type: Boolean, default: true },
+      directMessages: { type: Boolean, default: true },
+      tryoutMessages: { type: Boolean, default: true },
+      eventNotifications: { type: Boolean, default: true },
+    },
+    mutedTryoutChats: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'TryoutChat',
+      },
+    ],
     primaryGame: {
       type: String,
       enum: ['BGMI', 'VALO', 'CS2'],

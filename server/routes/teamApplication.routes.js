@@ -8,6 +8,7 @@ import Player from '../models/player.model.js';
 import auth from '../middleware/auth.js';
 import { deactivateLFTPost, deactivateLFPPost } from '../utils/recruitmentHelpers.js';
 import { createTryoutMessage, fetchTryoutMessages } from '../services/tryoutMessage.service.js';
+import notificationService from '../services/notification.service.js';
 
 
 const router = express.Router();
@@ -200,6 +201,25 @@ router.post('/apply', auth, async (req, res) => {
         .populate('team', 'teamName teamTag logo')
         .populate('player', 'username profilePicture inGameRole');
 
+      notificationService
+        .sendToPlayer(
+          team.captain.toString(),
+          'Application Updated',
+          `${player.username} has re-submitted an application to your team.`,
+          {
+            type: 'team_application',
+            applicationId: String(existingApplication._id),
+            teamId: String(team._id),
+            teamName: team.teamName,
+            playerId: String(player._id),
+            playerName: player.username,
+            directUserId: 'system',
+          }
+        )
+        .catch((err) => {
+          console.error('Team application resubmit notification error:', err);
+        });
+
       return res.json({
         message: 'Application submitted successfully',
         application: updatedApplication,
@@ -217,6 +237,25 @@ router.post('/apply', auth, async (req, res) => {
     const populatedApplication = await TeamApplication.findById(application._id)
       .populate('team', 'teamName teamTag logo')
       .populate('player', 'username profilePicture inGameRole');
+
+    notificationService
+      .sendToPlayer(
+        team.captain.toString(),
+        'New Team Application',
+        `${player.username} approached your team and submitted an application.`,
+        {
+          type: 'team_application',
+          applicationId: String(application._id),
+          teamId: String(team._id),
+          teamName: team.teamName,
+          playerId: String(player._id),
+          playerName: player.username,
+          directUserId: 'system',
+        }
+      )
+      .catch((err) => {
+        console.error('Team application notification error:', err);
+      });
 
     return res.status(201).json({
       message: 'Application submitted successfully',
@@ -350,6 +389,23 @@ router.post('/:applicationId/start-tryout', auth, async (req, res) => {
       messages: await fetchTryoutMessages(tryoutChat._id),
     };
 
+    notificationService
+      .sendToPlayer(
+        application.player._id.toString(),
+        'Tryout Started',
+        `${application.team.teamName} started your tryout chat.`,
+        {
+          type: 'tryout_started',
+          chatId: String(tryoutChat._id),
+          applicationId: String(application._id),
+          teamId: String(application.team._id),
+          teamName: application.team.teamName,
+        }
+      )
+      .catch((err) => {
+        console.error('Tryout start notification error:', err);
+      });
+
     res.json({
       message: 'Tryout started successfully',
       application,
@@ -445,6 +501,24 @@ router.post('/:applicationId/accept', auth, async (req, res) => {
       await deactivateLFPPost(application.team._id);
     }
 
+    notificationService
+      .sendToPlayer(
+        application.player._id.toString(),
+        'Application Accepted',
+        'Your application has been accepted. Welcome to the team!',
+        {
+          type: 'offer_accepted',
+          applicationId: String(application._id),
+          chatId: application.tryoutChatId
+            ? String(application.tryoutChatId)
+            : undefined,
+          teamId: String(application.team._id),
+        }
+      )
+      .catch((err) => {
+        console.error('Application accept notification error:', err);
+      });
+
 
     res.json({
       message: 'Player accepted successfully',
@@ -507,6 +581,25 @@ router.post('/:applicationId/reject', auth, async (req, res) => {
         timestamp: new Date(),
       });
     }
+
+    notificationService
+      .sendToPlayer(
+        application.player._id.toString(),
+        'Application Rejected',
+        'Your application was not selected by this team.',
+        {
+          type: 'offer_rejected',
+          applicationId: String(application._id),
+          chatId: application.tryoutChatId
+            ? String(application.tryoutChatId)
+            : undefined,
+          teamId: String(application.team._id),
+          reason: reason || '',
+        }
+      )
+      .catch((err) => {
+        console.error('Application reject notification error:', err);
+      });
 
     res.json({
       message: 'Application rejected',

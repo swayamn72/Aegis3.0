@@ -103,7 +103,7 @@ router.get("/me", auth, async (req, res) => {
       .select(
         [
           // User fields
-          "_id", "realName", "age", "location", "bio", "languages", "profilePicture", "gameIds", "earnings", "inGameRole", "teamStatus", "availability", "discordTag", "instagram", "youtube", "twitter", "profileVisibility", "cardTheme", "username", "country", "aegisRating", "aegisRatingPeak", "aegisMatchesRated", "aegisIsProvisional", "sChampionships", "aChampionships", "sTopThree", "verified", "createdAt", "previousTeams", "team", "primaryGame", "tournamentsPlayed", "matchesPlayed", "statistics"
+          "_id", "realName", "age", "location", "bio", "languages", "profilePicture", "gameIds", "earnings", "inGameRole", "teamStatus", "availability", "discordTag", "instagram", "youtube", "twitter", "profileVisibility", "cardTheme", "username", "country", "aegisRating", "aegisRatingPeak", "aegisMatchesRated", "aegisIsProvisional", "sChampionships", "aChampionships", "sTopThree", "verified", "createdAt", "previousTeams", "team", "primaryGame", "tournamentsPlayed", "matchesPlayed", "statistics", "notificationPreferences", "mutedTryoutChats"
         ].join(" ")
       )
       .populate({
@@ -416,7 +416,7 @@ router.get('/dashboard-data', auth, async (req, res) => {
       recentMatches = matches.map(match => {
         const teamIdStrings = new Set(teamIds.map(id => id.toString()));
         const playerTeam = match.results?.find(t => t.team && teamIdStrings.has(t.team._id.toString()));
-        
+
         let score = 'VS';
         if (playerTeam?.finalPosition === 1) score = 'Won #1';
         else if (playerTeam) score = `${playerTeam.kills?.total || 0} Kills`;
@@ -431,9 +431,9 @@ router.get('/dashboard-data', auth, async (req, res) => {
           points: {
             kills: playerTeam?.points?.killPoints || playerTeam?.kills?.total || 0,
             position: playerTeam?.points?.placementPoints || 0,
-            total: playerTeam?.points?.totalPoints || 
-                   ((playerTeam?.points?.killPoints || playerTeam?.kills?.total || 0) + 
-                   (playerTeam?.points?.placementPoints || 0))
+            total: playerTeam?.points?.totalPoints ||
+              ((playerTeam?.points?.killPoints || playerTeam?.kills?.total || 0) +
+                (playerTeam?.points?.placementPoints || 0))
           },
           finalPosition: playerTeam?.finalPosition || null,
           isWin: playerTeam?.finalPosition === 1

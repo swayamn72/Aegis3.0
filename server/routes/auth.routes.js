@@ -32,6 +32,39 @@ const router = express.Router();
 // Initialize Google OAuth client
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
+const GOOGLE_ALLOWED_CLIENT_IDS = [
+  process.env.GOOGLE_CLIENT_ID,
+  ...(process.env.GOOGLE_ALLOWED_CLIENT_IDS || '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean),
+].filter(Boolean);
+
+async function verifyGoogleIdToken(idToken) {
+  if (!idToken) {
+    throw new Error('Missing idToken');
+  }
+
+  const audiences = GOOGLE_ALLOWED_CLIENT_IDS.length
+    ? GOOGLE_ALLOWED_CLIENT_IDS
+    : [undefined];
+
+  let lastError;
+  for (const audience of audiences) {
+    try {
+      const ticket = await client.verifyIdToken({
+        idToken,
+        ...(audience ? { audience } : {}),
+      });
+      return ticket.getPayload();
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error('Failed to verify Google ID token');
+}
+
 // Strict rate limiter for auth endpoints (login/signup)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -180,43 +213,52 @@ router.post('/login', authLimiter, validateLogin, asyncHandler(async (req, res) 
 // ==========================
 router.post('/google', authLimiter, async (req, res) => {
   try {
-    const { credential, role = 'player' } = req.body;
+    const { credential, idToken, accessToken, role = 'player' } = req.body;
+    const effectiveIdToken = idToken || credential;
+    const effectiveAccessToken = accessToken || (!idToken ? credential : null);
 
-    if (!credential) {
-      return res.status(400).json({ message: "Google credential is required" });
+    if (!effectiveIdToken && !effectiveAccessToken) {
+      return res.status(400).json({ message: "Google token is required" });
     }
 
     let googleId, email, name, picture;
 
-    // ALWAYS verify server-side — supports both idToken and access_token
-    // Path 1: Try as idToken (from GoogleLogin component on web)
-    // Path 2: Fall back to access_token verification via Google API (from useGoogleLogin / Flutter)
+    // Verify server-side.
+    // Path 1: ID token verification with one of the allowed client IDs.
+    // Path 2: Access token lookup via Google UserInfo endpoint.
     try {
-      const ticket = await client.verifyIdToken({
-        idToken: credential,
-        audience: process.env.GOOGLE_CLIENT_ID,
-      });
-      const payload = ticket.getPayload();
+      const payload = await verifyGoogleIdToken(effectiveIdToken);
       googleId = payload.sub;
       email = payload.email;
       name = payload.name;
       picture = payload.picture;
     } catch (idTokenError) {
-      // Not a valid idToken — try as access_token
+      console.log('idToken verification failed, trying access_token path:', idTokenError.message);
+
+      if (!effectiveAccessToken) {
+        return res.status(401).json({
+          message: "Invalid Google idToken",
+          error: idTokenError.message,
+        });
+      }
+
       try {
         const { default: fetch } = await import('node-fetch');
         const userInfoResponse = await fetch(
           'https://www.googleapis.com/oauth2/v3/userinfo',
-          { headers: { Authorization: `Bearer ${credential}` } }
+          { headers: { Authorization: `Bearer ${effectiveAccessToken}` } }
         );
 
         if (!userInfoResponse.ok) {
-          return res.status(401).json({ message: "Invalid Google credential" });
+          const errorText = await userInfoResponse.text();
+          console.error('Google UserInfo API failed:', userInfoResponse.status, errorText);
+          return res.status(401).json({ message: "Invalid Google credential", details: errorText });
         }
 
         const payload = await userInfoResponse.json();
 
         if (!payload.sub || !payload.email) {
+          console.error('Google UserInfo response missing sub/email:', payload);
           return res.status(401).json({ message: "Invalid Google credential — missing user info" });
         }
 
@@ -225,8 +267,8 @@ router.post('/google', authLimiter, async (req, res) => {
         name = payload.name;
         picture = payload.picture;
       } catch (accessTokenError) {
-        console.error('Google verification failed:', accessTokenError.message);
-        return res.status(401).json({ message: "Invalid Google credential" });
+        console.error('Google verification failed (Access Token Path):', accessTokenError.message);
+        return res.status(401).json({ message: "Invalid Google credential", error: accessTokenError.message });
       }
     }
 
@@ -951,7 +993,7 @@ router.post('/complete-org-profile', verifyOrgToken, asyncHandler(async (req, re
     } = req.body;
 
     const org = await Organization.findById(req.organization._id);
-    
+
     if (!org) {
       return res.status(404).json({ message: "Organization not found" });
     }
@@ -975,7 +1017,7 @@ router.post('/complete-org-profile', verifyOrgToken, asyncHandler(async (req, re
     org.headquarters = headquarters || '';
     org.description = description || '';
     org.contactPhone = contactPhone || '';
-    
+
     if (!org.orgSocial) org.orgSocial = {};
     if (!org.ownerSocial) org.ownerSocial = {};
 

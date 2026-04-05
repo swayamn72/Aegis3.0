@@ -65,7 +65,7 @@ export const useCreateLFTPost = () => {
         },
         onError: (error) => {
             console.error('Error creating LFT post:', error);
-            toast.error(error.error || 'Failed to create LFT post');
+            toast.error(error?.error || error?.message || 'Failed to create LFT post');
         },
     });
 };
