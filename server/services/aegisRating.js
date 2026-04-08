@@ -22,6 +22,16 @@ const PEAK_WEIGHT = { S: 1.00, A: 0.90, B: 0.75, C: 0.55, Community: 0.00 };
 
 const TIER_BASE_RATING = { S: 3000, A: 2200, B: 1600, C: 1200, Community: 1000 };
 
+// Codeforces-like volatility tuning by tournament tier.
+const K_TIER_CF = { S: 56, A: 48, B: 42, C: 36, Community: 30 };
+const VOLATILITY_TIER = { S: 1.45, A: 1.25, B: 1.10, C: 1.00, Community: 0.90 };
+const TOURNAMENT_GAIN_CAP_BASE = { S: 240, A: 180, B: 135, C: 100, Community: 75 };
+const TOURNAMENT_LOSS_CAP_BASE = { S: 140, A: 120, B: 100, C: 80, Community: 60 };
+const MATCH_GAIN_CAP_BASE = { S: 70, A: 55, B: 45, C: 35, Community: 28 };
+const MATCH_LOSS_CAP_BASE = { S: 45, A: 38, B: 32, C: 26, Community: 22 };
+
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
 // ============================================================================
 // HELPER — Phase Multiplier (structural position)
 // ============================================================================
@@ -140,11 +150,15 @@ export async function calculateAegisRatingDelta(matchDoc, tournamentDoc, cumulat
   }
   const avgFieldRating = fieldPlayerCount > 0 ? fieldRatingSum / fieldPlayerCount : 1000;
 
-  // --- Per-match cap values ---
-  const maxGainPerMatch = 25 * TW;
-  const maxLossPerMatch = 15 * TW;
-  const maxTournGain = 150 * TW;
-  const maxTournLoss = 80 * TW;
+  // --- Tier + importance scaled caps (phase-aware, supports ~+250 exceptional S-tier runs) ---
+  const phaseCapFactor = 0.80 + (0.20 * phaseMultiplier);
+  const importanceFactor = 0.70 + (0.30 * (importanceScore / 100));
+  const capScale = phaseCapFactor * importanceFactor;
+
+  const maxGainPerMatch = Math.round((MATCH_GAIN_CAP_BASE[tier] || 28) * capScale);
+  const maxLossPerMatch = Math.round((MATCH_LOSS_CAP_BASE[tier] || 22) * capScale);
+  const maxTournGain = Math.round((TOURNAMENT_GAIN_CAP_BASE[tier] || 75) * capScale);
+  const maxTournLoss = Math.round((TOURNAMENT_LOSS_CAP_BASE[tier] || 60) * capScale);
 
   // --- Compute deltas ---
   const playerOps = [];      // bulkWrite ops for Player
@@ -186,12 +200,20 @@ export async function calculateAegisRatingDelta(matchDoc, tournamentDoc, cumulat
         KExp = player.aegisMatchesRated < 20 ? 1.5 : 1.0;
       }
 
-      const KRating = effectiveRating >= 3000 ? 0.85 : effectiveRating >= 2000 ? 0.95 : 1.0;
-      const KTier = K_TIER[tier] || 20;
-      const K = KTier * KExp * KRating;
+      const KRating = effectiveRating >= 3200 ? 0.82 : effectiveRating >= 2500 ? 0.92 : 1.0;
+      const KTier = K_TIER_CF[tier] || K_TIER[tier] || 20;
+      const tierVolatility = VOLATILITY_TIER[tier] || 1.0;
+      const K = KTier * KExp * KRating * tierVolatility;
 
-      const ExpectedMPS = 0.5 - 0.002 * ((avgFieldRating - effectiveRating) / 100);
-      let delta = K * TW * (MPS - ExpectedMPS);
+      // Codeforces-style expectation curve based on field vs player effective rating.
+      const expectedScore = 1 / (1 + Math.pow(10, (avgFieldRating - effectiveRating) / 400));
+
+      // Performance score with a controlled upset bonus when popping off in stronger fields.
+      const performanceBoost = clamp((MPS - 0.70) * 0.50, 0, 0.20);
+      const strongerFieldBoost = clamp((avgFieldRating - effectiveRating) / 1200, 0, 0.20);
+      const actualScore = clamp(MPS + performanceBoost + strongerFieldBoost, 0, 1);
+
+      let delta = K * TW * (actualScore - expectedScore);
       let cappedReason = null;
 
       // --- Per-match cap ---

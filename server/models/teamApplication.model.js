@@ -42,6 +42,7 @@ const teamApplicationSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    rejectedAt: Date,
     // When tryout started and ended
     tryoutStartedAt: Date,
     tryoutEndedAt: Date,

@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 import { useQuery } from '@tanstack/react-query';
-import { 
-  Trophy, Users, Activity, TrendingUp, Target, 
-  MapPin, Shield, Zap, Search, Bell, Flame, 
-  ChevronRight, Gamepad2, Star, Clock 
+import {
+  Trophy, Users, Activity, TrendingUp, Target,
+  MapPin, Shield, Zap, Search, Bell, Flame,
+  ChevronRight, Gamepad2, Star, Clock, Calendar, Coins
 } from 'lucide-react';
 
 // Import map assets for backgrounds
@@ -59,7 +59,7 @@ const SectionHeader = ({ title, icon: Icon, color, actionLabel, onAction }) => (
       <h2 className="text-sm font-black uppercase tracking-[0.2em] text-zinc-300">{title}</h2>
     </div>
     {actionLabel && (
-      <button 
+      <button
         onClick={onAction}
         className="text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-white transition-colors flex items-center gap-1.5 group"
       >
@@ -94,12 +94,12 @@ const DashboardSkeleton = () => (
 const LoggedInHomepage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  
-  const { 
-    data: dashboard, 
-    isLoading, 
+
+  const {
+    data: dashboard,
+    isLoading,
     refetch,
-    isFetching 
+    isFetching
   } = useQuery({
     queryKey: ['dashboard', user?.id],
     queryFn: async () => {
@@ -124,7 +124,7 @@ const LoggedInHomepage = () => {
 
   return (
     <div className="min-h-screen bg-black text-white font-[Inter] pt-[110px] pb-16 relative overflow-hidden">
-      
+
       {/* Background Ambience */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-[#FF4500]/[0.03] blur-[150px] rounded-full"></div>
@@ -133,7 +133,7 @@ const LoggedInHomepage = () => {
       </div>
 
       <div className="relative z-10 max-w-[1400px] mx-auto px-6">
-        
+
         {/* Welcome & Top Notifications */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
           <div>
@@ -158,44 +158,44 @@ const LoggedInHomepage = () => {
 
         {/* Global Hub Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-          <StatCard 
-            label="Aegis Rating" 
-            value={player?.aegisRating || 1200} 
-            icon={TrendingUp} 
-            color="text-[#FF4500]" 
+          <StatCard
+            label="Aegis Rating"
+            value={player?.aegisRating || 1200}
+            icon={TrendingUp}
+            color="text-[#FF4500]"
           />
-          <StatCard 
-            label="Primary Team" 
-            value={playerTeams[0]?.teamName || 'No Team'} 
-            icon={Users} 
-            color="text-cyan-400" 
+          <StatCard
+            label="Primary Team"
+            value={playerTeams[0]?.teamName || 'No Team'}
+            icon={Users}
+            color="text-cyan-400"
           />
-          <StatCard 
-            label="Tournaments Played" 
-            value={stats.activeTournaments} 
-            icon={Trophy} 
-            color="text-purple-400" 
+          <StatCard
+            label="Tournaments Played"
+            value={stats.activeTournaments}
+            icon={Trophy}
+            color="text-purple-400"
           />
-           <StatCard 
-            label="Win Rate" 
-            value={`${player?.statistics?.winRate || 0}%`} 
-            icon={Flame} 
-            color="text-green-400" 
+          <StatCard
+            label="Win Rate"
+            value={`${player?.statistics?.winRate || 0}%`}
+            icon={Flame}
+            color="text-green-400"
           />
         </div>
 
         {/* Main Dashboard Interaction */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
+
           {/* LEFT: Rating & Performance (4 Cols) */}
           <div className="lg:col-span-4 space-y-8">
-            
+
             {/* Aegis Rating Card - THE HERO PIECE */}
             <div className={`relative rounded-3xl p-8 border ${ratingInfo.border} ${ratingInfo.bg} overflow-hidden group`}>
               <div className="absolute top-0 right-0 p-8 opacity-20 group-hover:scale-110 transition-transform duration-500">
                 <img src={ratingInfo.badge} alt="Tier" className="w-32 h-32 blur-[2px]" />
               </div>
-              
+
               <div className="relative z-10">
                 <div className="flex items-center gap-3 mb-6">
                   <img src={ratingInfo.badge} alt="Badge" className="w-12 h-12 drop-shadow-[0_0_15px_rgba(255,69,0,0.5)]" />
@@ -212,7 +212,7 @@ const LoggedInHomepage = () => {
                   </div>
                   {/* Tier Progress Bar */}
                   <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden border border-white/5">
-                    <div 
+                    <div
                       className={`h-full bg-gradient-to-r from-transparent to-white/60 transition-all duration-1000`}
                       style={{ width: `${Math.min(((player?.aegisRating || 0) % 500) / 5, 100)}%` }}
                     ></div>
@@ -255,7 +255,7 @@ const LoggedInHomepage = () => {
                     </div>
                   </div>
                 )) : (
-                   <p className="text-center py-8 text-zinc-700 text-xs italic">No rating events detected.</p>
+                  <p className="text-center py-8 text-zinc-700 text-xs italic">No rating events detected.</p>
                 )}
               </div>
             </div>
@@ -263,32 +263,32 @@ const LoggedInHomepage = () => {
 
           {/* MIDDLE: Global Events & Live Streams (5 Cols) */}
           <div className="lg:col-span-8 space-y-8">
-            
+
             {/* Live Competition Matrix */}
             <div className="bg-zinc-900/30 backdrop-blur-sm border border-zinc-800/80 rounded-3xl p-6 relative overflow-hidden">
-               <div className="absolute top-0 right-0 w-64 h-64 bg-[#FF4500]/[0.02] blur-[80px] rounded-full -mr-32 -mt-32"></div>
-               
-               <SectionHeader 
-                title="Competition Matrix" 
-                icon={Gamepad2} 
-                color="text-purple-400" 
-                actionLabel="View Tournament Board" 
+              <div className="absolute top-0 right-0 w-64 h-64 bg-[#FF4500]/[0.02] blur-[80px] rounded-full -mr-32 -mt-32"></div>
+
+              <SectionHeader
+                title="Competition Matrix"
+                icon={Gamepad2}
+                color="text-purple-400"
+                actionLabel="View Tournament Board"
                 onAction={() => navigate('/tournaments')}
               />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
                 {tournaments.length > 0 ? tournaments.map((t) => (
-                  <div 
+                  <div
                     key={t._id}
                     onClick={() => navigate(`/tournament/${t._id}`)}
                     className="bg-zinc-950/60 border border-zinc-800/50 hover:border-zinc-700 p-5 rounded-2xl transition-all group cursor-pointer"
                   >
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-2">
-                         <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center">
-                            <Gamepad2 className="w-4 h-4 text-zinc-500" />
-                         </div>
-                         <h3 className="text-xs font-black uppercase tracking-widest text-[#FF4500] truncate max-w-[120px]">{t.shortName || t.tournamentName}</h3>
+                        <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center">
+                          <Gamepad2 className="w-4 h-4 text-zinc-500" />
+                        </div>
+                        <h3 className="text-xs font-black uppercase tracking-widest text-[#FF4500] truncate max-w-[120px]">{t.shortName || t.tournamentName}</h3>
                       </div>
                       <span className="text-[10px] font-black px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 uppercase">
                         {t.tier} Tier
@@ -300,7 +300,7 @@ const LoggedInHomepage = () => {
                         <span className="text-zinc-500 flex items-center gap-1.5"><Calendar className="w-3 h-3" /> Start</span>
                         <span className="text-white">{new Date(t.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                       </div>
-                       <div className="flex items-center justify-between text-[11px] font-bold">
+                      <div className="flex items-center justify-between text-[11px] font-bold">
                         <span className="text-zinc-500 flex items-center gap-1.5"><Coins className="w-3 h-3" /> Pot</span>
                         <span className="text-[#FF4500]">₹{t.prizePool?.total?.toLocaleString() || 'TBD'}</span>
                       </div>
@@ -311,7 +311,7 @@ const LoggedInHomepage = () => {
                     </div>
 
                     <div className="w-full h-1 bg-zinc-900 rounded-full overflow-hidden">
-                      <div 
+                      <div
                         className="h-full bg-gradient-to-r from-[#FF4500] to-purple-500 transition-all duration-1000"
                         style={{ width: `${(t.participantCount / t.totalSlots) * 100}%` }}
                       ></div>
@@ -328,26 +328,26 @@ const LoggedInHomepage = () => {
 
             {/* Recruitment & Tactical Log */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              
+
               {/* Recruitment Matrix */}
               <div className="bg-zinc-900/20 border border-zinc-800 rounded-3xl p-6">
-                <SectionHeader 
-                  title="Recruitment Matrix" 
-                  icon={Target} 
-                  color="text-cyan-400" 
-                  actionLabel="Search All" 
+                <SectionHeader
+                  title="Recruitment Matrix"
+                  icon={Target}
+                  color="text-cyan-400"
+                  actionLabel="Search All"
                   onAction={() => navigate('/recruitment')}
                 />
                 <div className="space-y-4">
                   {dashboard?.opportunities?.length > 0 ? dashboard.opportunities.map((opp) => (
-                    <div 
-                      key={opp._id} 
+                    <div
+                      key={opp._id}
                       onClick={() => navigate('/recruitment')}
                       className="p-3 bg-zinc-950/40 border border-zinc-800/40 rounded-xl hover:bg-zinc-900 transition-all cursor-pointer group"
                     >
                       <div className="flex items-center gap-3 mb-2">
                         <div className="w-8 h-8 rounded bg-zinc-800 overflow-hidden border border-zinc-700">
-                           {opp.logo ? <img src={opp.logo} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-zinc-600">{opp.teamTag}</div>}
+                          {opp.logo ? <img src={opp.logo} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-zinc-600">{opp.teamTag}</div>}
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-[10px] font-black text-white truncate uppercase">{opp.teamName}</p>
@@ -361,27 +361,27 @@ const LoggedInHomepage = () => {
                       </div>
                     </div>
                   )) : (
-                     <div className="py-10 text-center">
-                        <p className="text-[10px] text-zinc-700 font-black uppercase tracking-widest">No active scouts detected</p>
-                     </div>
+                    <div className="py-10 text-center">
+                      <p className="text-[10px] text-zinc-700 font-black uppercase tracking-widest">No active scouts detected</p>
+                    </div>
                   )}
                 </div>
               </div>
 
-               {/* Recent Tactical Log */}
-               <div className="bg-zinc-900/20 border border-zinc-800 rounded-3xl p-6">
+              {/* Recent Tactical Log */}
+              <div className="bg-zinc-900/20 border border-zinc-800 rounded-3xl p-6">
                 <SectionHeader title="Tactical Log" icon={Activity} color="text-zinc-500" />
                 <div className="space-y-4">
                   {matches.length > 0 ? matches.map(match => (
-                    <div 
-                      key={match._id} 
+                    <div
+                      key={match._id}
                       className="group relative bg-zinc-950 border border-zinc-800/50 hover:border-[#FF4500]/30 rounded-2xl transition-all overflow-hidden"
                     >
                       {/* Map Background with Overlay */}
                       <div className="absolute inset-0 opacity-20 group-hover:opacity-30 transition-opacity">
-                        <img 
-                          src={MAP_BG[match.map] || MAP_BG.Unknown} 
-                          alt={match.map} 
+                        <img
+                          src={MAP_BG[match.map] || MAP_BG.Unknown}
+                          alt={match.map}
                           className="w-full h-full object-cover"
                         />
                         <div className="absolute inset-0 bg-gradient-to-r from-black via-black/80 to-transparent"></div>
@@ -420,9 +420,9 @@ const LoggedInHomepage = () => {
                       </div>
                     </div>
                   )) : (
-                     <div className="py-10 text-center">
-                        <p className="text-[10px] text-zinc-700 font-black uppercase tracking-widest">No recent engagements</p>
-                     </div>
+                    <div className="py-10 text-center">
+                      <p className="text-[10px] text-zinc-700 font-black uppercase tracking-widest">No recent engagements</p>
+                    </div>
                   )}
                 </div>
               </div>

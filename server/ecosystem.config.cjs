@@ -10,9 +10,10 @@ module.exports = {
       script: 'index.js',
       cwd: __dirname,
 
-      // Cluster mode — use all available CPU cores
-      instances: 'max',
-      exec_mode: 'cluster',
+      // Start single-instance for first production rollout.
+      // Scale horizontally only after enabling Redis adapter + sticky sessions.
+      instances: 1,
+      exec_mode: 'fork',
 
       // Environment
       node_args: '--max-old-space-size=512',

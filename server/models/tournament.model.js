@@ -208,6 +208,18 @@ const tournamentSchema = new mongoose.Schema(
         ],
         rulesetSpecifics: String,
         details: String,
+        directInvites: {
+          mode: {
+            type: String,
+            enum: ['decide_later', 'none', 'fixed_count'],
+            default: 'decide_later',
+          },
+          targetCount: {
+            type: Number,
+            min: 1,
+            default: null,
+          },
+        },
 
         // --- SIMPLIFIED: Just list teams, standings in separate collection ---
         teams: [

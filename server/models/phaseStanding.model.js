@@ -215,7 +215,7 @@ phaseStandingSchema.methods.recalculate = async function () {
         totalPoints: { $sum: { $ifNull: ['$results.points.totalPoints', 0] } },
         totalKills: { $sum: { $ifNull: ['$results.kills.total', 0] } },
         // Track unique groups this team played in during this phase
-        groups: { $addToSet: { $arrayElemAt: ['$participatingGroups', 0] } } 
+        groups: { $addToSet: { $arrayElemAt: ['$participatingGroups', 0] } }
       }
     },
     {
@@ -248,10 +248,10 @@ phaseStandingSchema.methods.recalculate = async function () {
   const totalPoints = stats.reduce((sum, s) => sum + s.totalPoints, 0);
   const totalKills = stats.reduce((sum, s) => sum + s.totalKills, 0);
   const totalWins = stats.reduce((sum, s) => sum + s.chickenDinners, 0);
-  const totalMatchesCount = await Match.countDocuments({ 
-    tournament: this.tournament, 
-    tournamentPhase: this.phase, 
-    status: 'completed' 
+  const totalMatchesCount = await Match.countDocuments({
+    tournament: this.tournament,
+    tournamentPhase: this.phase,
+    status: 'completed'
   });
 
   this.statistics = {
@@ -274,7 +274,7 @@ phaseStandingSchema.methods.recalculate = async function () {
     kills: s.totalKills,
     chickenDinners: s.chickenDinners,
     matchesPlayed: s.matchesPlayed,
-    group: s.groups[0] || '' 
+    group: s.groups[0] || ''
   }));
 
   // Update leaders
@@ -284,12 +284,12 @@ phaseStandingSchema.methods.recalculate = async function () {
       value: stats[0]?.totalPoints || 0,
     },
     mostKills: {
-      team: [...stats].sort((a,b) => b.totalKills - a.totalKills)[0]?._id,
-      value: [...stats].sort((a,b) => b.totalKills - a.totalKills)[0]?.totalKills || 0,
+      team: [...stats].sort((a, b) => b.totalKills - a.totalKills)[0]?._id,
+      value: [...stats].sort((a, b) => b.totalKills - a.totalKills)[0]?.totalKills || 0,
     },
     mostChickenDinners: {
-      team: [...stats].sort((a,b) => b.chickenDinners - a.chickenDinners)[0]?._id,
-      value: [...stats].sort((a,b) => b.chickenDinners - a.chickenDinners)[0]?.chickenDinners || 0,
+      team: [...stats].sort((a, b) => b.chickenDinners - a.chickenDinners)[0]?._id,
+      value: [...stats].sort((a, b) => b.chickenDinners - a.chickenDinners)[0]?.chickenDinners || 0,
     }
   };
 
@@ -391,13 +391,12 @@ phaseStandingSchema.statics.getTournamentProgress = async function (tournamentId
 };
 
 // --- Pre-save Middleware ---
-phaseStandingSchema.pre('save', function (next) {
+phaseStandingSchema.pre('save', function () {
   // Calculate trends if previous data exists
   if (this.isModified('statistics') && !this.isNew) {
     // Trends calculation would require storing previous values
     // This is simplified - you might want to implement proper trend tracking
   }
-  next();
 });
 
 const PhaseStanding = mongoose.model('PhaseStanding', phaseStandingSchema);

@@ -216,6 +216,16 @@ router.post('/decline-invitation/:tournamentId/:invitationId', verifyTeamCaptain
 
 router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
   const session = await mongoose.startSession();
+  const knownRegistrationErrors = new Set([
+    'TOURNAMENT_NOT_FOUND',
+    'REGISTRATION_CLOSED',
+    'REGISTRATION_DEADLINE_PASSED',
+    'TOURNAMENT_FULL',
+    'TEAM_ALREADY_REGISTERED',
+    'TEAM_TOO_SMALL',
+    'PLAYERS_MISSING_GAME_ID',
+    'GAME_MISMATCH'
+  ]);
   try {
     const { tournamentId } = req.params;
     let responsePayload = null;
@@ -378,7 +388,17 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
 
     res.json(responsePayload);
   } catch (error) {
-    console.error('Error registering for tournament:', error);
+    const errorCode = error?.message;
+    if (knownRegistrationErrors.has(errorCode)) {
+      console.warn('Tournament registration rejected:', {
+        code: errorCode,
+        tournamentId: req.params?.tournamentId,
+        teamId: req.team?._id?.toString(),
+        meta: error.meta || null,
+      });
+    } else {
+      console.error('Error registering for tournament:', error);
+    }
 
     if (error.message === 'TOURNAMENT_NOT_FOUND') {
       return res.status(404).json({ error: 'Tournament not found' });
@@ -393,9 +413,12 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
       return res.status(400).json({ error: 'Tournament is full' });
     }
     if (error.message === 'TEAM_ALREADY_REGISTERED') {
-      return res.status(400).json({
-        error: 'Team already registered for this tournament',
-        status: error.meta?.existingStatus
+      return res.status(200).json({
+        message: 'Team already registered for this tournament',
+        alreadyRegistered: true,
+        registration: {
+          status: error.meta?.existingStatus || 'pending',
+        }
       });
     }
     if (error.message === 'TEAM_TOO_SMALL') {

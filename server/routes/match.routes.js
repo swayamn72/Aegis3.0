@@ -179,16 +179,16 @@ router.get('/tournament/:tournamentId', async (req, res) => {
               // Match name, "Group Name", or just the number if name is "Group 50"
               const cleanGroupName = (g.name || '').toLowerCase();
               const queryGroup = (group || '').toString().toLowerCase();
-              
-              if (cleanGroupName === queryGroup || 
-                  cleanGroupName === `group ${queryGroup}` || 
-                  cleanGroupName.replace('group ', '').trim() === queryGroup) {
+
+              if (cleanGroupName === queryGroup ||
+                cleanGroupName === `group ${queryGroup}` ||
+                cleanGroupName.replace('group ', '').trim() === queryGroup) {
                 groupIds.push(g._id.toString());
               }
             });
           });
         }
-        
+
         if (groupIds.length > 0) {
           filter.participatingGroups = { $in: groupIds };
         } else {
@@ -229,7 +229,7 @@ router.get('/tournament/:tournamentId', async (req, res) => {
     // For each match, enhance with group names and teams (if results empty)
     const enhancedMatches = await Promise.all(matches.map(async (match) => {
       const phase = match.tournament?.phases?.find(p => p.name === match.tournamentPhase);
-      
+
       // Always resolve group names from IDs for display
       if (phase && match.participatingGroups?.length > 0) {
         match.groupNames = match.participatingGroups.map(groupId => {
@@ -302,9 +302,9 @@ router.post('/schedule', verifyOrgToken, verifyTournamentOwnership, async (req, 
 
     // Prevent scheduling if the phase is completed
     if (phase.status === 'completed') {
-      return res.status(400).json({ 
-        error: 'Phase is concluded', 
-        details: 'Cannot schedule new matches in a completed phase.' 
+      return res.status(400).json({
+        error: 'Phase is concluded',
+        details: 'Cannot schedule new matches in a completed phase.'
       });
     }
 
@@ -858,7 +858,11 @@ router.put('/:matchId/results', verifyOrgToken, verifyMatchOwnership, async (req
       }
     }
 
-    match.status = 'in_progress';
+    // Keep completed matches completed when editing results.
+    // Only move scheduled matches forward to in_progress.
+    if (match.status !== 'completed') {
+      match.status = 'in_progress';
+    }
 
     await match.save();
     await match.populate('results.team', 'teamName teamTag logo');

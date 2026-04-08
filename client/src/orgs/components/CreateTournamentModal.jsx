@@ -5,6 +5,23 @@ import { toast } from 'react-toastify';
 import axiosInstance from '../../utils/axiosConfig';
 import PhaseStructureSuggester from './PhaseStructureSuggester';
 
+const PHASE_INVITE_MODES = ['decide_later', 'none', 'fixed_count'];
+const normalizePhaseDirectInvites = (directInvites) => {
+    const mode = PHASE_INVITE_MODES.includes(directInvites?.mode)
+        ? directInvites.mode
+        : 'decide_later';
+
+    if (mode !== 'fixed_count') {
+        return { mode, targetCount: null };
+    }
+
+    const parsed = parseInt(directInvites?.targetCount, 10);
+    return {
+        mode,
+        targetCount: Number.isFinite(parsed) ? parsed : null,
+    };
+};
+
 const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
     const IndiaFlag = () => <span role="img" aria-label="India" className="ml-2">🇮🇳</span>;
     const [step, setStep] = useState(1);
@@ -89,7 +106,7 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
             const newMaps = currentMaps.includes(mapName)
                 ? currentMaps.filter(m => m !== mapName)
                 : [...currentMaps, mapName];
-            
+
             return {
                 ...prev,
                 gameSettings: {
@@ -111,6 +128,10 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
             startDate: '',
             endDate: '',
             status: 'upcoming',
+            directInvites: {
+                mode: 'decide_later',
+                targetCount: null,
+            },
             details: '',
             rulesetSpecifics: '',
             groups: [],
@@ -160,6 +181,35 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
         setFormData(prev => ({ ...prev, phases: updatedPhases }));
     };
 
+    const updatePhaseDirectInviteMode = (index, mode) => {
+        const updatedPhases = [...formData.phases];
+        const previous = normalizePhaseDirectInvites(updatedPhases[index]?.directInvites);
+        updatedPhases[index] = {
+            ...updatedPhases[index],
+            directInvites: mode === 'fixed_count'
+                ? { mode, targetCount: previous.targetCount || 1 }
+                : { mode, targetCount: null }
+        };
+        setFormData(prev => ({ ...prev, phases: updatedPhases }));
+    };
+
+    const updatePhaseDirectInviteCount = (index, rawValue) => {
+        const value = parseInt(rawValue, 10);
+        const updatedPhases = [...formData.phases];
+        const previous = normalizePhaseDirectInvites(updatedPhases[index]?.directInvites);
+        updatedPhases[index] = {
+            ...updatedPhases[index],
+            directInvites: {
+                mode: 'fixed_count',
+                targetCount: Number.isFinite(value) ? value : null,
+            }
+        };
+        if (previous.mode !== 'fixed_count') {
+            updatedPhases[index].directInvites.mode = 'fixed_count';
+        }
+        setFormData(prev => ({ ...prev, phases: updatedPhases }));
+    };
+
     const removePhase = (index) => {
         setFormData(prev => ({
             ...prev,
@@ -186,9 +236,33 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                 toast.error('Please select at least one map.');
                 return;
             }
+            const totalSlots = Number(formData.slots?.total || 0);
+            for (let i = 0; i < (formData.phases || []).length; i++) {
+                const phase = formData.phases[i];
+                const invitePlan = normalizePhaseDirectInvites(phase?.directInvites);
+                if (invitePlan.mode === 'fixed_count') {
+                    if (!invitePlan.targetCount || invitePlan.targetCount < 1) {
+                        toast.error(`Phase ${i + 1}: invite target must be at least 1.`);
+                        return;
+                    }
+                    if (totalSlots > 0 && invitePlan.targetCount > totalSlots) {
+                        toast.error(`Phase ${i + 1}: invite target cannot exceed total slots (${totalSlots}).`);
+                        return;
+                    }
+                }
+            }
+
+            const normalizedPhases = (formData.phases || []).map((phase) => ({
+                ...phase,
+                directInvites: normalizePhaseDirectInvites(phase?.directInvites)
+            }));
             const formDataToSend = new FormData();
-            console.log('Sending tournament data:', formData);
-            formDataToSend.append('tournamentData', JSON.stringify(formData));
+            const normalizedPayload = {
+                ...formData,
+                phases: normalizedPhases,
+            };
+            console.log('Sending tournament data:', normalizedPayload);
+            formDataToSend.append('tournamentData', JSON.stringify(normalizedPayload));
 
 
             if (files.logo) formDataToSend.append('logo', files.logo);
@@ -334,11 +408,10 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                                                 key={mapName}
                                                 type="button"
                                                 onClick={() => handleMapToggle(mapName)}
-                                                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                                                    isSelected 
-                                                        ? 'bg-orange-500 text-white border border-orange-500' 
+                                                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${isSelected
+                                                        ? 'bg-orange-500 text-white border border-orange-500'
                                                         : 'bg-gray-700 text-gray-300 border border-gray-600 hover:border-gray-500'
-                                                }`}
+                                                    }`}
                                             >
                                                 {mapName}
                                             </button>
@@ -537,6 +610,41 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                                                         rows={2}
                                                         placeholder="e.g. Best of 12 matches, all maps, ERMMM format"
                                                     />
+                                                </div>
+
+                                                <div className="col-span-2 bg-gray-800/40 border border-gray-600 rounded-lg p-3">
+                                                    <label className="block text-xs text-gray-300 mb-2">Direct Team Invites (Optional)</label>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
+                                                        <div>
+                                                            <label className="block text-xs text-gray-400 mb-1">Invite Plan</label>
+                                                            <select
+                                                                value={normalizePhaseDirectInvites(phase.directInvites).mode}
+                                                                onChange={(e) => updatePhaseDirectInviteMode(index, e.target.value)}
+                                                                className="w-full bg-gray-700 border border-gray-500 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-orange-500"
+                                                            >
+                                                                <option value="decide_later">Decide Later</option>
+                                                                <option value="none">No Direct Invites</option>
+                                                                <option value="fixed_count">Invite Fixed Count</option>
+                                                            </select>
+                                                        </div>
+                                                        {normalizePhaseDirectInvites(phase.directInvites).mode === 'fixed_count' && (
+                                                            <div>
+                                                                <label className="block text-xs text-gray-400 mb-1">Invite Count</label>
+                                                                <input
+                                                                    type="number"
+                                                                    min="1"
+                                                                    max={formData.slots?.total || 4096}
+                                                                    value={normalizePhaseDirectInvites(phase.directInvites).targetCount ?? ''}
+                                                                    onChange={(e) => updatePhaseDirectInviteCount(index, e.target.value)}
+                                                                    className="w-full bg-gray-700 border border-gray-500 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-orange-500"
+                                                                    placeholder="e.g. 64"
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-xs text-gray-500 mt-2">
+                                                        Use "Decide Later" when you are unsure now. You can update this phase plan any time before execution.
+                                                    </p>
                                                 </div>
                                             </div>
 

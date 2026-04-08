@@ -14,6 +14,13 @@ import notificationService from '../services/notification.service.js';
 const router = express.Router();
 const MAX_APPLICATION_MESSAGE_LEN = 500;
 const MAX_APPLIED_ROLES = 5;
+const REAPPLY_COOLDOWN_DAYS = 7;
+
+const addDays = (date, days) => {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+};
 const ALLOWED_ROLES = ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger'];
 
 router.get('/recruiting-teams', async (req, res) => {
@@ -188,11 +195,34 @@ router.post('/apply', auth, async (req, res) => {
         return res.status(400).json({ error: 'Your application to this team has already been accepted' });
       }
 
+      if (existingApplication.status === 'rejected') {
+        const rejectedAnchor =
+          existingApplication.rejectedAt ||
+          existingApplication.tryoutEndedAt ||
+          existingApplication.updatedAt;
+
+        if (rejectedAnchor) {
+          const nextAllowedAt = addDays(rejectedAnchor, REAPPLY_COOLDOWN_DAYS);
+          const now = new Date();
+
+          if (now < nextAllowedAt) {
+            const msRemaining = nextAllowedAt.getTime() - now.getTime();
+            const daysRemaining = Math.ceil(msRemaining / (24 * 60 * 60 * 1000));
+            return res.status(429).json({
+              error: `You can reapply to this team after ${daysRemaining} day(s).`,
+              nextAllowedAt,
+              cooldownDays: REAPPLY_COOLDOWN_DAYS,
+            });
+          }
+        }
+      }
+
       existingApplication.status = 'pending';
       existingApplication.message = cleanMessage;
       existingApplication.appliedRoles = cleanRoles;
       existingApplication.tryoutChatId = null;
       existingApplication.rejectionReason = '';
+      existingApplication.rejectedAt = undefined;
       existingApplication.tryoutStartedAt = undefined;
       existingApplication.tryoutEndedAt = undefined;
       await existingApplication.save();
@@ -348,41 +378,91 @@ router.post('/:applicationId/start-tryout', auth, async (req, res) => {
       return res.status(400).json({ error: 'Tryout already started for this application' });
     }
 
-    const participants = [
-      ...new Set([
-        ...application.team.players.map(p => p.toString()),
-        application.player._id.toString(),
-      ]),
-    ];
+    const participantSet = new Set();
+    for (const teamPlayer of (application.team.players || [])) {
+      const id = teamPlayer?.toString?.();
+      if (id && mongoose.Types.ObjectId.isValid(id)) {
+        participantSet.add(id);
+      }
+    }
 
-    // Create tryout chat
-    const tryoutChat = new TryoutChat({
-      application: application._id,
-      team: application.team._id,
-      applicant: application.player._id,
-      participants,
-      status: 'active',
-    });
+    const applicantId = application.player?._id?.toString?.();
+    if (applicantId && mongoose.Types.ObjectId.isValid(applicantId)) {
+      participantSet.add(applicantId);
+    }
 
-    await tryoutChat.save();
-    await createTryoutMessage({
-      chatId: tryoutChat._id,
-      sender: req.user.id,
-      message: `Tryout started for ${application.player.username}. Welcome to the team tryout!`,
-      messageType: 'system',
-      timestamp: new Date(),
-    });
+    const captainId = application.team.captain?.toString?.();
+    if (captainId && mongoose.Types.ObjectId.isValid(captainId)) {
+      participantSet.add(captainId);
+    }
 
-    // Update application
-    application.status = 'in_tryout';
-    application.tryoutChatId = tryoutChat._id;
-    application.tryoutStartedAt = new Date();
-    await application.save();
+    const participants = Array.from(participantSet);
+    if (participants.length === 0) {
+      return res.status(400).json({ error: 'Unable to start tryout: team participants are invalid' });
+    }
 
-    await tryoutChat
-      .populate('participants', 'username profilePicture')
-      .populate('team', 'teamName teamTag logo')
-      .populate('applicant', 'username profilePicture');
+    const tryoutChatId = new mongoose.Types.ObjectId();
+    const claimedApplication = await TeamApplication.findOneAndUpdate(
+      {
+        _id: application._id,
+        status: 'pending',
+        tryoutChatId: null,
+      },
+      {
+        $set: {
+          status: 'in_tryout',
+          tryoutChatId,
+          tryoutStartedAt: new Date(),
+        },
+      },
+      {
+        returnDocument: 'after',
+      }
+    )
+      .populate('team', 'teamName teamTag logo players captain')
+      .populate('player', 'username profilePicture');
+
+    if (!claimedApplication) {
+      return res.status(409).json({ error: 'Tryout already started for this application' });
+    }
+
+    let tryoutChat;
+    try {
+      // Create tryout chat only after atomically claiming this application.
+      tryoutChat = await TryoutChat.create({
+        _id: tryoutChatId,
+        application: claimedApplication._id,
+        team: claimedApplication.team._id,
+        applicant: claimedApplication.player._id,
+        participants,
+        status: 'active',
+      });
+
+      await createTryoutMessage({
+        chatId: tryoutChat._id,
+        sender: req.user.id,
+        message: `Tryout started for ${claimedApplication.player.username}. Welcome to the team tryout!`,
+        messageType: 'system',
+        timestamp: new Date(),
+      });
+    } catch (innerError) {
+      // Roll back claim if chat creation fails.
+      await TeamApplication.findOneAndUpdate(
+        { _id: application._id, tryoutChatId },
+        {
+          $set: { status: 'pending' },
+          $unset: { tryoutChatId: 1, tryoutStartedAt: 1 },
+        },
+        { returnDocument: 'after' }
+      );
+      throw innerError;
+    }
+
+    await tryoutChat.populate([
+      { path: 'participants', select: 'username profilePicture' },
+      { path: 'team', select: 'teamName teamTag logo' },
+      { path: 'applicant', select: 'username profilePicture' },
+    ]);
 
     const hydratedTryoutChat = {
       ...tryoutChat.toObject(),
@@ -393,13 +473,13 @@ router.post('/:applicationId/start-tryout', auth, async (req, res) => {
       .sendToPlayer(
         application.player._id.toString(),
         'Tryout Started',
-        `${application.team.teamName} started your tryout chat.`,
+        `${claimedApplication.team.teamName} started your tryout chat.`,
         {
           type: 'tryout_started',
           chatId: String(tryoutChat._id),
-          applicationId: String(application._id),
-          teamId: String(application.team._id),
-          teamName: application.team.teamName,
+          applicationId: String(claimedApplication._id),
+          teamId: String(claimedApplication.team._id),
+          teamName: claimedApplication.team.teamName,
         }
       )
       .catch((err) => {
@@ -408,12 +488,13 @@ router.post('/:applicationId/start-tryout', auth, async (req, res) => {
 
     res.json({
       message: 'Tryout started successfully',
-      application,
+      application: claimedApplication,
       tryoutChat: hydratedTryoutChat,
     });
   } catch (error) {
     console.error('Error starting tryout:', error);
-    res.status(500).json({ error: 'Failed to start tryout' });
+    const message = error?.message || 'Failed to start tryout';
+    res.status(500).json({ error: message });
   }
 });
 
@@ -564,6 +645,7 @@ router.post('/:applicationId/reject', auth, async (req, res) => {
     // Update application
     application.status = 'rejected';
     application.rejectionReason = reason || '';
+    application.rejectedAt = new Date();
     application.tryoutEndedAt = new Date();
     await application.save();
 

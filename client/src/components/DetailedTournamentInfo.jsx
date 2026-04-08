@@ -8,7 +8,7 @@ import {
   Medal, Crown, Shield, Zap, Activity, BarChart3, Globe,
   CheckCircle, XCircle, AlertCircle, ArrowRight, Download,
   Youtube, Twitter, Instagram, Hash, X, ChevronDown,
-  ChevronUp, UserPlus, Send, Bell, Megaphone, ChevronLeft
+  ChevronUp, UserPlus, Bell, Megaphone, ChevronLeft
 } from 'lucide-react';
 import ErangelMap from '../assets/mapImages/erangel.jpg';
 import MiramarMap from '../assets/mapImages/miramar.webp';
@@ -64,8 +64,6 @@ const DetailedTournamentInfo = () => {
   const [registrationError, setRegistrationError] = useState('');
   const [registrationSuccess, setRegistrationSuccess] = useState(false);
   const [showNonCaptainModal, setShowNonCaptainModal] = useState(false);
-  const [sendingReference, setSendingReference] = useState(false);
-  const [referenceSentSuccess, setReferenceSentSuccess] = useState(false);
   const [teamsPage, setTeamsPage] = useState(1);
   const TEAMS_PER_PAGE = 24;
   const [phaseDropdownOpen, setPhaseDropdownOpen] = useState(false);
@@ -211,31 +209,6 @@ const DetailedTournamentInfo = () => {
       setMatchPhase(currentPhase.name); // Set initial match phase too
     }
   }, [tournamentData]);
-
-  const sendTournamentReferenceToCaptain = async () => {
-    if (!userTeam || !userTeam.captain) return;
-    setSendingReference(true);
-    try {
-      const messagePayload = {
-        receiverId: userTeam.captain._id,
-        captainId: userTeam.captain._id,
-        messageType: 'tournament_reference',
-        message: `Please register our team for the tournament: ${tournamentData.name}`,
-        tournamentId: tournamentData._id,
-        tournamentName: tournamentData.name,
-        tournamentDate: tournamentData.startDate,
-        prizePool: tournamentData.prizePool?.total || 0,
-        totalSlots: tournamentData.teams || 0,
-      };
-      await axiosInstance.post(`/api/chat/tournament-reference/${tournamentData._id}`, messagePayload);
-      setReferenceSentSuccess(true);
-    } catch (error) {
-      console.error('Error sending tournament reference:', error);
-      alert('Failed to send tournament reference message. Please try again later.');
-    } finally {
-      setSendingReference(false);
-    }
-  };
 
   const handleRegistration = async (e) => {
     e.preventDefault();
@@ -1282,20 +1255,14 @@ const DetailedTournamentInfo = () => {
                   <Shield className="w-8 h-8 text-white" />
                 </div>
                 <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Team Registration</h2>
-                <p className="text-zinc-400 mb-6 text-sm">Only team captains can register for tournaments. Send a reference message to your captain to request registration.</p>
-                {referenceSentSuccess ? (
-                  <div className="bg-green-500/20 border border-green-500/30 rounded-lg p-4 mb-6">
-                    <div className="flex items-center gap-2 justify-center">
-                      <CheckCircle className="w-5 h-5 text-green-400" />
-                      <span className="text-green-400 font-medium">Reference Sent!</span>
-                    </div>
-                    <p className="text-green-300 text-sm mt-1">Your captain has been notified.</p>
-                  </div>
-                ) : (
-                  <button onClick={sendTournamentReferenceToCaptain} disabled={sendingReference} className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 disabled:from-zinc-600 disabled:to-zinc-700 text-white font-medium px-6 py-3 rounded-lg transition-colors disabled:cursor-not-allowed flex items-center justify-center gap-2 mb-4 text-sm">
-                    {sendingReference ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Sending...</> : <><Send className="w-4 h-4" />Send Reference to Captain</>}
-                  </button>
-                )}
+                <p className="text-zinc-400 mb-6 text-sm">Only team captains can register for tournaments.</p>
+                <button
+                  type="button"
+                  disabled
+                  className="w-full bg-zinc-700 text-zinc-300 font-medium px-6 py-3 rounded-lg cursor-not-allowed flex items-center justify-center gap-2 mb-4 text-sm border border-zinc-600"
+                >
+                  <Shield className="w-4 h-4" />Ask your captain to register
+                </button>
                 <button onClick={() => setShowNonCaptainModal(false)} className="bg-zinc-700 hover:bg-zinc-600 text-white font-medium px-6 py-3 rounded-lg transition-colors text-sm">Close</button>
               </div>
             </div>

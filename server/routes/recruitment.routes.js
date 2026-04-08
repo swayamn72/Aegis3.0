@@ -1,6 +1,7 @@
 import express from 'express';
 import LFTPost from '../models/lftPost.model.js';
 import LFPPost from '../models/lfpPost.model.js';
+import LFPSwipe from '../models/lfpSwipe.model.js';
 import Player from '../models/player.model.js';
 import Team from '../models/team.model.js';
 import RecruitmentApproach from '../models/recruitmentApproach.model.js';
@@ -654,76 +655,86 @@ router.post('/approach/:approachId/reject', auth, async (req, res) => {
 const MAX_LFP_DESC_LEN = 1000;
 const MAX_OPEN_ROLES = 5;
 
+const parseLfpListQuery = (query = {}) => {
+  const {
+    game,
+    region,
+    role,
+    limit: rawLimit = '20',
+    page: rawPage = '1',
+    status = 'active'
+  } = query;
+
+  const limit = Math.min(Math.max(parseInt(rawLimit, 10) || 20, 1), 50);
+  const page = Math.max(parseInt(rawPage, 10) || 1, 1);
+  const skip = (page - 1) * limit;
+
+  const match = {};
+  if (status) match.status = status;
+  if (game) match.game = game;
+  if (region) match.region = region;
+  if (role) {
+    match.openRoles = { $in: [role] };
+  }
+
+  return { match, limit, page, skip };
+};
+
+const buildLfpListAggregation = ({ match, skip, limit }) => {
+  return [
+    { $match: match },
+    {
+      $lookup: {
+        from: 'teams',
+        localField: 'team',
+        foreignField: '_id',
+        as: 'team'
+      }
+    },
+    { $unwind: '$team' },
+    {
+      $lookup: {
+        from: 'players',
+        localField: 'team.captain',
+        foreignField: '_id',
+        as: 'captain'
+      }
+    },
+    { $unwind: { path: '$captain', preserveNullAndEmptyArrays: true } },
+    {
+      $project: {
+        description: 1,
+        game: 1,
+        openRoles: 1,
+        region: 1,
+        status: 1,
+        createdAt: 1,
+        'team._id': 1,
+        'team.teamName': 1,
+        'team.teamTag': 1,
+        'team.logo': 1,
+        'team.primaryGame': 1,
+        'team.region': 1,
+        'captain._id': 1,
+        'captain.username': 1,
+        'captain.profilePicture': 1
+      }
+    },
+    {
+      $facet: {
+        posts: [{ $sort: { createdAt: -1 } }, { $skip: skip }, { $limit: limit }],
+        totalCount: [{ $count: 'count' }]
+      }
+    }
+  ];
+};
+
 // GET LFP Posts - Fetch all active LFP posts with filters
 router.get('/lfp-posts', async (req, res) => {
   try {
-    const {
-      game,
-      region,
-      role,
-      limit: rawLimit = '20',
-      page: rawPage = '1',
-      status = 'active'
-    } = req.query;
+    const { match, limit, page, skip } = parseLfpListQuery(req.query);
 
-    const limit = Math.min(Math.max(parseInt(rawLimit, 10) || 20, 1), 50);
-    const page = Math.max(parseInt(rawPage, 10) || 1, 1);
-    const skip = (page - 1) * limit;
-
-    const match = {};
-    if (status) match.status = status;
-    if (game) match.game = game;
-    if (region) match.region = region;
-    if (role) {
-      match.openRoles = { $in: [role] };
-    }
-
-    const agg = [
-      { $match: match },
-      {
-        $lookup: {
-          from: 'teams',
-          localField: 'team',
-          foreignField: '_id',
-          as: 'team'
-        }
-      },
-      { $unwind: '$team' },
-      {
-        $lookup: {
-          from: 'players',
-          localField: 'team.captain',
-          foreignField: '_id',
-          as: 'captain'
-        }
-      },
-      { $unwind: { path: '$captain', preserveNullAndEmptyArrays: true } },
-      {
-        $project: {
-          description: 1,
-          game: 1,
-          openRoles: 1,
-          region: 1,
-          status: 1,
-          createdAt: 1,
-          'team._id': 1,
-          'team.teamName': 1,
-          'team.teamTag': 1,
-          'team.logo': 1,
-          'team.primaryGame': 1,
-          'team.region': 1,
-          'captain._id': 1,
-          'captain.username': 1,
-          'captain.profilePicture': 1
-        }
-      },
-      {
-        $facet: {
-          posts: [{ $sort: { createdAt: -1 } }, { $skip: skip }, { $limit: limit }],
-          totalCount: [{ $count: 'count' }]
-        }
-      }
-    ];
+    const agg = buildLfpListAggregation({ match, skip, limit });
 
     const [result] = await LFPPost.aggregate(agg).exec();
     const posts = result.posts || [];
@@ -741,6 +752,101 @@ router.get('/lfp-posts', async (req, res) => {
   } catch (error) {
     console.error('Error fetching LFP posts:', error);
     res.status(500).json({ error: 'Failed to fetch LFP posts' });
+  }
+});
+
+// GET LFP Discovery Feed - personalized for swipe UI (auth required)
+router.get('/lfp-posts/discover', auth, async (req, res) => {
+  try {
+    const { match, limit, page, skip } = parseLfpListQuery(req.query);
+
+    const [swipes, player] = await Promise.all([
+      LFPSwipe.find({ player: req.user.id }).select('post').lean(),
+      Player.findById(req.user.id).select('team').lean(),
+    ]);
+
+    const seenPostIds = swipes
+      .map((item) => item.post)
+      .filter((item) => mongoose.Types.ObjectId.isValid(item));
+
+    if (seenPostIds.length > 0) {
+      match._id = { $nin: seenPostIds };
+    }
+
+    if (player?.team && mongoose.Types.ObjectId.isValid(player.team)) {
+      match.team = { $ne: player.team };
+    }
+
+    const agg = buildLfpListAggregation({ match, skip, limit });
+
+    const [result] = await LFPPost.aggregate(agg).exec();
+    const posts = result.posts || [];
+    const totalCount = result.totalCount.length > 0 ? result.totalCount[0].count : 0;
+
+    res.json({
+      posts,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        pages: Math.ceil(totalCount / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching LFP discovery feed:', error);
+    res.status(500).json({ error: 'Failed to fetch LFP discovery feed' });
+  }
+});
+
+router.post('/lfp-posts/:postId/swipe', auth, async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const action = String(req.body?.action || '').trim().toLowerCase();
+
+    if (!mongoose.Types.ObjectId.isValid(postId)) {
+      return res.status(400).json({ error: 'Invalid post ID' });
+    }
+
+    if (action !== 'left' && action !== 'right') {
+      return res.status(400).json({ error: 'Action must be either left or right' });
+    }
+
+    const post = await LFPPost.findById(postId).select('_id team status').lean();
+    if (!post || post.status !== 'active') {
+      return res.status(404).json({ error: 'LFP post not found or inactive' });
+    }
+
+    await LFPSwipe.findOneAndUpdate(
+      { player: req.user.id, post: post._id },
+      {
+        player: req.user.id,
+        post: post._id,
+        team: post.team,
+        action,
+      },
+      { upsert: true, setDefaultsOnInsert: true }
+    );
+
+    res.json({ message: 'Swipe saved', action });
+  } catch (error) {
+    console.error('Error saving LFP swipe:', error);
+    res.status(500).json({ error: 'Failed to save swipe action' });
+  }
+});
+
+router.delete('/lfp-posts/:postId/swipe', auth, async (req, res) => {
+  try {
+    const { postId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(postId)) {
+      return res.status(400).json({ error: 'Invalid post ID' });
+    }
+
+    await LFPSwipe.deleteOne({ player: req.user.id, post: postId });
+    res.json({ message: 'Swipe removed' });
+  } catch (error) {
+    console.error('Error removing LFP swipe:', error);
+    res.status(500).json({ error: 'Failed to remove swipe action' });
   }
 });
 

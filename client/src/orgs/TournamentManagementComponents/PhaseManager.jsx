@@ -1,6 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, Plus, X, Trash2, AlertCircle, Trophy, Target, Users } from 'lucide-react';
 
+const PHASE_INVITE_MODES = ['decide_later', 'none', 'fixed_count'];
+const normalizePhaseDirectInvites = (directInvites) => {
+  const mode = PHASE_INVITE_MODES.includes(directInvites?.mode)
+    ? directInvites.mode
+    : 'decide_later';
+
+  if (mode !== 'fixed_count') {
+    return { mode, targetCount: null };
+  }
+
+  const parsed = parseInt(directInvites?.targetCount, 10);
+  return {
+    mode,
+    targetCount: Number.isFinite(parsed) ? parsed : null,
+  };
+};
+
 const PhaseManager = ({ isOpen, onClose, onSave, initialPhases = [], tournamentStartDate, tournamentEndDate }) => {
   const [phases, setPhases] = useState([]);
   const [errors, setErrors] = useState({});
@@ -15,6 +32,7 @@ const PhaseManager = ({ isOpen, onClose, onSave, initialPhases = [], tournamentS
         endDate: phase.endDate ? new Date(phase.endDate).toISOString().slice(0, 16) : '',
         rulesetSpecifics: phase.rulesetSpecifics || '',
         details: phase.details || '',
+        directInvites: normalizePhaseDirectInvites(phase.directInvites),
         qualificationRules: phase.qualificationRules || []
       })));
     } else {
@@ -27,6 +45,7 @@ const PhaseManager = ({ isOpen, onClose, onSave, initialPhases = [], tournamentS
           details: 'Open qualifiers for all teams',
           status: 'upcoming',
           rulesetSpecifics: '',
+          directInvites: { mode: 'decide_later', targetCount: null },
           teams: [],
           groups: [],
           qualificationRules: [
@@ -45,6 +64,7 @@ const PhaseManager = ({ isOpen, onClose, onSave, initialPhases = [], tournamentS
           details: 'Main tournament finals',
           status: 'upcoming',
           rulesetSpecifics: '',
+          directInvites: { mode: 'decide_later', targetCount: null },
           teams: [],
           groups: [],
           qualificationRules: []
@@ -69,6 +89,7 @@ const PhaseManager = ({ isOpen, onClose, onSave, initialPhases = [], tournamentS
       details: '',
       status: 'upcoming',
       rulesetSpecifics: '',
+      directInvites: { mode: 'decide_later', targetCount: null },
       teams: [],
       groups: [],
       qualificationRules: []
@@ -132,6 +153,11 @@ const PhaseManager = ({ isOpen, onClose, onSave, initialPhases = [], tournamentS
         newErrors[`${index}_endDate`] = 'End date is required';
       }
 
+      const invitePlan = normalizePhaseDirectInvites(phase.directInvites);
+      if (invitePlan.mode === 'fixed_count' && (!invitePlan.targetCount || invitePlan.targetCount < 1)) {
+        newErrors[`${index}_directInvites`] = 'Invite count must be at least 1 when using fixed count';
+      }
+
       if (phase.startDate && phase.endDate && phase.startDate >= phase.endDate) {
         newErrors[`${index}_dates`] = 'End date must be after start date';
       }
@@ -184,6 +210,7 @@ const PhaseManager = ({ isOpen, onClose, onSave, initialPhases = [], tournamentS
         // Note: standings are NOT stored here anymore - they're in Standing collection
       })),
       matches: phase.matches || [],
+      directInvites: normalizePhaseDirectInvites(phase.directInvites),
       qualificationRules: (phase.qualificationRules || []).map(rule => ({
         numberOfTeams: parseInt(rule.numberOfTeams) || 1,
         source: rule.source || 'overall',
@@ -333,6 +360,54 @@ const PhaseManager = ({ isOpen, onClose, onSave, initialPhases = [], tournamentS
                     rows={2}
                     placeholder="Enter phase-specific rules (e.g., 'Best of 12 matches, all maps')"
                   />
+                </div>
+
+                <div className="mt-4 bg-zinc-700/40 border border-zinc-600 rounded-lg p-4">
+                  <label className="block text-sm text-zinc-300 mb-2">Direct Team Invites (Optional)</label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
+                    <div>
+                      <label className="block text-xs text-zinc-400 mb-1">Invite Plan</label>
+                      <select
+                        value={normalizePhaseDirectInvites(phase.directInvites).mode}
+                        onChange={(e) => {
+                          const mode = e.target.value;
+                          const current = normalizePhaseDirectInvites(phase.directInvites);
+                          handlePhaseChange(index, 'directInvites', mode === 'fixed_count'
+                            ? { mode, targetCount: current.targetCount || 1 }
+                            : { mode, targetCount: null }
+                          );
+                        }}
+                        className="w-full bg-zinc-600 border border-zinc-500 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      >
+                        <option value="decide_later">Decide Later</option>
+                        <option value="none">No Direct Invites</option>
+                        <option value="fixed_count">Invite Fixed Count</option>
+                      </select>
+                    </div>
+
+                    {normalizePhaseDirectInvites(phase.directInvites).mode === 'fixed_count' && (
+                      <div>
+                        <label className="block text-xs text-zinc-400 mb-1">Invite Count</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={normalizePhaseDirectInvites(phase.directInvites).targetCount ?? ''}
+                          onChange={(e) => handlePhaseChange(index, 'directInvites', {
+                            mode: 'fixed_count',
+                            targetCount: parseInt(e.target.value, 10) || null
+                          })}
+                          className="w-full bg-zinc-600 border border-zinc-500 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                          placeholder="e.g. 64"
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-zinc-500 mt-2">
+                    Keep this on "Decide Later" if your invited-team count is not final yet.
+                  </p>
+                  {errors[`${index}_directInvites`] && (
+                    <p className="text-red-400 text-xs mt-2">{errors[`${index}_directInvites`]}</p>
+                  )}
                 </div>
 
                 {/* Groups Section removed */}

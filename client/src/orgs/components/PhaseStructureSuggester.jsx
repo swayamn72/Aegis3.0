@@ -99,17 +99,35 @@ const PhaseStructureSuggester = ({ totalTeams, onApply }) => {
     // ── Per-phase top-qualify edit → cascade downstream ──────────────────
     const handleTopQualifyChange = (idx, raw) => {
         const newVal = clamp(parseInt(raw) || 1, 1, 99);
-        const updated = phases.map(p => ({ ...p }));
-        updated[idx].topQualify = newVal;
-        updated[idx].teamsOut = updated[idx].numGroups * newVal;
-        for (let i = idx + 1; i < updated.length; i++) {
-            updated[i].teamsIn = updated[i - 1].teamsOut;
-            updated[i].numGroups = Math.max(1, Math.ceil(updated[i].teamsIn / config.lobbySize));
-            if (updated[i].topQualify !== null) {
-                updated[i].teamsOut = updated[i].numGroups * updated[i].topQualify;
-            }
+        let currentPhases = phases.map(p => ({ ...p }));
+
+        // Update the current phase
+        currentPhases[idx].topQualify = newVal;
+        currentPhases[idx].teamsOut = currentPhases[idx].numGroups * newVal;
+
+        // Start from the current phase and rebuild downstream
+        const newPhases = currentPhases.slice(0, idx + 1);
+        let teamsIn = currentPhases[idx].teamsOut;
+        let safety = 0;
+
+        while (teamsIn > config.finalLobbySize && safety++ < 15) {
+            const numGroups = Math.max(1, Math.ceil(teamsIn / config.lobbySize));
+            const topQualify = config.topQualify; // Use default for subsequent phases
+            const teamsOut = numGroups * topQualify;
+            newPhases.push({ teamsIn, numGroups, topQualify, teamsOut });
+            if (teamsOut >= teamsIn) break;
+            teamsIn = teamsOut;
         }
-        setPhases(assignSuggestedNames(updated));
+
+        // Add final lobby
+        newPhases.push({
+            teamsIn,
+            numGroups: Math.max(1, Math.ceil(teamsIn / config.lobbySize)),
+            topQualify: null,
+            teamsOut: null,
+        });
+
+        setPhases(assignSuggestedNames(newPhases));
     };
 
     // ── Apply → convert to formData.phases shape ─────────────────────────
@@ -120,6 +138,10 @@ const PhaseStructureSuggester = ({ totalTeams, onApply }) => {
             startDate: '',
             endDate: '',
             status: 'upcoming',
+            directInvites: {
+                mode: 'decide_later',
+                targetCount: null,
+            },
             details: sp.type === 'final_stage'
                 ? `Grand Finals — ${sp.teamsIn} teams, 1 lobby`
                 : `${sp.teamsIn} teams · ${sp.numGroups} group${sp.numGroups !== 1 ? 's' : ''} · top ${sp.topQualify} per group qualify`,
@@ -199,8 +221,8 @@ const PhaseStructureSuggester = ({ totalTeams, onApply }) => {
                             <div
                                 key={i}
                                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border ${sp.type === 'final_stage'
-                                        ? 'bg-amber-500/10 border-amber-500/30'
-                                        : 'bg-gray-600/40 border-gray-500/40'
+                                    ? 'bg-amber-500/10 border-amber-500/30'
+                                    : 'bg-gray-600/40 border-gray-500/40'
                                     }`}
                             >
                                 <div className="flex-1 min-w-0">

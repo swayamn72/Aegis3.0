@@ -6,7 +6,7 @@ import botLogo from '../assets/bot_logo.png';
 import groupChatIcon from '../assets/group_chat.png';
 import {
   Send, Search, MoreVertical, Users, Hash, Crown, Shield, Gamepad2, Bell, Check, X, UserPlus,
-  AlertCircle, Ban, CheckCircle, XCircle, ArrowLeft, LogOut
+  AlertCircle, Ban, CheckCircle, XCircle, ArrowLeft, LogOut, Menu, User
 } from 'lucide-react';
 import ChatMessage from '../components/ChatMessage';
 import ChatAvatar from '../components/ChatAvatar';
@@ -39,6 +39,10 @@ export default function ChatPage() {
   const [autoScroll, setAutoScroll] = useState(true);
   const isInitialLoadRef = useRef(false); // tracks when we just switched chats
   const [showMobileSidebar, setShowMobileSidebar] = useState(true);
+  const [showCaptainMenu, setShowCaptainMenu] = useState(false);
+
+  const captainId = user?.team?.captain?._id || user?.team?.captain;
+  const isTeamCaptain = !!(user?.team && captainId && captainId === userId);
 
   // Refs
   const messagesEndRef = useRef(null);
@@ -352,6 +356,13 @@ export default function ChatPage() {
                       {app.status === 'pending' && (
                         <>
                           <button
+                            onClick={() => navigate(`/detailed/${app.player._id}`)}
+                            className="flex-1 min-w-[120px] px-3 md:px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg transition-colors text-xs md:text-sm flex items-center justify-center gap-1"
+                          >
+                            <User className="w-3.5 h-3.5" />
+                            View Profile
+                          </button>
+                          <button
                             onClick={() => handleStartTryoutWithRefresh(app._id)}
                             className="flex-1 min-w-[120px] px-3 md:px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-lg font-medium transition-all text-xs md:text-sm"
                           >
@@ -392,7 +403,7 @@ export default function ChatPage() {
               Chats
             </h2>
             <div className="flex items-center gap-2">
-              {user?.team && (
+              {isTeamCaptain && (
                 <button
                   onClick={() => setShowApplications(true)}
                   className="relative p-2 hover:bg-zinc-800 rounded-lg transition-colors"
@@ -404,6 +415,30 @@ export default function ChatPage() {
                     </span>
                   )}
                 </button>
+              )}
+              {isTeamCaptain && (
+                <div className="relative md:hidden">
+                  <button
+                    onClick={() => setShowCaptainMenu((v) => !v)}
+                    className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+                  >
+                    <Menu className="w-4 h-4 text-zinc-400" />
+                  </button>
+                  {showCaptainMenu && (
+                    <div className="absolute right-0 mt-2 w-52 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-20 overflow-hidden">
+                      <button
+                        onClick={() => {
+                          setShowApplications(true);
+                          setShowCaptainMenu(false);
+                        }}
+                        className="w-full px-3 py-2.5 text-left text-sm text-white hover:bg-zinc-800 flex items-center justify-between"
+                      >
+                        <span>Team Applications</span>
+                        <span className="text-orange-400 font-semibold">{teamApplications.length}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -597,6 +632,30 @@ export default function ChatPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {isTeamCaptain && (
+                    <div className="relative md:hidden">
+                      <button
+                        onClick={() => setShowCaptainMenu((v) => !v)}
+                        className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+                      >
+                        <Menu className="w-4 h-4 text-zinc-400" />
+                      </button>
+                      {showCaptainMenu && (
+                        <div className="absolute right-0 mt-2 w-52 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-20 overflow-hidden">
+                          <button
+                            onClick={() => {
+                              setShowApplications(true);
+                              setShowCaptainMenu(false);
+                            }}
+                            className="w-full px-3 py-2.5 text-left text-sm text-white hover:bg-zinc-800 flex items-center justify-between"
+                          >
+                            <span>Team Applications</span>
+                            <span className="text-orange-400 font-semibold">{teamApplications.length}</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {chatType === 'tryout' && selectedChat.tryoutStatus === 'active' && user?.team?.captain?._id === userId && (
                     <>
                       <button

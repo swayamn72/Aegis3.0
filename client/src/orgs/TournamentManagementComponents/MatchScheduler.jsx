@@ -9,6 +9,24 @@ import sanhokImg from '../../assets/mapImages/sanhok.webp';
 import vikendiImg from '../../assets/mapImages/vikendi.jpg';
 import rondoImg from '../../assets/mapImages/rondo.webp';
 
+const phaseToCode = (phaseName = '') => {
+  const normalized = phaseName.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').trim();
+
+  const roundMatch = normalized.match(/\b(?:round|r)\s*(\d+)\b/);
+  if (roundMatch) {
+    return `R${roundMatch[1]}`;
+  }
+
+  if (normalized.includes('pre quarter')) return 'PQ';
+  if (normalized.includes('quarter')) return 'QF';
+  if (normalized.includes('semi')) return 'SE';
+  if (normalized.includes('grand final') || normalized === 'final' || normalized.includes(' finals')) {
+    return 'GF';
+  }
+
+  return normalized.replace(/\s+/g, '').toUpperCase() || 'R1';
+};
+
 const MatchScheduler = ({ tournament, onUpdate }) => {
   const [scheduledMatches, setScheduledMatches] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -16,7 +34,6 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
   const [selectedGroups, setSelectedGroups] = useState([]);
   const [totalTeams, setTotalTeams] = useState(0);
   const [formData, setFormData] = useState({
-    matchName: '',
     tournamentPhase: '',
     scheduledDate: '',
     scheduledTime: '',
@@ -119,11 +136,39 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
     }));
   };
 
+  const getNextMatchNumber = () => {
+    const nextFromTotal = (Number(totalMatches) || 0) + 1;
+    return Math.max(1, nextFromTotal);
+  };
+
+  const extractGroupCode = (groupName = '') => {
+    const numericPart = groupName.match(/\d+/)?.[0];
+    if (numericPart) return numericPart;
+    return groupName.replace(/\s+/g, '').toUpperCase();
+  };
+
+  const generateMatchName = () => {
+    const matchNumber = getNextMatchNumber();
+    const phaseCode = phaseToCode(formData.tournamentPhase);
+    const phaseGroups = getGroupsForPhase();
+
+    const selectedGroupCodes = selectedGroups
+      .map((groupId) => phaseGroups.find((g) =>
+        (g._id?.toString?.() === groupId) || (g.id === groupId) || (g.name === groupId)
+      ))
+      .filter(Boolean)
+      .map((group) => extractGroupCode(group.name))
+      .filter(Boolean);
+
+    const uniqueGroupCodes = [...new Set(selectedGroupCodes)];
+    const groupCode = uniqueGroupCodes.length > 0
+      ? uniqueGroupCodes.join('-')
+      : 'NA';
+
+    return `M${matchNumber}G${groupCode}${phaseCode}`;
+  };
+
   const validateForm = () => {
-    if (!formData.matchName.trim()) {
-      toast.error('Match name is required');
-      return false;
-    }
     if (!formData.tournamentPhase) {
       toast.error('Please select a phase');
       return false;
@@ -150,9 +195,10 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
 
     try {
       const scheduledDateTime = new Date(`${formData.scheduledDate}T${formData.scheduledTime}`);
+      const autoMatchName = generateMatchName();
 
       const matchData = {
-        matchName: formData.matchName,
+        matchName: autoMatchName,
         tournament: tournament._id,
         tournamentPhase: formData.tournamentPhase,
         map: formData.map,
@@ -173,7 +219,6 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
       }
 
       setFormData({
-        matchName: '',
         tournamentPhase: '',
         scheduledDate: '',
         scheduledTime: '',
@@ -537,17 +582,6 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
             {/* Basic Info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-zinc-400 mb-2">Match Name *</label>
-                <input
-                  type="text"
-                  value={formData.matchName}
-                  onChange={(e) => handleInputChange('matchName', e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-orange-500"
-                  placeholder="e.g., Match 1"
-                />
-              </div>
-
-              <div>
                 <label className="block text-sm text-zinc-400 mb-2">Phase *</label>
                 <select
                   value={formData.tournamentPhase}
@@ -559,6 +593,13 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
                     <option key={phase._id || phase.id} value={phase.name}>{phase.name}</option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-sm text-zinc-400 mb-2">Match Name</label>
+                <div className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-orange-400 font-semibold">
+                  {generateMatchName()}
+                </div>
               </div>
             </div>
 
@@ -639,7 +680,6 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
                 onClick={() => {
                   setShowScheduleForm(false);
                   setFormData({
-                    matchName: '',
                     tournamentPhase: '',
                     scheduledDate: '',
                     scheduledTime: '',
@@ -654,7 +694,7 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
               {(() => {
                 const selectedPhaseObj = phases.find(p => p.name === formData.tournamentPhase);
                 const isPhaseCompleted = selectedPhaseObj?.status === 'completed';
-                
+
                 return (
                   <button
                     onClick={handleScheduleMatch}

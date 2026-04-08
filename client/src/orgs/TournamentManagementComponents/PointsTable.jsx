@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { Trophy, Medal, Award, Download, AlertCircle, ChevronDown, Image as ImageIcon, CheckCircle, ArrowRight, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import html2canvas from 'html2canvas';
@@ -24,7 +24,10 @@ const PointsTable = ({ tournament, onUpdate }) => {
     const ITEMS_PER_PAGE = 20;
 
     const calculationTimeoutRef = useRef(null);
-    const lastCalculationKeyRef = useRef('');
+    const matchesCalculationFingerprint = useMemo(
+        () => matches.map(match => `${match._id || ''}:${match.updatedAt || ''}:${match.status || ''}:${match.results?.length || 0}`).join('|'),
+        [matches]
+    );
 
     useEffect(() => {
         if (tournament?._id) {
@@ -41,10 +44,6 @@ const PointsTable = ({ tournament, onUpdate }) => {
             setPointsTable([]);
             return;
         }
-
-        const calculationKey = `${selectedPhase}-${selectedGroup}-${tournament._id}-${matches.length}`;
-        if (lastCalculationKeyRef.current === calculationKey) return;
-        lastCalculationKeyRef.current = calculationKey;
 
         if (calculationTimeoutRef.current) clearTimeout(calculationTimeoutRef.current);
 
@@ -70,23 +69,29 @@ const PointsTable = ({ tournament, onUpdate }) => {
                     }));
                 }
             } else {
-                const phase = tournament.phases?.find(p => p.name === selectedPhase);
-                // Use pre-calculated standings if available in the phase object
-                if (phase && phase.standings && phase.standings[selectedGroup]) {
-                    standingsData = phase.standings[selectedGroup].map(s => ({
-                        teamId: s.team?._id || s.teamId || (typeof s.team === 'string' ? s.team : null),
-                        teamName: s.team?.teamName || s.teamName || 'Unknown Team',
-                        teamLogo: s.team?.logo || s.teamLogo,
-                        position: s.position,
-                        points: s.points,
-                        kills: s.kills,
-                        matchesPlayed: s.matchesPlayed,
-                        chickenDinners: s.chickenDinners || 0,
-                        totalPositionPoints: s.positionPoints || 0,
-                        totalKillPoints: s.killPoints || s.kills || 0,
-                        totalPoints: s.points,
-                        source: 'standings'
-                    }));
+                // For active phase management, always derive from current match data first
+                // so manual result edits are reflected immediately.
+                standingsData = calculateFromMatches();
+
+                // Fallback to cached standings only when no match-derived data is available.
+                if (standingsData.length === 0) {
+                    const phase = tournament.phases?.find(p => p.name === selectedPhase);
+                    if (phase && phase.standings && phase.standings[selectedGroup]) {
+                        standingsData = phase.standings[selectedGroup].map(s => ({
+                            teamId: s.team?._id || s.teamId || (typeof s.team === 'string' ? s.team : null),
+                            teamName: s.team?.teamName || s.teamName || 'Unknown Team',
+                            teamLogo: s.team?.logo || s.teamLogo,
+                            position: s.position,
+                            points: s.points,
+                            kills: s.kills,
+                            matchesPlayed: s.matchesPlayed,
+                            chickenDinners: s.chickenDinners || 0,
+                            totalPositionPoints: s.positionPoints || 0,
+                            totalKillPoints: s.killPoints || s.kills || 0,
+                            totalPoints: s.points,
+                            source: 'standings'
+                        }));
+                    }
                 }
             }
 
@@ -109,7 +114,7 @@ const PointsTable = ({ tournament, onUpdate }) => {
 
             setPointsTable(sortedStandings);
         }, 100);
-    }, [selectedPhase, selectedGroup, tournament, matches]);
+    }, [selectedPhase, selectedGroup, tournament, matches, matchesCalculationFingerprint]);
 
     useEffect(() => {
         calculatePointsTable();
@@ -149,17 +154,17 @@ const PointsTable = ({ tournament, onUpdate }) => {
                 return groupMatches.includes(selectedGroup) || namesMatches.includes(selectedGroup);
             });
         }
-        
+
         // 3. Extract unique teams from these filtered matches
         filteredMatches.forEach(match => {
             const matchTeams = match.results && match.results.length > 0 ? match.results : (match.teams || []);
-            
+
             matchTeams.forEach(teamEntry => {
                 const team = teamEntry.team || teamEntry;
                 const teamId = team._id || team.id || teamEntry._id;
                 const teamName = team.teamName || team.name || 'Unknown Team';
                 const teamLogo = team.logo || null;
-                
+
                 if (teamId && !teamPoints[teamId.toString()]) {
                     teamPoints[teamId.toString()] = {
                         teamId: teamId.toString(),
@@ -222,6 +227,60 @@ const PointsTable = ({ tournament, onUpdate }) => {
         return pointsMap[position] || 0;
     };
 
+    const calculateGroupStandingsFromMatches = (phaseName, groupName) => {
+        const teamPoints = {};
+
+        const phaseMatches = matches.filter(
+            (match) => match.tournamentPhase?.toString().trim() === phaseName?.toString().trim()
+        );
+
+        const groupMatches = phaseMatches.filter((match) => {
+            const participating = match.participatingGroups || [];
+            const names = match.groupNames || [];
+            return participating.includes(groupName) || names.includes(groupName);
+        });
+
+        groupMatches.forEach((match) => {
+            (match.results || []).forEach((teamResult) => {
+                const team = teamResult.team || {};
+                const teamId = (team._id || teamResult.team || teamResult._id)?.toString();
+                if (!teamId) return;
+
+                if (!teamPoints[teamId]) {
+                    teamPoints[teamId] = {
+                        teamId,
+                        teamName: team.teamName || team.name || 'Unknown Team',
+                        teamLogo: team.logo || null,
+                        totalPositionPoints: 0,
+                        totalKillPoints: 0,
+                        totalPoints: 0,
+                        kills: 0,
+                        matchesPlayed: 0,
+                        chickenDinners: 0,
+                    };
+                }
+
+                const position = teamResult.finalPosition;
+                const kills = teamResult.kills?.total || 0;
+                const placementPoints = getPlacementPoints(position);
+
+                teamPoints[teamId].totalPositionPoints += placementPoints;
+                teamPoints[teamId].totalKillPoints += kills;
+                teamPoints[teamId].totalPoints += placementPoints + kills;
+                teamPoints[teamId].kills += kills;
+                teamPoints[teamId].matchesPlayed += 1;
+                if (teamResult.chickenDinner) teamPoints[teamId].chickenDinners += 1;
+            });
+        });
+
+        return Object.values(teamPoints).sort((a, b) => {
+            if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
+            if (a.totalPositionPoints !== b.totalPositionPoints) return b.totalPositionPoints - a.totalPositionPoints;
+            if (a.chickenDinners !== b.chickenDinners) return b.chickenDinners - a.chickenDinners;
+            return b.kills - a.kills;
+        });
+    };
+
     const getPositionIcon = (position) => {
         switch (position) {
             case 1: return <Trophy className="w-5 h-5 text-yellow-400" />;
@@ -253,18 +312,26 @@ const PointsTable = ({ tournament, onUpdate }) => {
             if (source === 'overall') {
                 selectedTeams = pointsTable.slice(0, numberOfTeams);
             } else if (source === 'from_each_group') {
-                if (phase.groups && phase.groups.length > 0) {
-                    phase.groups.forEach(group => {
-                        if (group.name === 'overall') return;
-                        const groupStandings = pointsTable.filter(team => {
-                            const groupTeamIds = (group.teams && group.teams.length > 0)
-                            ? group.teams.map(t => t._id?.toString() || t.toString())
-                            : group.slotList?.map(s => s.team?._id?.toString() || s.team?.toString()) || [];
-                            return groupTeamIds.includes(team.teamId);
-                        }).slice(0, numberOfTeams);
-                        selectedTeams.push(...groupStandings);
-                    });
-                }
+                const phaseGroupNames = (phase.groups || [])
+                    .map((g) => g.name)
+                    .filter((name) => name && name !== 'overall');
+
+                const fallbackGroupNames = Array.from(
+                    new Set(
+                        matches
+                            .filter((match) => match.tournamentPhase?.toString().trim() === selectedPhase?.toString().trim())
+                            .flatMap((match) => [...(match.participatingGroups || []), ...(match.groupNames || [])])
+                            .filter(Boolean)
+                    )
+                );
+
+                const groupNames = phaseGroupNames.length > 0 ? phaseGroupNames : fallbackGroupNames;
+
+                groupNames.forEach((groupName) => {
+                    const groupStandings = calculateGroupStandingsFromMatches(selectedPhase, groupName)
+                        .slice(0, numberOfTeams);
+                    selectedTeams.push(...groupStandings);
+                });
             }
 
             preview.rules.push({
@@ -571,11 +638,11 @@ const PointsTable = ({ tournament, onUpdate }) => {
                                 <button
                                     onClick={handleConcludeTournament}
                                     disabled={
-                                        isConcluding || 
-                                        tournament.status === 'completed' || 
+                                        isConcluding ||
+                                        tournament.status === 'completed' ||
                                         selectedPhaseObj?.status === 'completed' ||
-                                        (tournament.phases?.findIndex(p => p.name === selectedPhase) > 0 && 
-                                         tournament.phases[tournament.phases.findIndex(p => p.name === selectedPhase) - 1]?.status !== 'completed')
+                                        (tournament.phases?.findIndex(p => p.name === selectedPhase) > 0 &&
+                                            tournament.phases[tournament.phases.findIndex(p => p.name === selectedPhase) - 1]?.status !== 'completed')
                                     }
                                     className="px-4 py-2 bg-zinc-100 text-zinc-950 font-bold rounded-lg hover:bg-white transition-all disabled:opacity-50 flex items-center gap-2 shadow-[0_0_15px_rgba(255,255,255,0.1)] hover:shadow-[0_0_20px_rgba(255,255,255,0.2)]"
                                 >
@@ -587,21 +654,21 @@ const PointsTable = ({ tournament, onUpdate }) => {
                                     <button
                                         onClick={handleAdvancePhaseClick}
                                         disabled={
-                                            advancingPhase || 
-                                            tournament.status === 'completed' || 
+                                            advancingPhase ||
+                                            tournament.status === 'completed' ||
                                             selectedPhaseObj?.status === 'completed' ||
-                                            (tournament.phases?.findIndex(p => p.name === selectedPhase) > 0 && 
-                                             tournament.phases[tournament.phases.findIndex(p => p.name === selectedPhase) - 1]?.status !== 'completed')
+                                            (tournament.phases?.findIndex(p => p.name === selectedPhase) > 0 &&
+                                                tournament.phases[tournament.phases.findIndex(p => p.name === selectedPhase) - 1]?.status !== 'completed')
                                         }
                                         className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 flex items-center gap-2 font-medium"
                                     >
                                         <CheckCircle className="w-4 h-4" />
                                         {selectedPhaseObj?.status === 'completed' ? 'Phase Advanced' : 'Advance Phase'}
                                     </button>
-                                    {tournament.phases?.findIndex(p => p.name === selectedPhase) > 0 && 
-                                     tournament.phases[tournament.phases.findIndex(p => p.name === selectedPhase) - 1]?.status !== 'completed' && (
-                                        <span className="text-[10px] text-orange-400 font-medium">Previous phase must be advanced first</span>
-                                    )}
+                                    {tournament.phases?.findIndex(p => p.name === selectedPhase) > 0 &&
+                                        tournament.phases[tournament.phases.findIndex(p => p.name === selectedPhase) - 1]?.status !== 'completed' && (
+                                            <span className="text-[10px] text-orange-400 font-medium">Previous phase must be advanced first</span>
+                                        )}
                                 </div>
                             )}
                         </div>
@@ -765,8 +832,8 @@ const PointsTable = ({ tournament, onUpdate }) => {
                         {[...Array(totalPages)].map((_, i) => {
                             // Only show a few pages around current page
                             if (
-                                i === 0 || 
-                                i === totalPages - 1 || 
+                                i === 0 ||
+                                i === totalPages - 1 ||
                                 (i >= currentPage - 2 && i <= currentPage)
                             ) {
                                 return (

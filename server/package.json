@@ -7,7 +7,10 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js",
-    "migrate:tryout-messages": "node scripts/migrate_tryout_messages.js"
+    "migrate:tryout-messages": "node scripts/migrate_tryout_messages.js",
+    "simulate:1020-registrations": "node scripts/simulate_1020_team_registrations.js",
+    "seed:teamup-samples": "node scripts/seed_teamup_samples.js",
+    "cleanup:teamup-samples": "node scripts/cleanup_teamup_samples.js"
   },
   "keywords": [],
   "author": "",

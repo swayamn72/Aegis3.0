@@ -12,8 +12,213 @@ import { verifyApprovedOrgToken } from '../middleware/orgAuth.js';
 import TournamentAnnouncement from '../models/tournamentAnnouncement.model.js';
 import ChatMessage from '../models/chat.model.js';
 import { recalculateStatsForTeams } from './match.routes.js';
+import notificationService from '../services/notification.service.js';
 
 const router = express.Router();
+
+async function sendPhaseOutcomeNotifications({
+  tournamentId,
+  tournamentName,
+  phaseName,
+  nextPhaseName,
+  qualifiedTeamIds,
+}) {
+  const phaseRegs = await Registration.find({
+    tournament: tournamentId,
+    phase: phaseName,
+    status: { $in: ['approved', 'checked_in'] },
+  })
+    .select('team roster')
+    .lean();
+
+  if (!phaseRegs.length) return;
+
+  const teamIds = phaseRegs.map((r) => r.team.toString());
+  const qualifiedSet = new Set((qualifiedTeamIds || []).map((id) => id.toString()));
+  const eliminatedSet = new Set(teamIds.filter((id) => !qualifiedSet.has(id)));
+
+  const teams = await Team.find({ _id: { $in: teamIds } })
+    .select('teamName')
+    .lean();
+  const teamNameById = new Map(teams.map((t) => [t._id.toString(), t.teamName || 'Your team']));
+
+  const qualifiedDocs = [];
+  const eliminatedDocs = [];
+  const qualifiedPlayerIds = new Set();
+  const eliminatedPlayerIds = new Set();
+
+  for (const reg of phaseRegs) {
+    const teamId = reg.team.toString();
+    const players = (reg.roster || [])
+      .map((slot) => slot.player?.toString())
+      .filter(Boolean);
+
+    if (!players.length) continue;
+
+    const isQualified = qualifiedSet.has(teamId);
+    const teamName = teamNameById.get(teamId) || 'Your team';
+
+    const message = isQualified
+      ? `✅ ${teamName} has qualified from ${phaseName}${nextPhaseName ? ` to ${nextPhaseName}` : ''} in ${tournamentName}.`
+      : `❌ ${teamName} did not qualify from ${phaseName} in ${tournamentName}.`;
+
+    const targetDocs = isQualified ? qualifiedDocs : eliminatedDocs;
+    const targetPlayers = isQualified ? qualifiedPlayerIds : eliminatedPlayerIds;
+
+    for (const playerId of players) {
+      targetPlayers.add(playerId);
+      targetDocs.push({
+        senderId: 'system',
+        receiverId: playerId,
+        message,
+        messageType: 'system',
+        tournamentId,
+        metadata: {
+          type: isQualified ? 'phase_qualified' : 'phase_eliminated',
+          phaseName,
+          nextPhaseName: nextPhaseName || null,
+          teamId,
+        },
+        timestamp: new Date(),
+      });
+    }
+  }
+
+  if (qualifiedDocs.length > 0) {
+    await ChatMessage.insertMany(qualifiedDocs, { ordered: false });
+  }
+  if (eliminatedDocs.length > 0) {
+    await ChatMessage.insertMany(eliminatedDocs, { ordered: false });
+  }
+
+  const notifyPromises = [];
+
+  if (qualifiedPlayerIds.size > 0) {
+    notifyPromises.push(
+      notificationService.sendToMultiplePlayers(
+        [...qualifiedPlayerIds],
+        'Phase Qualified',
+        `${phaseName} completed. You qualified${nextPhaseName ? ` to ${nextPhaseName}` : ''}.`,
+        {
+          type: 'phase_qualified',
+          phaseName,
+          nextPhaseName: nextPhaseName || '',
+          tournamentId: tournamentId.toString(),
+        }
+      )
+    );
+  }
+
+  if (eliminatedPlayerIds.size > 0) {
+    notifyPromises.push(
+      notificationService.sendToMultiplePlayers(
+        [...eliminatedPlayerIds],
+        'Phase Result',
+        `${phaseName} completed. Your team did not qualify this phase.`,
+        {
+          type: 'phase_eliminated',
+          phaseName,
+          tournamentId: tournamentId.toString(),
+        }
+      )
+    );
+  }
+
+  if (notifyPromises.length > 0) {
+    await Promise.allSettled(notifyPromises);
+  }
+
+  console.log(
+    `📣 Phase outcome notifications sent for ${phaseName}: qualifiedTeams=${qualifiedSet.size}, eliminatedTeams=${eliminatedSet.size}, qualifiedPlayers=${qualifiedPlayerIds.size}, eliminatedPlayers=${eliminatedPlayerIds.size}`
+  );
+}
+
+const normalizePhaseDirectInvites = (directInvites, totalSlots = 0) => {
+  const rawMode = directInvites?.mode;
+  const mode = ['decide_later', 'none', 'fixed_count'].includes(rawMode)
+    ? rawMode
+    : 'decide_later';
+
+  if (mode !== 'fixed_count') {
+    return { mode, targetCount: null };
+  }
+
+  const parsed = Number.parseInt(directInvites?.targetCount, 10);
+  const targetCount = Number.isFinite(parsed) ? parsed : null;
+  return { mode, targetCount };
+};
+
+const validatePhaseDirectInvites = (phases, totalSlots = 0) => {
+  const errors = [];
+  if (!Array.isArray(phases)) return errors;
+
+  phases.forEach((phase, idx) => {
+    const invitePlan = normalizePhaseDirectInvites(phase?.directInvites, totalSlots);
+
+    if (invitePlan.mode === 'fixed_count') {
+      if (!invitePlan.targetCount || invitePlan.targetCount < 1) {
+        errors.push(`Phase ${idx + 1}: invite target must be at least 1 when mode is fixed_count`);
+      }
+      if (totalSlots > 0 && invitePlan.targetCount > totalSlots) {
+        errors.push(`Phase ${idx + 1}: invite target cannot exceed tournament total slots (${totalSlots})`);
+      }
+    }
+  });
+
+  return errors;
+};
+
+const buildStructureSuggestion = (approvedCount) => {
+  const n = Number(approvedCount || 0);
+
+  if (n <= 32) {
+    return {
+      reason: 'low_registration',
+      suggestedFormat: 'single_phase_finals',
+      notes: 'Run a compact finals-only structure to keep quality and avoid empty groups.',
+      phases: [
+        {
+          name: 'Grand Finals',
+          type: 'final_stage',
+          groups: 1,
+          teamsPerGroup: Math.max(8, Math.min(32, n || 16)),
+          qualificationRules: [],
+        },
+      ],
+    };
+  }
+
+  if (n <= 128) {
+    return {
+      reason: 'medium_registration',
+      suggestedFormat: 'two_stage',
+      notes: 'Keep one qualifier stage, then finals for cleaner progression.',
+      phases: [
+        {
+          name: 'Round 1',
+          type: 'qualifiers',
+          groups: Math.max(2, Math.ceil(n / 16)),
+          teamsPerGroup: 16,
+          qualificationRules: [{ source: 'from_each_group', numberOfTeams: 8, nextPhase: 'Grand Finals' }],
+        },
+        {
+          name: 'Grand Finals',
+          type: 'final_stage',
+          groups: 1,
+          teamsPerGroup: Math.max(16, Math.ceil(n / 2)),
+          qualificationRules: [],
+        },
+      ],
+    };
+  }
+
+  return {
+    reason: 'sufficient_registration',
+    suggestedFormat: 'current_plan_ok',
+    notes: 'Current multi-phase structure is acceptable for the present team count.',
+    phases: [],
+  };
+};
 
 // Get tournaments for organization dashboard (optimized for OrgDashboard component)
 router.get('/my-tournaments', verifyApprovedOrgToken, async (req, res) => {
@@ -120,6 +325,7 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
     const { phaseName } = req.body;
     let responsePayload = null;
     let phaseTeamIdsForStats = [];
+    let phaseOutcomeNotificationContext = null;
 
     console.log('=== ADVANCE PHASE START ===');
     console.log('Tournament ID:', tournamentId);
@@ -215,6 +421,13 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
         if (r.group) registrationGroupMap[r.team.toString()] = r.group;
       });
 
+      const phaseGroupMap = {};
+      (currentPhase.groups || []).forEach((group) => {
+        (group.teams || []).forEach((teamId) => {
+          phaseGroupMap[teamId.toString()] = group.name;
+        });
+      });
+
       // Initialize standings for all teams in phase — single batch query
       const phaseTeams = await Team.find({ _id: { $in: phaseTeamIds } })
         .session(session)
@@ -263,9 +476,9 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
       });
 
       // Assign groups to standings using registrationGroupMap (built from Registration.group above)
-      // currentPhase.groups[].teams[] is no longer used — Registration is the source of truth
+      // Registration.group is source of truth; phase-group mapping is a fallback.
       Object.keys(teamStandings).forEach(teamId => {
-        teamStandings[teamId].group = registrationGroupMap[teamId] || null;
+        teamStandings[teamId].group = registrationGroupMap[teamId] || phaseGroupMap[teamId] || null;
       });
 
       // Convert to array and sort by: totalPoints → positionPoints → chickenDinners → kills
@@ -360,6 +573,13 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
                 qualifiedTeamIds.push(...topFromGroup);
                 console.log(`  → ${topFromGroup.length} teams from ${groupName}`);
               });
+
+              if (qualifiedTeamIds.length === 0) {
+                qualifiedTeamIds = overallStandings
+                  .slice(0, numberOfTeams)
+                  .map(s => s.team._id.toString());
+                console.warn('⚠️ from_each_group produced 0 teams; fallback to overall top teams applied.');
+              }
             }
 
             // Add to qualified set
@@ -556,6 +776,15 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
       console.log('✅ Tournament saved successfully');
 
       // Prepare response with standings (returned after successful commit)
+      const nextPhaseCandidates = [...new Set(advancementDetails.map((d) => d.nextPhase).filter(Boolean))];
+      phaseOutcomeNotificationContext = {
+        tournamentId,
+        tournamentName: tournament.tournamentName,
+        phaseName,
+        nextPhaseName: nextPhaseCandidates.length > 0 ? nextPhaseCandidates[0] : null,
+        qualifiedTeamIds: teamsAdvanced,
+      };
+
       responsePayload = {
         success: true,
         message: 'Phase advanced successfully',
@@ -615,6 +844,12 @@ router.post('/:tournamentId/advance-phase', verifyApprovedOrgToken, async (req, 
       recalculateStatsForTeams(phaseTeamIdsForStats).catch(err =>
         console.warn('⚠️ Automated stats recalculation failed (non-critical):', err.message)
       );
+    }
+
+    if (phaseOutcomeNotificationContext) {
+      sendPhaseOutcomeNotifications(phaseOutcomeNotificationContext).catch((err) => {
+        console.warn('⚠️ Phase outcome notifications failed (non-critical):', err.message);
+      });
     }
 
     console.log('=== ADVANCE PHASE END ===');
@@ -922,6 +1157,7 @@ router.post('/:tournamentId/lock-registrations', verifyApprovedOrgToken, async (
       if (fillRate < 50) recommendation = 'restructure';
       else if (fillRate < 80) recommendation = 'warn';
       else recommendation = 'proceed';
+      const suggestedStructure = buildStructureSuggestion(approvedCount);
 
       const bulkResult = await Registration.updateMany(
         {
@@ -956,6 +1192,7 @@ router.post('/:tournamentId/lock-registrations', verifyApprovedOrgToken, async (
           fillRate
         },
         recommendation,
+        suggestedStructure,
         message: [
           `${bulkResult.modifiedCount} approved team(s) assigned to "${firstPhaseName}".`,
           alreadyAssigned > 0 ? `${alreadyAssigned} team(s) were already assigned.` : '',
@@ -1468,7 +1705,7 @@ router.put('/:tournamentId', verifyApprovedOrgToken, upload.fields([
       'requiresApproval', 'registrationStartDate', 'registrationEndDate',
       'slots', 'prizePool', 'rulesetDocument', 'websiteLink',
       'gameSettings', 'streamLinks', 'socialMedia', 'format', 'formatDetails',
-      'media', 'phases'
+      'media'
     ];
     const updateData = {};
 
@@ -1478,17 +1715,15 @@ router.put('/:tournamentId', verifyApprovedOrgToken, upload.fields([
       }
     });
 
-    if (updateData.phases && typeof updateData.phases === 'string') {
-      try {
-        updateData.phases = JSON.parse(updateData.phases);
-      } catch (e) {
-        return res.status(400).json({ error: 'Invalid phases format' });
-      }
+    if (rawUpdateData.phases !== undefined) {
+      return res.status(400).json({
+        error: 'Phase settings are locked after tournament creation. Use phase-specific actions (lock registrations, assign groups, advance phase).'
+      });
     }
 
     // Fetch tournament
     const tournament = await Tournament.findById(tournamentId)
-      .select('organizer.organizationRef media status phases._id phases.name startDate endDate')
+      .select('organizer.organizationRef media status phases._id phases.name startDate endDate slots.total')
       .lean();
 
     if (!tournament) {
@@ -1562,6 +1797,22 @@ router.put('/:tournamentId', verifyApprovedOrgToken, upload.fields([
           error: 'End date must be after start date'
         });
       }
+    }
+
+    if (Array.isArray(updateData.phases)) {
+      const totalSlotsForValidation = Number(updateData?.slots?.total || tournament?.slots?.total || 0);
+      const phaseInviteErrors = validatePhaseDirectInvites(updateData.phases, totalSlotsForValidation);
+      if (phaseInviteErrors.length > 0) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          errors: phaseInviteErrors
+        });
+      }
+
+      updateData.phases = updateData.phases.map((phase) => ({
+        ...phase,
+        directInvites: normalizePhaseDirectInvites(phase?.directInvites, totalSlotsForValidation)
+      }));
     }
 
     let updatedTournament;
@@ -2151,6 +2402,12 @@ router.post(
         }
       }
 
+      const totalSlotsForValidation = Number(tournamentData?.slots?.total || 0);
+      const phaseInviteErrors = validatePhaseDirectInvites(tournamentData?.phases, totalSlotsForValidation);
+      if (phaseInviteErrors.length > 0) {
+        validationErrors.push(...phaseInviteErrors);
+      }
+
       // Return validation errors
       if (validationErrors.length > 0) {
         return res.status(400).json({
@@ -2310,6 +2567,7 @@ router.post(
             })() : null,
             status: 'upcoming',
             details: phase.details || '',
+            directInvites: normalizePhaseDirectInvites(phase?.directInvites, Number(tournamentData.slots?.total || 0)),
             teams: [],
             groups: Array.isArray(phase.groups) ? phase.groups : [],
             qualificationRules: Array.isArray(phase.qualificationRules) ?
