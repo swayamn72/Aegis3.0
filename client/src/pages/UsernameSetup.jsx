@@ -9,7 +9,7 @@ const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
 export default function UsernameSetup() {
     const navigate = useNavigate();
-    const { user } = useAuth();
+    const { user, refreshUser } = useAuth();
     const [username, setUsername] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -33,6 +33,14 @@ export default function UsernameSetup() {
         e.preventDefault();
         setError('');
 
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setError('Your session expired. Please log in again.');
+            toast.error('Session expired. Please log in again.');
+            navigate('/login');
+            return;
+        }
+
         if (username.length < 3 || username.length > 20) {
             setError('Username must be 3-20 characters');
             return;
@@ -51,6 +59,9 @@ export default function UsernameSetup() {
                 username,
             }, {
                 withCredentials: true,
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
             });
 
             if (response.data.success) {
@@ -61,6 +72,9 @@ export default function UsernameSetup() {
                 storedUser.username = username;
                 storedUser.usernameCustomized = true;
                 localStorage.setItem('user', JSON.stringify(storedUser));
+
+                // Keep context in sync before route change.
+                await refreshUser();
 
                 // Redirect to settings to complete profile
                 setTimeout(() => {

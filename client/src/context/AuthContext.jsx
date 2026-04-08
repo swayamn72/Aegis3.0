@@ -154,8 +154,15 @@ export const AuthProvider = ({ children }) => {
         ? `${API_URL}/api/organizations/me`
         : `${API_URL}/api/players/me`;
 
+      const token = localStorage.getItem('token');
+      const headers = {};
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
       const response = await fetch(endpoint, {
         credentials: "include",
+        headers,
       });
 
       if (response.ok) {
