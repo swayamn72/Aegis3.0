@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import NavbarAuth from '../components/NavbarAuth';
+import Navbar from '../components/Navbar';
 
 const PrivacyPolicyPage = () => {
     useEffect(() => {
@@ -8,7 +8,7 @@ const PrivacyPolicyPage = () => {
 
     return (
         <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans">
-            <NavbarAuth />
+            <Navbar />
             <div className="container mx-auto px-6 py-24 max-w-4xl">
                 <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-8 md:p-12 shadow-xl">
                     <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-orange-400 via-red-500 to-amber-500 text-transparent bg-clip-text mb-6">
