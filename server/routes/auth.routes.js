@@ -1047,6 +1047,100 @@ router.post('/complete-org-profile', verifyOrgToken, asyncHandler(async (req, re
   }
 }));
 
+// ==========================
+// DELETE ACCOUNT (Player/Organization)
+// ==========================
+router.delete('/delete-account', auth, asyncHandler(async (req, res) => {
+  const { id, role } = req.user;
+
+  if (role !== 'organization' && role !== 'player') {
+    return res.status(403).json({ message: 'Unsupported account type' });
+  }
+
+  const deletionEmail = `deleted_${id}_${Date.now()}@deleted.aegis`;
+  const randomSecret = crypto.randomBytes(48).toString('hex');
+  const randomizedHash = await bcrypt.hash(randomSecret, AUTH_CONSTANTS.BCRYPT_SALT_ROUNDS);
+
+  if (role === 'organization') {
+    const org = await Organization.findById(id);
+    if (!org) {
+      return res.status(404).json({ message: 'Account not found' });
+    }
+
+    org.orgName = `deleted_org_${String(id).slice(-8)}_${Date.now()}`;
+    org.ownerName = 'Deleted Organization';
+    org.email = deletionEmail;
+    org.password = randomizedHash;
+    org.googleId = undefined;
+    org.logo = '';
+    org.country = 'Deleted';
+    org.headquarters = '';
+    org.description = '';
+    org.contactPhone = '';
+    org.isEmailVerified = false;
+    org.profileCustomized = false;
+    org.orgSocial = {
+      instagram: '',
+      twitter: '',
+      facebook: '',
+      linkedin: '',
+      youtube: '',
+      website: '',
+    };
+    org.ownerSocial = {
+      instagram: '',
+      twitter: '',
+      facebook: '',
+      linkedin: '',
+      youtube: '',
+      website: '',
+    };
+    org.verificationCode = undefined;
+    org.verificationCodeExpires = undefined;
+    org.verificationCodeAttempts = 0;
+    org.lastVerificationEmailSent = undefined;
+    org.resetPasswordToken = null;
+    org.resetPasswordExpiry = null;
+
+    await org.save();
+  } else {
+    const player = await Player.findById(id).select('+password');
+    if (!player) {
+      return res.status(404).json({ message: 'Account not found' });
+    }
+
+    player.email = deletionEmail;
+    player.realName = '';
+    player.age = null;
+    player.password = randomizedHash;
+    player.googleId = undefined;
+    player.profilePicture = '';
+    player.discordTag = '';
+    player.instagram = '';
+    player.youtube = '';
+    player.twitter = '';
+    player.bio = '';
+    player.location = '';
+    player.fcmToken = null;
+    player.isEmailVerified = false;
+    player.authProvider = ['local'];
+    player.verificationCode = undefined;
+    player.verificationCodeExpires = undefined;
+    player.verificationCodeAttempts = 0;
+    player.lastVerificationEmailSent = undefined;
+    player.resetPasswordToken = null;
+    player.resetPasswordExpiry = null;
+
+    await player.save();
+  }
+
+  res.clearCookie('token');
+  res.status(200).json({
+    success: true,
+    message: 'Account deleted successfully via anonymization',
+  });
+}));
+
 // --- Logout Route (Same for all users) ---
 router.post("/logout", (req, res) => {
   res.clearCookie("token");

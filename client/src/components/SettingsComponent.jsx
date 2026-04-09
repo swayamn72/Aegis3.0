@@ -142,7 +142,7 @@ const SettingsComponent = () => {
         availability: user.availability || '',
         discordTag: user.discordTag || '',
         instagram: user.instagram || '',
-        youtube: user.youtube || user.YouTube || '', 
+        youtube: user.youtube || user.YouTube || '',
         twitter: user.twitter || '',
         cardTheme: user.cardTheme || 'orange',
       });
@@ -802,6 +802,9 @@ const SettingsComponent = () => {
                             try {
                               await axiosInstance.delete('/api/auth/delete-account');
                               toast.success("Account deleted successfully");
+                              localStorage.removeItem('token');
+                              localStorage.removeItem('user');
+                              localStorage.removeItem('userRole');
                               window.location.href = '/login';
                             } catch (e) {
                               toast.error(e.response?.data?.message || 'Failed to delete account');
