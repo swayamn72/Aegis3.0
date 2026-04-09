@@ -785,6 +785,36 @@ const SettingsComponent = () => {
                       </div>
                     </div>
                   </div>
+
+                  {/* Account Deletion */}
+                  <div className="bg-zinc-800/50 border border-red-500/30 rounded-lg p-4 mt-6">
+                    <h3 className="text-lg font-semibold text-red-400 mb-3 flex items-center gap-2">
+                      <Trash2 className="w-5 h-5" />
+                      Danger Zone
+                    </h3>
+                    <div className="space-y-4">
+                      <p className="text-sm text-zinc-400">
+                        Once you delete your account, there is no going back. Please be certain.
+                      </p>
+                      <button
+                        onClick={async () => {
+                          if (window.confirm("Are you incredibly sure you want to delete your account? All your personal data will be permanently removed.")) {
+                            try {
+                              await axiosInstance.delete('/api/auth/delete-account');
+                              toast.success("Account deleted successfully");
+                              window.location.href = '/login';
+                            } catch (e) {
+                              toast.error(e.response?.data?.message || 'Failed to delete account');
+                            }
+                          }
+                        }}
+                        className="bg-red-500/10 border border-red-500/50 text-red-500 hover:bg-red-500 hover:text-white font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Delete Account
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

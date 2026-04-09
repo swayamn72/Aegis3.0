@@ -40,6 +40,7 @@ const AegisLeaderboard = lazy(() => import("./components/AegisLeaderboard"));
 const AegisOrgPendingApproval = lazy(() => import("./orgs/OrgPendingApproval"));
 const OrgDashboard = lazy(() => import("./orgs/OrgDashboard"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
+const PrivacyPolicyPage = lazy(() => import("./pages/PrivacyPolicyPage"));
 
 // --- Loading fallback for lazy-loaded routes ---
 const PageLoader = () => (
@@ -71,6 +72,7 @@ function AppContent() {
             <Route path="/detailed/:id" element={<DetailedPlayerProfilePage />} />
             <Route path="/matches/:id" element={<DetailedMatchInfoPage />} />
             <Route path="/leaderboard" element={<AegisLeaderboard />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
 
             {/* Organization Routes */}
             <Route

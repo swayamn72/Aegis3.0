@@ -467,6 +467,12 @@ const AegisLogin = () => {
                 Sign up
               </NavLink>
             </div>
+            <div className="text-center text-xs text-gray-500 mt-4">
+              By continuing, you agree to our{' '}
+              <NavLink to="/privacy-policy" className="text-gray-400 hover:text-gray-300 underline transition-colors">
+                Privacy Policy
+              </NavLink>
+            </div>
           </div>
         </div>
       </div>
