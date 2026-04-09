@@ -60,7 +60,7 @@ const PrivacyPolicyPage = () => {
                         </ul>
 
                         <h2 className="text-2xl font-semibold text-white mt-8 mb-4">4. Contact Us</h2>
-                        <p>If you have questions or comments about this Privacy Policy, please contact us at support@aegisesports.com (or your designated support address).</p>
+                        <p>If you have questions or comments about this Privacy Policy, please contact us at <a href="mailto:swayamsn123@gmail.com" className="text-orange-400 hover:text-orange-300 transition-colors">swayamsn123@gmail.com</a>.</p>
                     </div>
                 </div>
             </div>
