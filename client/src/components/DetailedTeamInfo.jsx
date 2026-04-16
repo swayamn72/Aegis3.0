@@ -39,430 +39,374 @@ const fetchTeamData = async (teamId) => {
 
   if (response.status === 403) {
     const errorData = await response.json();
-    throw { isPrivate: true, message: errorData.message || 'This team profile is private' };
   }
 
   if (!response.ok) {
-    throw new Error('Failed to fetch team data');
-  }
-
-  return response.json();
-};
-
-const DetailedTeamInfo = () => {
-  const { id } = useParams();
-  const { user } = useAuth();
-  const queryClient = useQueryClient();
-
-  const [activeTab, setActiveTab] = useState('matches');
-
-  // Pagination state for "Load more" — 0 means not triggered yet (uses cache data)
-  const [matchPage, setMatchPage] = useState(0);
-  const [tournamentPage, setTournamentPage] = useState(0);
-  // Accumulated extra items fetched via Load more
-  const [extraMatches, setExtraMatches] = useState([]);
-  const [extraTournaments, setExtraTournaments] = useState([]);
-
-  // Captain functionality states
-  const [showEditLogoModal, setShowEditLogoModal] = useState(false);
-  const [showEditTeamModal, setShowEditTeamModal] = useState(false);
-  const [editTeamForm, setEditTeamForm] = useState({
-    bio: '',
-    socials: { discord: '', twitter: '', instagram: '', youtube: '', website: '' }
-  });
-  const [showInviteModal, setShowInviteModal] = useState(false);
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [inviteMessage, setInviteMessage] = useState('');
-  const [selectedPlayer, setSelectedPlayer] = useState(null);
-  const [searching, setSearching] = useState(false);
-  const [showKickConfirm, setShowKickConfirm] = useState(false);
-  const [kickPlayerData, setKickPlayerData] = useState(null);
-  const [showTransferConfirm, setShowTransferConfirm] = useState(false);
-  const [transferPlayerData, setTransferPlayerData] = useState(null);
-  const [brokenImages, setBrokenImages] = useState({});
-  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
-
-  const handleImageError = (id) => {
-    setBrokenImages(prev => ({ ...prev, [id]: true }));
-  };
-
-  // TanStack Query: Fetch team data with caching
-  const {
-    data: teamDataResponse,
-    isLoading: loading,
-    isError,
-    error,
-  } = useQuery({
-    queryKey: ['teamData', id],
-    queryFn: () => fetchTeamData(id),
-    enabled: !!id,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-    retry: 1,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    refetchOnReconnect: false,
-  });
-
-  const teamData = teamDataResponse?.team || null;
-  const isPrivate = error?.isPrivate || false;
-
-  // Initial data comes FREE from the existing team query — zero extra requests
-  const initialMatches     = teamDataResponse?.recentMatches     ?? [];
-  const initialOngoing     = teamDataResponse?.ongoingTournaments ?? [];
-  const initialTournaments = teamDataResponse?.recentTournaments  ?? [];
-
-  // ── Paginated match query (only fires when user clicks "Load more") ──────────
-  const {
-    data: moreMatchData,
-    isFetching: loadingMoreMatches,
-  } = useQuery({
-    queryKey: teamKeys.matches(id, matchPage),
-    queryFn: () => fetchTeamMatches({ teamId: id, page: matchPage, limit: 10 }),
-    enabled: matchPage > 1,          // only runs after first "Load more" click
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    onSuccess: (data) => {
-      setExtraMatches(prev => [...prev, ...(data?.matches ?? [])]);
-    },
-  });
-
-  // ── Paginated tournament query (only fires when user clicks "Load more") ─────
-  const {
-    data: moreTournamentData,
-    isFetching: loadingMoreTournaments,
-  } = useQuery({
-    queryKey: teamKeys.tournaments(id, tournamentPage),
-    queryFn: () => fetchTeamTournaments({ teamId: id, page: tournamentPage, limit: 10 }),
-    enabled: tournamentPage > 1,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    onSuccess: (data) => {
-      setExtraTournaments(prev => [...prev, ...(data?.tournaments ?? [])]);
-    },
-  });
-
-  const hasMoreMatches     = moreMatchData     ? matchPage     < moreMatchData.totalPages     : true;
-  const hasMoreTournaments = moreTournamentData ? tournamentPage < moreTournamentData.totalPages : true;
-
-  const handleLoadMoreMatches = () => {
-    const next = matchPage < 2 ? 2 : matchPage + 1;
-    setMatchPage(next);
-  };
-
-  const handleLoadMoreTournaments = () => {
-    const next = tournamentPage < 2 ? 2 : tournamentPage + 1;
-    setTournamentPage(next);
-  };
-
-  // Check if current user is the captain
-  const isCaptain = user && teamData && teamData.captain && user._id === teamData.captain._id;
-
-  // Mutation: Upload Logo
-  const uploadLogoMutation = useMutation({
-    mutationFn: async (formData) => {
-      const response = await fetch(`${API_URL}/api/teams/${id}`, {
-        method: 'PUT',
-        credentials: 'include',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to update team logo');
-      }
-
-      return response.json();
-    },
-    onSuccess: (data) => {
-      toast.success('Team logo updated successfully!');
-      setShowEditLogoModal(false);
-      setSelectedFile(null);
-      queryClient.invalidateQueries({ queryKey: ['teamData', id] });
-    },
-    onError: (error) => {
-      toast.error(error.message || 'Failed to upload logo');
-    },
-  });
-
-  // Mutation: Edit Team
-  const editTeamMutation = useMutation({
-    mutationFn: async (formData) => {
-      const response = await fetch(`${API_URL}/api/teams/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(formData),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to update team details');
-      }
-
-      return response.json();
-    },
-    onSuccess: (data) => {
-      toast.success('Team details updated successfully!');
-      setShowEditTeamModal(false);
-      queryClient.invalidateQueries({ queryKey: ['teamData', id] });
-    },
-    onError: (error) => {
-      toast.error(error.message || 'Failed to update team details');
-    },
-  });
-
-  const openEditTeamModal = () => {
-    setEditTeamForm({
-      bio: teamData?.bio || '',
-      socials: {
-        discord: teamData?.socials?.discord || '',
-        twitter: teamData?.socials?.twitter || '',
-        instagram: teamData?.socials?.instagram || '',
-        youtube: teamData?.socials?.youtube || '',
-        website: teamData?.socials?.website || '',
-      }
-    });
-    setShowEditTeamModal(true);
-  };
-
-  const handleEditTeamSubmit = (e) => {
-    e.preventDefault();
-    
-    // Trim leading '@' from social handles
-    const trimmedSocials = { ...editTeamForm.socials };
-    ['instagram', 'twitter', 'youtube', 'discord'].forEach(key => {
-      if (trimmedSocials[key]) {
-        trimmedSocials[key] = String(trimmedSocials[key]).replace(/^@+/, '');
-      }
-    });
-
-    editTeamMutation.mutate({ ...editTeamForm, socials: trimmedSocials });
-  };
-
-  // Mutation: Send Invitation
-  const sendInvitationMutation = useMutation({
-    mutationFn: async ({ playerId, message }) => {
-      const response = await fetch(`${API_URL}/api/teams/${id}/invite`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ playerId, message }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to send invitation');
-      }
-
-      return response.json();
-    },
-    onSuccess: () => {
-      toast.success('Invitation sent successfully!');
-      setShowInviteModal(false);
-      setSelectedPlayer(null);
-      setInviteMessage('');
-      setSearchQuery('');
-      setSearchResults([]);
-    },
-    onError: (error) => {
-      toast.error(error.message || 'Failed to send invitation');
-    },
-  });
-
-  // Mutation: Kick Player
-  const kickPlayerMutation = useMutation({
-    mutationFn: async ({ teamId, playerId }) => {
-      const response = await fetch(`${API_URL}/api/teams/${teamId}/players/${playerId}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
-      if (!response.ok) throw new Error('Failed to kick player');
-      return response.json();
-    },
-    onSuccess: () => {
-      toast.success(`${kickPlayerData.playerUsername} has been kicked from the team`);
-      setShowKickConfirm(false);
-      setKickPlayerData(null);
-      queryClient.invalidateQueries({ queryKey: ['teamData', id] });
-    },
-    onError: (error) => {
-      toast.error(error.message || 'Failed to kick player');
-    },
-  });
-
-  // Handle logo upload
-  const handleLogoUpload = async () => {
-    if (!selectedFile) {
-      toast.error('Please select a file first');
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append('logo', selectedFile);
-    uploadLogoMutation.mutate(formData);
-  };
-
-  // Handle player search
-  const handlePlayerSearch = async (query) => {
-    if (!query.trim()) {
-      setSearchResults([]);
-      return;
-    }
-
-    setSearching(true);
     try {
-      const response = await fetch(`${API_URL}/api/teams/search/${encodeURIComponent(query)}?searchType=players`, {
-        credentials: 'include',
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setSearchResults(data.players || []);
-      } else {
-        setSearchResults([]);
-      }
+      const response = await axiosInstance.get(`/api/teams/${teamId}`);
+      return response.data;
     } catch (error) {
-      console.error('Error searching players:', error);
-      setSearchResults([]);
-    } finally {
-      setSearching(false);
-    }
-  };
+      const status = error?.status;
+      const errorData = error || {};
 
-  // Handle player search with debounce
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchResults([]);
-      setSearching(false);
-      return;
-    }
-
-    setSearching(true);
-    const timer = setTimeout(() => {
-      handlePlayerSearch(searchQuery);
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
-  // Handle sending invitation
-  const handleSendInvitation = async () => {
-    if (!selectedPlayer) {
-      toast.error('Please select a player to invite');
-      return;
-    }
-
-    sendInvitationMutation.mutate({
-      playerId: selectedPlayer._id,
-      message: inviteMessage || `Join ${teamData.teamName}!`,
-    });
-  };
-
-  // Handle kick player
-  const handleKickPlayer = (teamId, playerId, playerUsername) => {
-    setKickPlayerData({ teamId, playerId, playerUsername });
-    setShowKickConfirm(true);
-  };
-
-  const handleTransferCaptain = (teamId, playerId, playerUsername) => {
-    setTransferPlayerData({ teamId, playerId, playerUsername });
-    setShowTransferConfirm(true);
-  };
-
-  const confirmTransferCaptain = () => {
-    if (!transferPlayerData) return;
-    transferCaptainMutation.mutate({
-      teamId: transferPlayerData.teamId,
-      newCaptainId: transferPlayerData.playerId,
-    });
-  };
-
-  const confirmKickPlayer = () => {
-    if (!kickPlayerData) return;
-    kickPlayerMutation.mutate({
-      teamId: kickPlayerData.teamId,
-      playerId: kickPlayerData.playerId,
-    });
-  };
-
-  const leaveTeamMutation = useMutation({
-    mutationFn: async () => {
-      const response = await fetch(`${API_URL}/api/teams/${id}/players/${user._id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to leave team');
+      if (status === 403) {
+        throw { isPrivate: true, message: errorData.message || 'This team profile is private' };
       }
-      return response.json();
-    },
-    onSuccess: () => {
-      toast.success(`You have left ${teamData.teamName}`);
-      setShowLeaveConfirm(false);
-      queryClient.invalidateQueries({ queryKey: ['teamData', id] });
-      window.location.href = '/my-teams';
-    },
-    onError: (error) => {
-      toast.error(error.message || 'Failed to leave team');
-    },
-  });
 
-  const transferCaptainMutation = useMutation({
-    mutationFn: async ({ teamId, newCaptainId }) => {
-      const response = await fetch(`${API_URL}/api/teams/${teamId}/transfer-captain`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ newCaptainId }),
-      });
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.message || 'Failed to transfer captaincy');
-      }
-      return response.json();
-    },
-    onSuccess: () => {
-      toast.success(`Captaincy transferred successfully`);
-      setShowTransferConfirm(false);
-      setTransferPlayerData(null);
-      queryClient.invalidateQueries({ queryKey: ['teamData', id] });
-    },
-    onError: (error) => {
-      toast.error(error.message || 'Failed to transfer captaincy');
-    },
-  });
-
-  // ── Phase Status Pill ────────────────────────────────────────────────────────
-  const PhaseStatusPill = ({ phaseStatus, tournamentStatus }) => {
-    if (!phaseStatus) {
-      const fallbacks = {
-        completed:   { cls: 'bg-zinc-700/50 text-zinc-400 border-zinc-600/30', text: 'Completed' },
-        in_progress: { cls: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/25', text: 'Live' },
-        cancelled:   { cls: 'bg-red-500/15 text-red-400 border-red-500/25', text: 'Cancelled' },
-      };
-      const fb = fallbacks[tournamentStatus];
-      if (!fb) return null;
-      return <span className={`text-xs px-2 py-0.5 rounded-full border ${fb.cls}`}>{fb.text}</span>;
+      throw new Error(errorData.message || errorData.error || 'Failed to fetch team data');
     }
+  };
+
+  const getErrorMessage = (error, fallbackMessage) => {
+    if (!error) return fallbackMessage;
+    return error.message || error.error || fallbackMessage;
+  };
+
+  const DetailedTeamInfo = () => {
+    const { id } = useParams();
+    const { user } = useAuth();
+    const queryClient = useQueryClient();
+
+    const [activeTab, setActiveTab] = useState('matches');
+
+    // Pagination state for "Load more" — 0 means not triggered yet (uses cache data)
+    const [matchPage, setMatchPage] = useState(0);
+    const [tournamentPage, setTournamentPage] = useState(0);
+    // Accumulated extra items fetched via Load more
+    const [extraMatches, setExtraMatches] = useState([]);
+    const [extraTournaments, setExtraTournaments] = useState([]);
+
+    // Captain functionality states
+    const [showEditLogoModal, setShowEditLogoModal] = useState(false);
+    const [showEditTeamModal, setShowEditTeamModal] = useState(false);
+    const [editTeamForm, setEditTeamForm] = useState({
+      bio: '',
+      socials: { discord: '', twitter: '', instagram: '', youtube: '', website: '' }
+    });
+    const [showInviteModal, setShowInviteModal] = useState(false);
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState([]);
+    const [inviteMessage, setInviteMessage] = useState('');
+    const [selectedPlayer, setSelectedPlayer] = useState(null);
+    const [searching, setSearching] = useState(false);
+    const [showKickConfirm, setShowKickConfirm] = useState(false);
+    const [kickPlayerData, setKickPlayerData] = useState(null);
+    const [showTransferConfirm, setShowTransferConfirm] = useState(false);
+    const [transferPlayerData, setTransferPlayerData] = useState(null);
+    const [brokenImages, setBrokenImages] = useState({});
+    const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+
+    const handleImageError = (id) => {
+      setBrokenImages(prev => ({ ...prev, [id]: true }));
+    };
+
+    // TanStack Query: Fetch team data with caching
+    const {
+      data: teamDataResponse,
+      isLoading: loading,
+      isError,
+      error,
+    } = useQuery({
+      queryKey: ['teamData', id],
+      queryFn: () => fetchTeamData(id),
+      enabled: !!id,
+      staleTime: 5 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
+      retry: 1,
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
+      refetchOnReconnect: false,
+    });
+
+    const teamData = teamDataResponse?.team || null;
+    const isPrivate = error?.isPrivate || false;
+
+    // Initial data comes FREE from the existing team query — zero extra requests
+    const initialMatches = teamDataResponse?.recentMatches ?? [];
+    const initialOngoing = teamDataResponse?.ongoingTournaments ?? [];
+    const initialTournaments = teamDataResponse?.recentTournaments ?? [];
+
+    // ── Paginated match query (only fires when user clicks "Load more") ──────────
+    const {
+      data: moreMatchData,
+      isFetching: loadingMoreMatches,
+    } = useQuery({
+      queryKey: teamKeys.matches(id, matchPage),
+      queryFn: () => fetchTeamMatches({ teamId: id, page: matchPage, limit: 10 }),
+      enabled: matchPage > 1,          // only runs after first "Load more" click
+      staleTime: 5 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      onSuccess: (data) => {
+        setExtraMatches(prev => [...prev, ...(data?.matches ?? [])]);
+      },
+    });
+
+    // ── Paginated tournament query (only fires when user clicks "Load more") ─────
+    const {
+      data: moreTournamentData,
+      isFetching: loadingMoreTournaments,
+    } = useQuery({
+      queryKey: teamKeys.tournaments(id, tournamentPage),
+      queryFn: () => fetchTeamTournaments({ teamId: id, page: tournamentPage, limit: 10 }),
+      enabled: tournamentPage > 1,
+      staleTime: 5 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      onSuccess: (data) => {
+        setExtraTournaments(prev => [...prev, ...(data?.tournaments ?? [])]);
+      },
+    });
+
+    const hasMoreMatches = moreMatchData ? matchPage < moreMatchData.totalPages : true;
+    const hasMoreTournaments = moreTournamentData ? tournamentPage < moreTournamentData.totalPages : true;
+
+    const handleLoadMoreMatches = () => {
+      const next = matchPage < 2 ? 2 : matchPage + 1;
+      setMatchPage(next);
+    };
+
+    const handleLoadMoreTournaments = () => {
+      const next = tournamentPage < 2 ? 2 : tournamentPage + 1;
+      setTournamentPage(next);
+    };
+
+    // Check if current user is the captain
+    const isCaptain = user && teamData && teamData.captain && user._id === teamData.captain._id;
+
+    // Mutation: Upload Logo
+    const uploadLogoMutation = useMutation({
+      mutationFn: async (formData) => {
+        const response = await axiosInstance.put(`/api/teams/${id}`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        return response.data;
+      },
+      onSuccess: (data) => {
+        toast.success('Team logo updated successfully!');
+        setShowEditLogoModal(false);
+        setSelectedFile(null);
+        queryClient.invalidateQueries({ queryKey: ['teamData', id] });
+      },
+      onError: (error) => {
+        toast.error(getErrorMessage(error, 'Failed to upload logo'));
+      },
+    });
+
+    // Mutation: Edit Team
+    const editTeamMutation = useMutation({
+      mutationFn: async (formData) => {
+        const response = await axiosInstance.put(`/api/teams/${id}`, formData);
+        return response.data;
+      },
+      onSuccess: (data) => {
+        toast.success('Team details updated successfully!');
+        setShowEditTeamModal(false);
+        queryClient.invalidateQueries({ queryKey: ['teamData', id] });
+      },
+      onError: (error) => {
+        toast.error(getErrorMessage(error, 'Failed to update team details'));
+      },
+    });
+
+    const openEditTeamModal = () => {
+      setEditTeamForm({
+        bio: teamData?.bio || '',
+        socials: {
+          discord: teamData?.socials?.discord || '',
+          twitter: teamData?.socials?.twitter || '',
+          instagram: teamData?.socials?.instagram || '',
+          youtube: teamData?.socials?.youtube || '',
+          website: teamData?.socials?.website || '',
+        }
+      });
+      setShowEditTeamModal(true);
+    };
+
+    const handleEditTeamSubmit = (e) => {
+      e.preventDefault();
+
+      // Trim leading '@' from social handles
+      const trimmedSocials = { ...editTeamForm.socials };
+      ['instagram', 'twitter', 'youtube', 'discord'].forEach(key => {
+        if (trimmedSocials[key]) {
+          trimmedSocials[key] = String(trimmedSocials[key]).replace(/^@+/, '');
+        }
+      });
+
+      editTeamMutation.mutate({ ...editTeamForm, socials: trimmedSocials });
+    };
+
+    // Mutation: Send Invitation
+    const sendInvitationMutation = useMutation({
+      mutationFn: async ({ playerId, message }) => {
+        const response = await axiosInstance.post(`/api/teams/${id}/invite`, { playerId, message });
+        return response.data;
+      },
+      onSuccess: () => {
+        toast.success('Invitation sent successfully!');
+        setShowInviteModal(false);
+        setSelectedPlayer(null);
+        setInviteMessage('');
+        setSearchQuery('');
+        setSearchResults([]);
+      },
+      onError: (error) => {
+        toast.error(getErrorMessage(error, 'Failed to send invitation'));
+      },
+    });
+
+    // Mutation: Kick Player
+    const kickPlayerMutation = useMutation({
+      mutationFn: async ({ teamId, playerId }) => {
+        const response = await axiosInstance.delete(`/api/teams/${teamId}/players/${playerId}`);
+        return response.data;
+      },
+      onSuccess: () => {
+        toast.success(`${kickPlayerData.playerUsername} has been kicked from the team`);
+        setShowKickConfirm(false);
+        setKickPlayerData(null);
+        queryClient.invalidateQueries({ queryKey: ['teamData', id] });
+      },
+      onError: (error) => {
+        toast.error(getErrorMessage(error, 'Failed to kick player'));
+      },
+    });
+
+    // Handle logo upload
+    const handleLogoUpload = async () => {
+      if (!selectedFile) {
+        toast.error('Please select a file first');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('logo', selectedFile);
+      uploadLogoMutation.mutate(formData);
+    };
+
+    // Handle player search
+    const handlePlayerSearch = async (query) => {
+      if (!query.trim()) {
+        setSearchResults([]);
+        return;
+      }
+
+      setSearching(true);
+      try {
+        const response = await axiosInstance.get(`/api/teams/search/${encodeURIComponent(query)}`, {
+          params: { searchType: 'players' },
+        });
+        setSearchResults(response.data.players || []);
+      } catch (error) {
+        console.error('Error searching players:', error);
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    };
+
+    // Handle player search with debounce
+    useEffect(() => {
+      if (!searchQuery.trim()) {
+        setSearchResults([]);
+        setSearching(false);
+        return;
+      }
+
+      setSearching(true);
+      const timer = setTimeout(() => {
+        handlePlayerSearch(searchQuery);
+      }, 300);
+
+      return () => clearTimeout(timer);
+    }, [searchQuery]);
+
+    // Handle sending invitation
+    const handleSendInvitation = async () => {
+      if (!selectedPlayer) {
+        toast.error('Please select a player to invite');
+        return;
+      }
+
+      sendInvitationMutation.mutate({
+        playerId: selectedPlayer._id,
+        message: inviteMessage || `Join ${teamData.teamName}!`,
+      });
+    };
+
+    // Handle kick player
+    const handleKickPlayer = (teamId, playerId, playerUsername) => {
+      setKickPlayerData({ teamId, playerId, playerUsername });
+      setShowKickConfirm(true);
+    };
+
+    const handleTransferCaptain = (teamId, playerId, playerUsername) => {
+      setTransferPlayerData({ teamId, playerId, playerUsername });
+      setShowTransferConfirm(true);
+    };
+
+    const confirmTransferCaptain = () => {
+      if (!transferPlayerData) return;
+      transferCaptainMutation.mutate({
+        teamId: transferPlayerData.teamId,
+        newCaptainId: transferPlayerData.playerId,
+      });
+    };
+
+    const confirmKickPlayer = () => {
+      if (!kickPlayerData) return;
+      kickPlayerMutation.mutate({
+        teamId: kickPlayerData.teamId,
+        playerId: kickPlayerData.playerId,
+      });
+    };
+
+    const leaveTeamMutation = useMutation({
+      mutationFn: async () => {
+        const response = await axiosInstance.delete(`/api/teams/${id}/players/${user._id}`);
+        return response.data;
+      },
+      onSuccess: () => {
+        toast.success(`You have left ${teamData.teamName}`);
+        setShowLeaveConfirm(false);
+        queryClient.invalidateQueries({ queryKey: ['teamData', id] });
+        window.location.href = '/my-teams';
+      },
+      onError: (error) => {
+        toast.error(getErrorMessage(error, 'Failed to leave team'));
+      },
+    });
+
+    const transferCaptainMutation = useMutation({
+      mutationFn: async ({ teamId, newCaptainId }) => {
+        const response = await axiosInstance.put(`/api/teams/${teamId}/transfer-captain`, { newCaptainId });
+        return response.data;
+      },
+      onSuccess: () => {
+        toast.success(`Captaincy transferred successfully`);
+        setShowTransferConfirm(false);
+        setTransferPlayerData(null);
+        queryClient.invalidateQueries({ queryKey: ['teamData', id] });
+      },
+      onError: (error) => {
+        toast.error(getErrorMessage(error, 'Failed to transfer captaincy'));
+      },
+    });
     const styleMap = {
-      active:    'bg-green-500/15 text-green-400 border-green-500/25',
-      eliminated:'bg-red-500/15 text-red-400 border-red-500/25',
+      active: 'bg-green-500/15 text-green-400 border-green-500/25',
+      eliminated: 'bg-red-500/15 text-red-400 border-red-500/25',
       completed: 'bg-amber-500/15 text-amber-400 border-amber-500/25',
-      pending:   'bg-blue-500/15 text-blue-400 border-blue-500/25',
-      neutral:   'bg-zinc-700/50 text-zinc-400 border-zinc-600/30',
+      pending: 'bg-blue-500/15 text-blue-400 border-blue-500/25',
+      neutral: 'bg-zinc-700/50 text-zinc-400 border-zinc-600/30',
     };
     const iconMap = {
-      active:    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />,
-      eliminated:<span>✕</span>,
+      active: <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />,
+      eliminated: <span>✕</span>,
       completed: <span>🏆</span>,
-      pending:   <span>⏳</span>,
-      neutral:   null,
+      pending: <span>⏳</span>,
+      neutral: null,
     };
     const cls = styleMap[phaseStatus.type] || styleMap.neutral;
     return (
@@ -582,16 +526,16 @@ const DetailedTeamInfo = () => {
 
     const colorMap = {
       indigo: { bg: 'bg-indigo-600/10', border: 'border-indigo-500/20', text: 'text-indigo-400', hover: 'hover:bg-indigo-600/20', hoverBorder: 'hover:border-indigo-500/40' },
-      pink:   { bg: 'bg-pink-600/10',   border: 'border-pink-500/20',   text: 'text-pink-400',   hover: 'hover:bg-pink-600/20',   hoverBorder: 'hover:border-pink-500/40' },
-      blue:   { bg: 'bg-blue-600/10',   border: 'border-blue-500/20',   text: 'text-blue-400',   hover: 'hover:bg-blue-600/20',   hoverBorder: 'hover:border-blue-500/40' },
-      red:    { bg: 'bg-red-600/10',    border: 'border-red-500/20',    text: 'text-red-400',    hover: 'hover:bg-red-600/20',    hoverBorder: 'hover:border-red-500/40' },
-      emerald:{ bg: 'bg-emerald-600/10', border: 'border-emerald-500/20', text: 'text-emerald-400', hover: 'hover:bg-emerald-600/20', hoverBorder: 'hover:border-emerald-500/40' },
+      pink: { bg: 'bg-pink-600/10', border: 'border-pink-500/20', text: 'text-pink-400', hover: 'hover:bg-pink-600/20', hoverBorder: 'hover:border-pink-500/40' },
+      blue: { bg: 'bg-blue-600/10', border: 'border-blue-500/20', text: 'text-blue-400', hover: 'hover:bg-blue-600/20', hoverBorder: 'hover:border-blue-500/40' },
+      red: { bg: 'bg-red-600/10', border: 'border-red-500/20', text: 'text-red-400', hover: 'hover:bg-red-600/20', hoverBorder: 'hover:border-red-500/40' },
+      emerald: { bg: 'bg-emerald-600/10', border: 'border-emerald-500/20', text: 'text-emerald-400', hover: 'hover:bg-emerald-600/20', hoverBorder: 'hover:border-emerald-500/40' },
       purple: { bg: 'bg-purple-600/10', border: 'border-purple-500/20', text: 'text-purple-400', hover: 'hover:bg-purple-600/20', hoverBorder: 'hover:border-purple-500/40' },
     };
-    
+
     const c = colorMap[color] || colorMap.blue;
     const cleanValue = value ? String(value).replace(/^@+/, '').trim() : '';
-    
+
     let finalUrl = value;
     if (value && !String(value).startsWith('http')) {
       if (platform === 'YouTube' && cleanValue.startsWith('UC')) {
@@ -603,9 +547,9 @@ const DetailedTeamInfo = () => {
     }
 
     return (
-      <a 
-        href={value ? finalUrl : '#'} 
-        target={value ? "_blank" : "_self"} 
+      <a
+        href={value ? finalUrl : '#'}
+        target={value ? "_blank" : "_self"}
         rel="noopener noreferrer"
         className={`${value ? `${c.bg} ${c.border} ${c.hover} ${c.hoverBorder}` : 'bg-zinc-900/40 border-zinc-800 opacity-40 cursor-not-allowed'} border rounded-2xl p-6 flex flex-col items-center gap-4 transition-all duration-300 no-underline group shadow-lg shadow-black/10`}
         onClick={(e) => !value && e.preventDefault()}
@@ -850,7 +794,7 @@ const DetailedTeamInfo = () => {
                     {/* Social Links */}
                     <div className="flex flex-wrap gap-2">
                       {teamData.socials?.discord && (
-                        <a 
+                        <a
                           href={teamData.socials.discord.startsWith('http') ? teamData.socials.discord : `https://discord.gg/${teamData.socials.discord.replace(/^@+/, '')}`}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -861,7 +805,7 @@ const DetailedTeamInfo = () => {
                         </a>
                       )}
                       {teamData.socials?.twitter && (
-                        <a 
+                        <a
                           href={teamData.socials.twitter.startsWith('http') ? teamData.socials.twitter : `https://twitter.com/${teamData.socials.twitter.replace(/^@+/, '')}`}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -872,7 +816,7 @@ const DetailedTeamInfo = () => {
                         </a>
                       )}
                       {teamData.socials?.youtube && (
-                        <a 
+                        <a
                           href={teamData.socials.youtube.startsWith('http') ? teamData.socials.youtube : `https://youtube.com/@${teamData.socials.youtube.replace(/^@+/, '')}`}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -883,7 +827,7 @@ const DetailedTeamInfo = () => {
                         </a>
                       )}
                       {teamData.socials?.instagram && (
-                        <a 
+                        <a
                           href={teamData.socials.instagram.startsWith('http') ? teamData.socials.instagram : `https://instagram.com/${teamData.socials.instagram.replace(/^@+/, '')}`}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -1064,9 +1008,9 @@ const DetailedTeamInfo = () => {
                           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div className="flex items-center gap-4 flex-1">
                               <div className={`w-16 h-16 rounded-lg flex items-center justify-center font-bold flex-shrink-0 relative overflow-hidden ${pos ? placementColor : 'bg-zinc-700/50 text-zinc-400 border-2 border-zinc-600'}`}>
-                                <img 
-                                  src={MAP_IMAGES[match.map] || ErangelMap} 
-                                  alt={match.map} 
+                                <img
+                                  src={MAP_IMAGES[match.map] || ErangelMap}
+                                  alt={match.map}
                                   className="absolute inset-0 w-full h-full object-cover opacity-50 transition-transform duration-500 group-hover:scale-110"
                                   onError={(e) => { e.target.style.display = 'none'; }}
                                 />
@@ -1088,8 +1032,8 @@ const DetailedTeamInfo = () => {
                                 <div className="flex items-center gap-3 text-sm text-zinc-400 flex-wrap">
                                   <span className="flex items-center gap-1.5 min-w-0">
                                     {match.tournament?.media?.logo ? (
-                                      <img 
-                                        src={match.tournament.media.logo} 
+                                      <img
+                                        src={match.tournament.media.logo}
                                         alt={tournamentName}
                                         className="w-4 h-4 rounded-sm object-cover"
                                         onError={(e) => { e.target.style.display = 'none'; }}
@@ -1187,43 +1131,43 @@ const DetailedTeamInfo = () => {
                           return (
                             <div key={t._id ?? idx} className="bg-gradient-to-br from-green-900/20 to-zinc-800/40 border border-green-700/40 rounded-lg p-5 hover:border-green-500/50 transition-all group">
                               <div className="flex items-start justify-between mb-3">
-                              <div className="flex gap-4">
-                                {t.media?.logo ? (
-                                  <div className="flex-shrink-0">
-                                    <img 
-                                      src={t.media.logo} 
-                                      alt={t.tournamentName}
-                                      className="w-16 h-16 rounded-lg object-cover border border-zinc-700/50 shadow-lg group-hover:border-green-500/30 transition-colors"
-                                      onError={(e) => { e.target.src = '/default-tournament.png'; e.target.onerror = null; }}
-                                    />
-                                  </div>
-                                ) : (
-                                  <div className="w-16 h-16 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center flex-shrink-0">
-                                    <Trophy className="w-8 h-8 text-zinc-600" />
-                                  </div>
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                    <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                                      LIVE
-                                    </span>
-                                    {t.phaseStatus && (
-                                      <PhaseStatusPill phaseStatus={t.phaseStatus} tournamentStatus={t.status} />
-                                    )}
-                                  </div>
-                                  <h3 className="text-white font-bold text-lg group-hover:text-cyan-400 transition-colors truncate">
-                                    {t.tournamentName || t.shortName || 'Tournament'}
-                                  </h3>
-                                  {t.shortName && t.shortName !== t.tournamentName && (
-                                    <div className="text-sm text-cyan-400 font-medium">{t.shortName}</div>
+                                <div className="flex gap-4">
+                                  {t.media?.logo ? (
+                                    <div className="flex-shrink-0">
+                                      <img
+                                        src={t.media.logo}
+                                        alt={t.tournamentName}
+                                        className="w-16 h-16 rounded-lg object-cover border border-zinc-700/50 shadow-lg group-hover:border-green-500/30 transition-colors"
+                                        onError={(e) => { e.target.src = '/default-tournament.png'; e.target.onerror = null; }}
+                                      />
+                                    </div>
+                                  ) : (
+                                    <div className="w-16 h-16 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center flex-shrink-0">
+                                      <Trophy className="w-8 h-8 text-zinc-600" />
+                                    </div>
                                   )}
-                                  <div className="flex items-center gap-2 text-sm text-zinc-400 mt-1">
-                                    <Calendar className="w-3 h-3" />
-                                    Started {startDate}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                      <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                                        LIVE
+                                      </span>
+                                      {t.phaseStatus && (
+                                        <PhaseStatusPill phaseStatus={t.phaseStatus} tournamentStatus={t.status} />
+                                      )}
+                                    </div>
+                                    <h3 className="text-white font-bold text-lg group-hover:text-cyan-400 transition-colors truncate">
+                                      {t.tournamentName || t.shortName || 'Tournament'}
+                                    </h3>
+                                    {t.shortName && t.shortName !== t.tournamentName && (
+                                      <div className="text-sm text-cyan-400 font-medium">{t.shortName}</div>
+                                    )}
+                                    <div className="flex items-center gap-2 text-sm text-zinc-400 mt-1">
+                                      <Calendar className="w-3 h-3" />
+                                      Started {startDate}
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
                                 {t.tier && (
                                   <span className="text-xs font-bold px-2 py-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 ml-2 flex-shrink-0">
                                     {t.tier}
@@ -1258,34 +1202,34 @@ const DetailedTeamInfo = () => {
                           return (
                             <div key={t._id ?? idx} className="bg-gradient-to-br from-zinc-800/80 to-zinc-800/40 border border-zinc-700 rounded-lg p-5 hover:border-amber-500/50 transition-all group">
                               <div className="flex items-start justify-between mb-3">
-                              <div className="flex gap-4">
-                                {t.media?.logo ? (
-                                  <div className="flex-shrink-0">
-                                    <img 
-                                      src={t.media.logo} 
-                                      alt={t.tournamentName}
-                                      className="w-16 h-16 rounded-lg object-cover border border-zinc-700/50 shadow-lg group-hover:border-amber-500/30 transition-colors"
-                                      onError={(e) => { e.target.src = '/default-tournament.png'; e.target.onerror = null; }}
-                                    />
-                                  </div>
-                                ) : (
-                                  <div className="w-16 h-16 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center flex-shrink-0">
-                                    <Trophy className="w-8 h-8 text-zinc-600" />
-                                  </div>
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  <h3 className="text-white font-bold text-lg mb-1 group-hover:text-cyan-400 transition-colors truncate">
-                                    {t.tournamentName || t.shortName || 'Tournament'}
-                                  </h3>
-                                  {t.shortName && t.shortName !== t.tournamentName && (
-                                    <div className="text-sm text-cyan-400 font-medium mb-1">{t.shortName}</div>
+                                <div className="flex gap-4">
+                                  {t.media?.logo ? (
+                                    <div className="flex-shrink-0">
+                                      <img
+                                        src={t.media.logo}
+                                        alt={t.tournamentName}
+                                        className="w-16 h-16 rounded-lg object-cover border border-zinc-700/50 shadow-lg group-hover:border-amber-500/30 transition-colors"
+                                        onError={(e) => { e.target.src = '/default-tournament.png'; e.target.onerror = null; }}
+                                      />
+                                    </div>
+                                  ) : (
+                                    <div className="w-16 h-16 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center flex-shrink-0">
+                                      <Trophy className="w-8 h-8 text-zinc-600" />
+                                    </div>
                                   )}
-                                  <div className="flex items-center gap-2 text-sm text-zinc-400">
-                                    <Calendar className="w-3 h-3" />
-                                    {endDate}
+                                  <div className="flex-1 min-w-0">
+                                    <h3 className="text-white font-bold text-lg mb-1 group-hover:text-cyan-400 transition-colors truncate">
+                                      {t.tournamentName || t.shortName || 'Tournament'}
+                                    </h3>
+                                    {t.shortName && t.shortName !== t.tournamentName && (
+                                      <div className="text-sm text-cyan-400 font-medium mb-1">{t.shortName}</div>
+                                    )}
+                                    <div className="flex items-center gap-2 text-sm text-zinc-400">
+                                      <Calendar className="w-3 h-3" />
+                                      {endDate}
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
                                 <div className="flex flex-col items-end gap-2 ml-2 flex-shrink-0">
                                   {t.tier && (
                                     <span className="text-xs font-bold px-2 py-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
@@ -1337,29 +1281,29 @@ const DetailedTeamInfo = () => {
                 Social Media & Community
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <SocialLinkCard 
-                  icon={FaDiscord} 
-                  platform="Discord" 
-                  value={teamData.socials?.discord} 
-                  color="indigo" 
+                <SocialLinkCard
+                  icon={FaDiscord}
+                  platform="Discord"
+                  value={teamData.socials?.discord}
+                  color="indigo"
                 />
-                <SocialLinkCard 
-                  icon={Instagram} 
-                  platform="Instagram" 
-                  value={teamData.socials?.instagram} 
-                  color="pink" 
+                <SocialLinkCard
+                  icon={Instagram}
+                  platform="Instagram"
+                  value={teamData.socials?.instagram}
+                  color="pink"
                 />
-                <SocialLinkCard 
-                  icon={Twitter} 
-                  platform="Twitter" 
-                  value={teamData.socials?.twitter} 
-                  color="blue" 
+                <SocialLinkCard
+                  icon={Twitter}
+                  platform="Twitter"
+                  value={teamData.socials?.twitter}
+                  color="blue"
                 />
-                <SocialLinkCard 
-                  icon={Youtube} 
-                  platform="YouTube" 
-                  value={teamData.socials?.youtube} 
-                  color="red" 
+                <SocialLinkCard
+                  icon={Youtube}
+                  platform="YouTube"
+                  value={teamData.socials?.youtube}
+                  color="red"
                 />
               </div>
             </div>
@@ -1421,7 +1365,7 @@ const DetailedTeamInfo = () => {
                       <Upload className="w-4 h-4" />
                       {selectedFile ? 'Change Image' : 'Select Image'}
                     </label>
-                    
+
                     {selectedFile && (
                       <div className="w-full flex gap-3">
                         <button
@@ -1635,17 +1579,17 @@ const DetailedTeamInfo = () => {
                 <div className="flex items-center justify-center w-12 h-12 rounded-full bg-red-500/20 mb-4 mx-auto">
                   <AlertCircle className="w-6 h-6 text-red-500" />
                 </div>
-                
+
                 <h3 className="text-xl font-bold text-center mb-2">Kick {kickPlayerData.playerUsername}?</h3>
                 <p className="text-zinc-400 text-center text-sm mb-6">
-                  Are you sure you want to remove <span className="text-white font-medium">{kickPlayerData.playerUsername}</span> from the team? 
+                  Are you sure you want to remove <span className="text-white font-medium">{kickPlayerData.playerUsername}</span> from the team?
                   They will need to be re-invited to join again.
                 </p>
 
                 <div className="flex flex-col gap-3">
                   <div className="bg-zinc-800/50 rounded-lg p-3 border border-zinc-700/50">
                     <p className="text-xs text-zinc-400">
-                      <span className="text-red-400 font-medium whitespace-nowrap overflow-hidden text-clip w-full block">Warning:</span> 
+                      <span className="text-red-400 font-medium whitespace-nowrap overflow-hidden text-clip w-full block">Warning:</span>
                       They will lose access to team chat and upcoming tournament registrations.
                     </p>
                   </div>
@@ -1692,10 +1636,10 @@ const DetailedTeamInfo = () => {
                 <div className="flex items-center justify-center w-12 h-12 rounded-full bg-red-500/20 mb-4 mx-auto">
                   <AlertCircle className="w-6 h-6 text-red-500" />
                 </div>
-                
+
                 <h3 className="text-xl font-bold text-center mb-2">Leave Team</h3>
                 <p className="text-zinc-400 text-center text-sm mb-6">
-                  Are you sure you want to leave <span className="text-white font-medium">{teamData?.teamName}</span>? 
+                  Are you sure you want to leave <span className="text-white font-medium">{teamData?.teamName}</span>?
                   You will need an invitation to join again.
                 </p>
 
@@ -1737,10 +1681,10 @@ const DetailedTeamInfo = () => {
                 <div className="flex items-center justify-center w-12 h-12 rounded-full bg-amber-500/20 mb-4 mx-auto">
                   <Crown className="w-6 h-6 text-amber-500" />
                 </div>
-                
+
                 <h3 className="text-xl font-bold text-center mb-2">Transfer Captaincy?</h3>
                 <p className="text-zinc-400 text-center text-sm mb-6">
-                  Are you sure you want to make <span className="text-white font-medium">{transferPlayerData.playerUsername}</span> the new team captain? 
+                  Are you sure you want to make <span className="text-white font-medium">{transferPlayerData.playerUsername}</span> the new team captain?
                 </p>
 
                 <div className="flex flex-col gap-3">
