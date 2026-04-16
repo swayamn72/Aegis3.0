@@ -41,6 +41,9 @@ import { responseHelpers } from './middleware/responseHelpers.js';
 const app = express();
 const httpServer = createServer(app);
 
+// Required when running behind Nginx/ELB so req.ip and rate limiting work correctly.
+app.set('trust proxy', 1);
+
 // Initialize Socket.io with chat configuration
 const io = await initChat(httpServer);
 

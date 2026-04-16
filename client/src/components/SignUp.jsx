@@ -349,7 +349,7 @@ const AegisSignup = () => {
               <p className="text-base sm:text-lg lg:text-xl xl:text-2xl text-gray-300 leading-relaxed max-w-lg">
                 {formData.role === 'organization'
                   ? "Register your organization and compete at the highest level."
-                  : "Create your Aegis profile and compete with the world's best gamers. Your legendary journey starts here."}
+                  : "Create your Aegis profile and compete with the world's best esports players. Your legendary journey starts here."}
               </p>
             </div>
 
@@ -759,7 +759,7 @@ const AegisSignup = () => {
 
               <div className="pt-3 sm:pt-4 border-t border-gray-600/30">
                 <div className="text-xs text-gray-500">
-                  🔒 Your data is encrypted and secure • Join 10,000+ gamers
+                  🔒 Your data is encrypted and secure • Join 10,000+ esports players
                 </div>
               </div>
             </div>

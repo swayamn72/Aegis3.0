@@ -17,10 +17,10 @@ export default function RewardsPage() {
     const rewards = [
         {
             _id: "1",
-            name: "Gaming Headset Voucher",
+            name: "Esports Headset Voucher",
             points: 5000,
             image: "/assets/rewards/headset.png",
-            description: "Premium gaming headset with 7.1 surround sound",
+            description: "Premium esports headset with 7.1 surround sound",
             rarity: "legendary"
         },
         {

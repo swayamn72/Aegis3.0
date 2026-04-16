@@ -12,17 +12,16 @@ import {
 
 import axiosInstance from '../utils/axiosConfig';
 
-const API_URL = import.meta.env.VITE_BACKEND_URL;
-
 // ...existing code...
 
 const fetchTeamInvitations = async () => {
-    const response = await fetch(`${API_URL}/api/teams/invitations/received`, {
-        credentials: 'include',
-    });
-    if (!response.ok) throw new Error('Failed to fetch invitations');
-    const data = await response.json();
-    return data.invitations || [];
+    const response = await axiosInstance.get('/api/teams/invitations/received');
+    return response.data.invitations || [];
+};
+
+const getErrorMessage = (error, fallbackMessage) => {
+    if (!error) return fallbackMessage;
+    return error.message || error.error || fallbackMessage;
 };
 
 const MyTeams = () => {
@@ -67,7 +66,7 @@ const MyTeams = () => {
             setShowInvitations(true);
             toast.success('Invitations refreshed!');
         } catch (error) {
-            toast.error('Failed to fetch invitations');
+            toast.error(getErrorMessage(error, 'Failed to fetch invitations'));
             console.error(error);
         } finally {
             setLoadingInvitations(false);
@@ -77,17 +76,8 @@ const MyTeams = () => {
     // Mutation: Create Team
     const createTeamMutation = useMutation({
         mutationFn: async (teamData) => {
-            const response = await fetch(`${API_URL}/api/teams`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify(teamData),
-            });
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message || 'Failed to create team');
-            }
-            return response.json();
+            const response = await axiosInstance.post('/api/teams', teamData);
+            return response.data;
         },
         onSuccess: async (data) => {
             toast.success(`Team "${data.team.teamName}" created successfully! 🎉`);
@@ -98,19 +88,15 @@ const MyTeams = () => {
             navigate(`/team/${data.team._id}`);
         },
         onError: (error) => {
-            setCreateTeamError(error.message);
+            setCreateTeamError(getErrorMessage(error, 'Failed to create team'));
         },
     });
 
     // Mutation: Accept Invitation
     const acceptInvitationMutation = useMutation({
         mutationFn: async (invitationId) => {
-            const response = await fetch(`${API_URL}/api/teams/invitations/${invitationId}/accept`, {
-                method: 'POST',
-                credentials: 'include',
-            });
-            if (!response.ok) throw new Error('Failed to accept invitation');
-            return response.json();
+            const response = await axiosInstance.post(`/api/teams/invitations/${invitationId}/accept`);
+            return response.data;
         },
         onSuccess: async () => {
             toast.success('Invitation accepted successfully!');
@@ -119,26 +105,22 @@ const MyTeams = () => {
             handleRefreshInvitations();
         },
         onError: (error) => {
-            toast.error(error.message || 'Failed to accept invitation');
+            toast.error(getErrorMessage(error, 'Failed to accept invitation'));
         },
     });
 
     // Mutation: Decline Invitation
     const declineInvitationMutation = useMutation({
         mutationFn: async (invitationId) => {
-            const response = await fetch(`${API_URL}/api/teams/invitations/${invitationId}/decline`, {
-                method: 'POST',
-                credentials: 'include',
-            });
-            if (!response.ok) throw new Error('Failed to decline invitation');
-            return response.json();
+            const response = await axiosInstance.post(`/api/teams/invitations/${invitationId}/decline`);
+            return response.data;
         },
         onSuccess: () => {
             toast.success('Invitation declined');
             handleRefreshInvitations();
         },
         onError: (error) => {
-            toast.error(error.message || 'Failed to decline invitation');
+            toast.error(getErrorMessage(error, 'Failed to decline invitation'));
         },
     });
 

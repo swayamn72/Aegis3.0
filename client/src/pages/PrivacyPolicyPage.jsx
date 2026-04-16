@@ -26,12 +26,12 @@ const PrivacyPolicyPage = () => {
 
                         <h2 className="text-2xl font-semibold text-white mt-8 mb-4">1. Information We Collect</h2>
                         <p>We may collect information about you in a variety of ways. The information we may collect via the App includes:</p>
-                        
+
                         <h3 className="text-xl font-medium text-orange-400 mt-6 mb-2">Personal Data</h3>
                         <p>Demographic and other personally identifiable information (such as your name and email address) that you voluntarily give to us when choosing to participate in various activities related to the App.</p>
                         <ul className="list-disc pl-6 space-y-2 mt-2">
                             <li><strong className="text-white">Identifiers:</strong> Real name, username, email address, password.</li>
-                            <li><strong className="text-white">Gaming Data:</strong> In-game names, game stats.</li>
+                            <li><strong className="text-white">Esports Data:</strong> In-game names, match stats.</li>
                             <li><strong className="text-white">Profile Data:</strong> Profile pictures, age, location, social tags.</li>
                         </ul>
 
@@ -40,7 +40,7 @@ const PrivacyPolicyPage = () => {
                         <ul className="list-disc pl-6 space-y-2 mt-2">
                             <li>Create and manage your account.</li>
                             <li>Match you with teams, players, and organizations.</li>
-                            <li>Track and display your gaming statistics and Aegis Rating.</li>
+                            <li>Track and display your esports statistics and Aegis Rating.</li>
                             <li>Enable user-to-user communications.</li>
                         </ul>
 

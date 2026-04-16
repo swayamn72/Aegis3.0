@@ -47,10 +47,19 @@ export async function regenerateVerificationCode(user, displayName, expiryMinute
     user.lastVerificationEmailSent = now;
     await user.save();
 
-    // Send verification email (non-blocking with error handling)
-    sendVerificationEmail(user.email, verificationCode, displayName).catch(emailError => {
+    try {
+        // sendVerificationEmail signature: (email, username/displayName, code)
+        await sendVerificationEmail(user.email, displayName, verificationCode);
+    } catch (emailError) {
         console.error('Failed to send verification email during login:', emailError);
-    });
+        return {
+            status: 500,
+            requiresVerification: true,
+            email: user.email,
+            emailSent: false,
+            message: 'Unable to send verification code right now. Please try again in a moment.',
+        };
+    }
 
     return {
         status: 403,

@@ -23,7 +23,7 @@ export const verificationEmailTemplate = (username, code) => {
           <tr>
             <td style="background: linear-gradient(135deg, #FF4500 0%, #FF6B35 100%); padding: 40px 30px; text-align: center;">
               <h1 style="margin: 0; color: #ffffff; font-size: 32px; font-weight: bold; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);">
-                🎮 Aegis Gaming
+                🎮 Aegis Esports
               </h1>
             </td>
           </tr>
@@ -36,7 +36,7 @@ export const verificationEmailTemplate = (username, code) => {
               </h2>
               
               <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6; color: #b0b0b0;">
-                Welcome to <strong style="color: #FF4500;">Aegis Gaming Platform</strong>! We're excited to have you join our community of competitive gamers.
+                Welcome to <strong style="color: #FF4500;">Aegis Esports</strong>! We're excited to have you join our community of competitive esports players.
               </p>
 
               <p style="margin: 0 0 30px; font-size: 16px; line-height: 1.6; color: #b0b0b0;">
@@ -97,7 +97,7 @@ export const verificationEmailTemplate = (username, code) => {
                 Need help? Contact us at <a href="mailto:support@aegis.com" style="color: #FF4500; text-decoration: none;">support@aegis.com</a>
               </p>
               <p style="margin: 0; font-size: 12px; color: #555;">
-                © ${new Date().getFullYear()} Aegis Gaming Platform. All rights reserved.
+                © ${new Date().getFullYear()} Aegis Esports. All rights reserved.
               </p>
               <div style="margin-top: 20px;">
                 <a href="#" style="display: inline-block; margin: 0 10px; color: #666; text-decoration: none; font-size: 12px;">Privacy Policy</a>
@@ -125,7 +125,7 @@ export const verificationEmailPlainText = (username, code) => {
   return `
 Hi ${username}!
 
-Welcome to Aegis Gaming Platform! We're excited to have you join our community.
+Welcome to Aegis Esports! We're excited to have you join our community.
 
 To complete your registration, please verify your email address using the code below:
 
@@ -141,7 +141,7 @@ If you didn't create an account with Aegis, you can safely ignore this email.
 
 Need help? Contact us at support@aegis.com
 
-© ${new Date().getFullYear()} Aegis Gaming Platform. All rights reserved.
+© ${new Date().getFullYear()} Aegis Esports. All rights reserved.
   `;
 };
 
@@ -174,7 +174,7 @@ export const welcomeEmailTemplate = (username) => {
                 Your email has been verified successfully! 🎮
               </p>
               <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6; color: #b0b0b0;">
-                You're now part of the Aegis Gaming community. Here's what you can do next:
+                You're now part of the Aegis Esports community. Here's what you can do next:
               </p>
               <ul style="color: #b0b0b0; line-height: 1.8;">
                 <li>Complete your profile setup</li>
@@ -192,7 +192,7 @@ export const welcomeEmailTemplate = (username) => {
           <tr>
             <td style="background-color: #0f0f0f; padding: 30px; text-align: center;">
               <p style="margin: 0; font-size: 12px; color: #555;">
-                © ${new Date().getFullYear()} Aegis Gaming Platform
+                © ${new Date().getFullYear()} Aegis Esports
               </p>
             </td>
           </tr>
@@ -230,7 +230,7 @@ export const passwordResetEmailTemplate = (username, resetLink) => {
           <tr>
             <td style="background: linear-gradient(135deg, #FF4500 0%, #FF6B35 100%); padding: 40px 30px; text-align: center;">
               <h1 style="margin: 0; color: #ffffff; font-size: 32px; font-weight: bold; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);">
-                🔐 Aegis Gaming
+                🔐 Aegis Esports
               </h1>
             </td>
           </tr>
@@ -247,7 +247,7 @@ export const passwordResetEmailTemplate = (username, resetLink) => {
               </p>
 
               <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6; color: #b0b0b0;">
-                We received a request to reset your password for your Aegis Gaming account. If you didn't make this request, you can safely ignore this email.
+                We received a request to reset your password for your Aegis Esports account. If you didn't make this request, you can safely ignore this email.
               </p>
 
               <p style="margin: 0 0 30px; font-size: 16px; line-height: 1.6; color: #b0b0b0;">
@@ -309,7 +309,7 @@ export const passwordResetEmailTemplate = (username, resetLink) => {
                 Need help? Contact us at <a href="mailto:support@aegis.com" style="color: #FF4500; text-decoration: none;">support@aegis.com</a>
               </p>
               <p style="margin: 0; font-size: 12px; color: #555;">
-                © ${new Date().getFullYear()} Aegis Gaming Platform. All rights reserved.
+                © ${new Date().getFullYear()} Aegis Esports. All rights reserved.
               </p>
               <div style="margin-top: 20px;">
                 <a href="#" style="display: inline-block; margin: 0 10px; color: #666; text-decoration: none; font-size: 12px;">Privacy Policy</a>
@@ -339,7 +339,7 @@ Password Reset Request
 
 Hi ${username},
 
-We received a request to reset your password for your Aegis Gaming account. If you didn't make this request, you can safely ignore this email.
+We received a request to reset your password for your Aegis Esports account. If you didn't make this request, you can safely ignore this email.
 
 To reset your password, click the link below:
 
@@ -356,7 +356,7 @@ If the link doesn't work, copy and paste it into your browser.
 
 Need help? Contact us at support@aegis.com
 
-© ${new Date().getFullYear()} Aegis Gaming Platform. All rights reserved.
+© ${new Date().getFullYear()} Aegis Esports. All rights reserved.
   `;
 };
 
@@ -403,7 +403,7 @@ export const tournamentRegistrationEmailTemplate = (username, teamName, tourname
           <!-- Footer -->
           <tr>
             <td style="background-color: #0f0f0f; padding: 30px; text-align: center;">
-              <p style="margin: 0; font-size: 12px; color: #555;">© ${new Date().getFullYear()} Aegis Gaming Platform</p>
+              <p style="margin: 0; font-size: 12px; color: #555;">© ${new Date().getFullYear()} Aegis Esports</p>
             </td>
           </tr>
         </table>
@@ -426,7 +426,7 @@ Your team ${teamName} has been successfully registered for the tournament:
 
 Get ready and gather your team! Good luck!
 
-© ${new Date().getFullYear()} Aegis Gaming Platform
+© ${new Date().getFullYear()} Aegis Esports
   `;
 };
 

@@ -139,10 +139,16 @@ export class VerificationService {
             }
         });
 
-        // Send email (non-blocking)
-        sendVerificationEmail(email, user[displayNameField], verificationCode).catch(err => {
+        try {
+            await sendVerificationEmail(email, user[displayNameField], verificationCode);
+        } catch (err) {
             console.error('Failed to send verification email:', err);
-        });
+            await user.updateOne({ $unset: { lastVerificationEmailSent: 1 } });
+            throw {
+                status: 502,
+                message: 'Unable to send verification email right now. Please try again.',
+            };
+        }
 
         return { success: true };
     }

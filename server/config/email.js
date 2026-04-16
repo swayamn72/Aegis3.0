@@ -3,18 +3,37 @@ import { verificationEmailTemplate, verificationEmailPlainText } from './emailTe
 
 // Create reusable transporter
 const createTransporter = () => {
+    const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+    const smtpPort = Number(process.env.SMTP_PORT || 587);
+    const smtpSecure = (process.env.SMTP_SECURE || '').toLowerCase() === 'true' || smtpPort === 465;
+    const smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER;
+    const smtpPass = process.env.SMTP_PASSWORD || process.env.EMAIL_PASSWORD;
+    const rejectUnauthorized = (process.env.SMTP_REJECT_UNAUTHORIZED || '').toLowerCase() !== 'false';
+
+    if (!smtpUser || !smtpPass) {
+        throw new Error('Missing SMTP credentials. Set SMTP_USER/SMTP_PASSWORD (or EMAIL_USER/EMAIL_PASSWORD).');
+    }
+
     return nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 587,
-        secure: false,
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpSecure,
         auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASSWORD,
+            user: smtpUser,
+            pass: smtpPass,
         },
         tls: {
-            rejectUnauthorized: false
-        }
+            rejectUnauthorized,
+        },
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 15000,
     });
+};
+
+const getFromAddress = () => {
+    const sender = process.env.EMAIL_FROM || process.env.SMTP_USER || process.env.EMAIL_USER;
+    return `"${process.env.APP_NAME || 'Aegis'}" <${sender}>`;
 };
 
 /**
@@ -36,9 +55,9 @@ export const sendVerificationEmail = async (email, username, code) => {
         const transporter = createTransporter();
 
         const mailOptions = {
-            from: `"${process.env.APP_NAME || 'Aegis'}" <${process.env.EMAIL_USER}>`,
+            from: getFromAddress(),
             to: email,
-            subject: 'Verify Your Email - Aegis Gaming Platform',
+            subject: 'Verify Your Email - Aegis Esports',
             html: verificationEmailTemplate(username, code),
             text: verificationEmailPlainText(username, code),
         };
@@ -66,9 +85,9 @@ export const sendPasswordResetEmail = async (email, username, resetLink) => {
         const { passwordResetEmailTemplate, passwordResetEmailPlainText } = await import('./emailTemplates.js');
 
         const mailOptions = {
-            from: `"${process.env.APP_NAME || 'Aegis'}" <${process.env.EMAIL_USER}>`,
+            from: getFromAddress(),
             to: email,
-            subject: 'Reset Your Password - Aegis Gaming Platform',
+            subject: 'Reset Your Password - Aegis Esports',
             html: passwordResetEmailTemplate(username, resetLink),
             text: passwordResetEmailPlainText(username, resetLink),
         };
@@ -112,7 +131,7 @@ export const sendTournamentRegistrationEmail = async (email, username, teamName,
         const { tournamentRegistrationEmailTemplate, tournamentRegistrationEmailPlainText } = await import('./emailTemplates.js');
 
         const mailOptions = {
-            from: `"${process.env.APP_NAME || 'Aegis'}" <${process.env.EMAIL_USER}>`,
+            from: getFromAddress(),
             to: email,
             subject: `Registration Accepted - ${tournamentName}`,
             html: tournamentRegistrationEmailTemplate(username, teamName, tournamentName),
@@ -139,9 +158,9 @@ export const sendTournamentApprovalEmail = async (email, orgName, tournamentName
     const transporter = createTransporter();
 
     const mailOptions = {
-        from: `"${process.env.APP_NAME || 'Aegis'}" <${process.env.EMAIL_USER}>`,
+        from: getFromAddress(),
         to: email,
-        subject: `Tournament Approved - ${tournamentName} | Aegis Gaming Platform`,
+        subject: `Tournament Approved - ${tournamentName} | Aegis Esports`,
         html: `
             <h2>Congratulations, ${orgName}!</h2>
             <p>Your tournament <b>${tournamentName}</b> has been <b>approved</b> by the Aegis admin team.</p>
@@ -171,21 +190,21 @@ export const sendApprovalEmail = async (email, orgName) => {
     const transporter = createTransporter();
 
     const mailOptions = {
-        from: `"${process.env.APP_NAME || 'Aegis'}" <${process.env.EMAIL_USER}>`,
+        from: getFromAddress(),
         to: email,
-        subject: 'Organization Application Approved - Aegis Gaming Platform',
+        subject: 'Organization Application Approved - Aegis Esports',
         html: `
             <h2>Congratulations, ${orgName}!</h2>
             <p>Your organization application has been <b>approved</b> by the Aegis admin team.</p>
             <p>You can now access your organization dashboard and start conducting tournaments and events.</p>
             <p>If you have any questions, contact us at <a href="mailto:support@aegis.com">support@aegis.com</a>.</p>
-            <p>Welcome to Aegis Gaming Platform!</p>
+            <p>Welcome to Aegis Esports!</p>
         `,
         text: `Congratulations, ${orgName}!
 Your organization application has been approved by the Aegis admin team.
 You can now access your organization dashboard and start participating in tournaments and events.
 If you have any questions, contact us at support@aegis.com.
-Welcome to Aegis Gaming Platform!`
+Welcome to Aegis Esports!`
     };
 
     const info = await transporter.sendMail(mailOptions);

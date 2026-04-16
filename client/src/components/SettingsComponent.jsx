@@ -84,7 +84,7 @@ const SettingsComponent = () => {
     languages: [],
     profilePicture: '',
 
-    // Gaming Info
+    // Esports Info
     primaryGame: 'BGMI',
     earnings: '',
     inGameRole: [],
@@ -453,7 +453,7 @@ const SettingsComponent = () => {
                       <textarea
                         value={profileSettings.bio}
                         onChange={(e) => setProfileSettings({ ...profileSettings, bio: e.target.value })}
-                        placeholder="Tell us about yourself, your gaming journey, and what makes you unique..."
+                        placeholder="Tell us about yourself, your esports journey, and what makes you unique..."
                         rows={4}
                         className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-2 text-white focus:border-orange-500 focus:outline-none resize-none"
                       />
@@ -528,9 +528,9 @@ const SettingsComponent = () => {
                     </div>
                   </div>
 
-                  {/* Gaming Information Section */}
+                  {/* Esports Information Section */}
                   <div className="space-y-6">
-                    <h3 className="text-lg font-semibold text-white">Gaming Profile</h3>
+                    <h3 className="text-lg font-semibold text-white">Esports Profile</h3>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>

@@ -108,10 +108,19 @@ router.post('/signup', authLimiter, validatePlayerSignup, asyncHandler(async (re
     lastVerificationEmailSent: new Date(),
   });
 
-  // Send verification email (non-blocking)
-  sendVerificationEmail(email, username, verificationCode).catch(emailError => {
+  try {
+    await sendVerificationEmail(email, username, verificationCode);
+  } catch (emailError) {
     console.error('Failed to send verification email:', emailError);
-  });
+    await newPlayer.updateOne({ $unset: { lastVerificationEmailSent: 1 } });
+    return res.status(502).json({
+      success: false,
+      message: "Account created, but we couldn't send the verification code. Please tap resend.",
+      requiresVerification: true,
+      email: newPlayer.email,
+      emailSent: false,
+    });
+  }
 
   res.status(201).json({
     success: true,
@@ -449,10 +458,19 @@ router.post('/organization/signup', authLimiter, validateOrgSignup, asyncHandler
     lastVerificationEmailSent: new Date(),
   });
 
-  // Send verification email (non-blocking)
-  sendVerificationEmail(email, orgName, verificationCode).catch(emailError => {
+  try {
+    await sendVerificationEmail(email, orgName, verificationCode);
+  } catch (emailError) {
     console.error('Failed to send verification email:', emailError);
-  });
+    await newOrg.updateOne({ $unset: { lastVerificationEmailSent: 1 } });
+    return res.status(502).json({
+      success: false,
+      message: "Organization created, but we couldn't send the verification code. Please tap resend.",
+      requiresVerification: true,
+      email: newOrg.email,
+      emailSent: false,
+    });
+  }
 
   res.status(201).json({
     success: true,
@@ -673,10 +691,18 @@ router.post('/resend-verification', authLimiter, validateResendCode, asyncHandle
   user.lastVerificationEmailSent = new Date();
   await user.save();
 
-  // Send verification email (non-blocking)
-  sendVerificationEmail(email, user.username, verificationCode).catch(err => {
+  try {
+    await sendVerificationEmail(email, user.username, verificationCode);
+  } catch (err) {
     console.error('Failed to send verification email:', err);
-  });
+    user.lastVerificationEmailSent = undefined;
+    await user.save();
+    return res.status(502).json({
+      success: false,
+      message: "Couldn't send verification code right now. Please try again.",
+      emailSent: false,
+    });
+  }
 
   res.status(200).json({
     success: true,
