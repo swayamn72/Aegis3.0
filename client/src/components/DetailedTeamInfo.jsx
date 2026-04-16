@@ -29,371 +29,357 @@ const MAP_IMAGES = {
   Nusa: ErangelMap,
   Rondo: ErangelMap,
 };
-const API_URL = import.meta.env.VITE_BACKEND_URL;
+const getErrorMessage = (error, fallbackMessage) => {
+  if (!error) return fallbackMessage;
+  return error.message || error.error || fallbackMessage;
+};
 
-// Fetch function for team data
 const fetchTeamData = async (teamId) => {
-  const response = await fetch(`${API_URL}/api/teams/${teamId}`, {
-    credentials: 'include',
+  try {
+    const response = await axiosInstance.get(`/api/teams/${teamId}`);
+    return response.data;
+  } catch (error) {
+    const status = error?.status;
+    const errorData = error || {};
+
+    if (status === 403) {
+      throw { isPrivate: true, message: errorData.message || 'This team profile is private' };
+    }
+
+    throw new Error(errorData.message || errorData.error || 'Failed to fetch team data');
+  }
+};
+
+const DetailedTeamInfo = () => {
+  const { id } = useParams();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  const [activeTab, setActiveTab] = useState('matches');
+
+  // Pagination state for "Load more" — 0 means not triggered yet (uses cache data)
+  const [matchPage, setMatchPage] = useState(0);
+  const [tournamentPage, setTournamentPage] = useState(0);
+  // Accumulated extra items fetched via Load more
+  const [extraMatches, setExtraMatches] = useState([]);
+  const [extraTournaments, setExtraTournaments] = useState([]);
+
+  // Captain functionality states
+  const [showEditLogoModal, setShowEditLogoModal] = useState(false);
+  const [showEditTeamModal, setShowEditTeamModal] = useState(false);
+  const [editTeamForm, setEditTeamForm] = useState({
+    bio: '',
+    socials: { discord: '', twitter: '', instagram: '', youtube: '', website: '' }
+  });
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [inviteMessage, setInviteMessage] = useState('');
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [searching, setSearching] = useState(false);
+  const [showKickConfirm, setShowKickConfirm] = useState(false);
+  const [kickPlayerData, setKickPlayerData] = useState(null);
+  const [showTransferConfirm, setShowTransferConfirm] = useState(false);
+  const [transferPlayerData, setTransferPlayerData] = useState(null);
+  const [brokenImages, setBrokenImages] = useState({});
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+
+  const handleImageError = (imageId) => {
+    setBrokenImages(prev => ({ ...prev, [imageId]: true }));
+  };
+
+  const {
+    data: teamDataResponse,
+    isLoading: loading,
+    isError,
+    error,
+  } = useQuery({
+    queryKey: ['teamData', id],
+    queryFn: () => fetchTeamData(id),
+    enabled: !!id,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
   });
 
-  if (response.status === 403) {
-    const errorData = await response.json();
-  }
+  const teamData = teamDataResponse?.team || null;
+  const isPrivate = error?.isPrivate || false;
 
-  if (!response.ok) {
-    try {
-      const response = await axiosInstance.get(`/api/teams/${teamId}`);
+  const initialMatches = teamDataResponse?.recentMatches ?? [];
+  const initialOngoing = teamDataResponse?.ongoingTournaments ?? [];
+  const initialTournaments = teamDataResponse?.recentTournaments ?? [];
+
+  const {
+    data: moreMatchData,
+    isFetching: loadingMoreMatches,
+  } = useQuery({
+    queryKey: teamKeys.matches(id, matchPage),
+    queryFn: () => fetchTeamMatches({ teamId: id, page: matchPage, limit: 10 }),
+    enabled: matchPage > 1,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    onSuccess: (data) => {
+      setExtraMatches(prev => [...prev, ...(data?.matches ?? [])]);
+    },
+  });
+
+  const {
+    data: moreTournamentData,
+    isFetching: loadingMoreTournaments,
+  } = useQuery({
+    queryKey: teamKeys.tournaments(id, tournamentPage),
+    queryFn: () => fetchTeamTournaments({ teamId: id, page: tournamentPage, limit: 10 }),
+    enabled: tournamentPage > 1,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    onSuccess: (data) => {
+      setExtraTournaments(prev => [...prev, ...(data?.tournaments ?? [])]);
+    },
+  });
+
+  const hasMoreMatches = moreMatchData ? matchPage < moreMatchData.totalPages : true;
+  const hasMoreTournaments = moreTournamentData ? tournamentPage < moreTournamentData.totalPages : true;
+
+  const handleLoadMoreMatches = () => {
+    const next = matchPage < 2 ? 2 : matchPage + 1;
+    setMatchPage(next);
+  };
+
+  const handleLoadMoreTournaments = () => {
+    const next = tournamentPage < 2 ? 2 : tournamentPage + 1;
+    setTournamentPage(next);
+  };
+
+  const isCaptain = user && teamData && teamData.captain && user._id === teamData.captain._id;
+
+  const uploadLogoMutation = useMutation({
+    mutationFn: async (formData) => {
+      const response = await axiosInstance.put(`/api/teams/${id}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       return response.data;
-    } catch (error) {
-      const status = error?.status;
-      const errorData = error || {};
+    },
+    onSuccess: () => {
+      toast.success('Team logo updated successfully!');
+      setShowEditLogoModal(false);
+      setSelectedFile(null);
+      queryClient.invalidateQueries({ queryKey: ['teamData', id] });
+    },
+    onError: (mutationError) => {
+      toast.error(getErrorMessage(mutationError, 'Failed to upload logo'));
+    },
+  });
 
-      if (status === 403) {
-        throw { isPrivate: true, message: errorData.message || 'This team profile is private' };
+  const editTeamMutation = useMutation({
+    mutationFn: async (formData) => {
+      const response = await axiosInstance.put(`/api/teams/${id}`, formData);
+      return response.data;
+    },
+    onSuccess: () => {
+      toast.success('Team details updated successfully!');
+      setShowEditTeamModal(false);
+      queryClient.invalidateQueries({ queryKey: ['teamData', id] });
+    },
+    onError: (mutationError) => {
+      toast.error(getErrorMessage(mutationError, 'Failed to update team details'));
+    },
+  });
+
+  const openEditTeamModal = () => {
+    setEditTeamForm({
+      bio: teamData?.bio || '',
+      socials: {
+        discord: teamData?.socials?.discord || '',
+        twitter: teamData?.socials?.twitter || '',
+        instagram: teamData?.socials?.instagram || '',
+        youtube: teamData?.socials?.youtube || '',
+        website: teamData?.socials?.website || '',
       }
+    });
+    setShowEditTeamModal(true);
+  };
 
-      throw new Error(errorData.message || errorData.error || 'Failed to fetch team data');
+  const handleEditTeamSubmit = (e) => {
+    e.preventDefault();
+
+    const trimmedSocials = { ...editTeamForm.socials };
+    ['instagram', 'twitter', 'youtube', 'discord'].forEach(key => {
+      if (trimmedSocials[key]) {
+        trimmedSocials[key] = String(trimmedSocials[key]).replace(/^@+/, '');
+      }
+    });
+
+    editTeamMutation.mutate({ ...editTeamForm, socials: trimmedSocials });
+  };
+
+  const sendInvitationMutation = useMutation({
+    mutationFn: async ({ playerId, message }) => {
+      const response = await axiosInstance.post(`/api/teams/${id}/invite`, { playerId, message });
+      return response.data;
+    },
+    onSuccess: () => {
+      toast.success('Invitation sent successfully!');
+      setShowInviteModal(false);
+      setSelectedPlayer(null);
+      setInviteMessage('');
+      setSearchQuery('');
+      setSearchResults([]);
+    },
+    onError: (mutationError) => {
+      toast.error(getErrorMessage(mutationError, 'Failed to send invitation'));
+    },
+  });
+
+  const kickPlayerMutation = useMutation({
+    mutationFn: async ({ teamId, playerId }) => {
+      const response = await axiosInstance.delete(`/api/teams/${teamId}/players/${playerId}`);
+      return response.data;
+    },
+    onSuccess: () => {
+      toast.success(`${kickPlayerData.playerUsername} has been kicked from the team`);
+      setShowKickConfirm(false);
+      setKickPlayerData(null);
+      queryClient.invalidateQueries({ queryKey: ['teamData', id] });
+    },
+    onError: (mutationError) => {
+      toast.error(getErrorMessage(mutationError, 'Failed to kick player'));
+    },
+  });
+
+  const handleLogoUpload = async () => {
+    if (!selectedFile) {
+      toast.error('Please select a file first');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('logo', selectedFile);
+    uploadLogoMutation.mutate(formData);
+  };
+
+  const handlePlayerSearch = async (query) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    setSearching(true);
+    try {
+      const response = await axiosInstance.get(`/api/teams/search/${encodeURIComponent(query)}`, {
+        params: { searchType: 'players' },
+      });
+      setSearchResults(response.data.players || []);
+    } catch (searchError) {
+      console.error('Error searching players:', searchError);
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
     }
   };
 
-  const getErrorMessage = (error, fallbackMessage) => {
-    if (!error) return fallbackMessage;
-    return error.message || error.error || fallbackMessage;
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+
+    setSearching(true);
+    const timer = setTimeout(() => {
+      handlePlayerSearch(searchQuery);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const handleSendInvitation = async () => {
+    if (!selectedPlayer) {
+      toast.error('Please select a player to invite');
+      return;
+    }
+
+    sendInvitationMutation.mutate({
+      playerId: selectedPlayer._id,
+      message: inviteMessage || `Join ${teamData.teamName}!`,
+    });
   };
 
-  const DetailedTeamInfo = () => {
-    const { id } = useParams();
-    const { user } = useAuth();
-    const queryClient = useQueryClient();
+  const handleKickPlayer = (teamId, playerId, playerUsername) => {
+    setKickPlayerData({ teamId, playerId, playerUsername });
+    setShowKickConfirm(true);
+  };
 
-    const [activeTab, setActiveTab] = useState('matches');
+  const handleTransferCaptain = (teamId, playerId, playerUsername) => {
+    setTransferPlayerData({ teamId, playerId, playerUsername });
+    setShowTransferConfirm(true);
+  };
 
-    // Pagination state for "Load more" — 0 means not triggered yet (uses cache data)
-    const [matchPage, setMatchPage] = useState(0);
-    const [tournamentPage, setTournamentPage] = useState(0);
-    // Accumulated extra items fetched via Load more
-    const [extraMatches, setExtraMatches] = useState([]);
-    const [extraTournaments, setExtraTournaments] = useState([]);
-
-    // Captain functionality states
-    const [showEditLogoModal, setShowEditLogoModal] = useState(false);
-    const [showEditTeamModal, setShowEditTeamModal] = useState(false);
-    const [editTeamForm, setEditTeamForm] = useState({
-      bio: '',
-      socials: { discord: '', twitter: '', instagram: '', youtube: '', website: '' }
+  const confirmTransferCaptain = () => {
+    if (!transferPlayerData) return;
+    transferCaptainMutation.mutate({
+      teamId: transferPlayerData.teamId,
+      newCaptainId: transferPlayerData.playerId,
     });
-    const [showInviteModal, setShowInviteModal] = useState(false);
-    const [selectedFile, setSelectedFile] = useState(null);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [searchResults, setSearchResults] = useState([]);
-    const [inviteMessage, setInviteMessage] = useState('');
-    const [selectedPlayer, setSelectedPlayer] = useState(null);
-    const [searching, setSearching] = useState(false);
-    const [showKickConfirm, setShowKickConfirm] = useState(false);
-    const [kickPlayerData, setKickPlayerData] = useState(null);
-    const [showTransferConfirm, setShowTransferConfirm] = useState(false);
-    const [transferPlayerData, setTransferPlayerData] = useState(null);
-    const [brokenImages, setBrokenImages] = useState({});
-    const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  };
 
-    const handleImageError = (id) => {
-      setBrokenImages(prev => ({ ...prev, [id]: true }));
-    };
-
-    // TanStack Query: Fetch team data with caching
-    const {
-      data: teamDataResponse,
-      isLoading: loading,
-      isError,
-      error,
-    } = useQuery({
-      queryKey: ['teamData', id],
-      queryFn: () => fetchTeamData(id),
-      enabled: !!id,
-      staleTime: 5 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
-      retry: 1,
-      refetchOnWindowFocus: false,
-      refetchOnMount: false,
-      refetchOnReconnect: false,
+  const confirmKickPlayer = () => {
+    if (!kickPlayerData) return;
+    kickPlayerMutation.mutate({
+      teamId: kickPlayerData.teamId,
+      playerId: kickPlayerData.playerId,
     });
+  };
 
-    const teamData = teamDataResponse?.team || null;
-    const isPrivate = error?.isPrivate || false;
+  const leaveTeamMutation = useMutation({
+    mutationFn: async () => {
+      const response = await axiosInstance.delete(`/api/teams/${id}/players/${user._id}`);
+      return response.data;
+    },
+    onSuccess: () => {
+      toast.success(`You have left ${teamData.teamName}`);
+      setShowLeaveConfirm(false);
+      queryClient.invalidateQueries({ queryKey: ['teamData', id] });
+      window.location.href = '/my-teams';
+    },
+    onError: (mutationError) => {
+      toast.error(getErrorMessage(mutationError, 'Failed to leave team'));
+    },
+  });
 
-    // Initial data comes FREE from the existing team query — zero extra requests
-    const initialMatches = teamDataResponse?.recentMatches ?? [];
-    const initialOngoing = teamDataResponse?.ongoingTournaments ?? [];
-    const initialTournaments = teamDataResponse?.recentTournaments ?? [];
+  const transferCaptainMutation = useMutation({
+    mutationFn: async ({ teamId, newCaptainId }) => {
+      const response = await axiosInstance.put(`/api/teams/${teamId}/transfer-captain`, { newCaptainId });
+      return response.data;
+    },
+    onSuccess: () => {
+      toast.success('Captaincy transferred successfully');
+      setShowTransferConfirm(false);
+      setTransferPlayerData(null);
+      queryClient.invalidateQueries({ queryKey: ['teamData', id] });
+    },
+    onError: (mutationError) => {
+      toast.error(getErrorMessage(mutationError, 'Failed to transfer captaincy'));
+    },
+  });
 
-    // ── Paginated match query (only fires when user clicks "Load more") ──────────
-    const {
-      data: moreMatchData,
-      isFetching: loadingMoreMatches,
-    } = useQuery({
-      queryKey: teamKeys.matches(id, matchPage),
-      queryFn: () => fetchTeamMatches({ teamId: id, page: matchPage, limit: 10 }),
-      enabled: matchPage > 1,          // only runs after first "Load more" click
-      staleTime: 5 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
-      refetchOnWindowFocus: false,
-      onSuccess: (data) => {
-        setExtraMatches(prev => [...prev, ...(data?.matches ?? [])]);
-      },
-    });
+  const PhaseStatusPill = ({ phaseStatus, tournamentStatus }) => {
+    if (!phaseStatus) {
+      const fallbacks = {
+        completed: { cls: 'bg-zinc-700/50 text-zinc-400 border-zinc-600/30', text: 'Completed' },
+        in_progress: { cls: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/25', text: 'Live' },
+        cancelled: { cls: 'bg-red-500/15 text-red-400 border-red-500/25', text: 'Cancelled' },
+      };
+      const fallbackStatus = fallbacks[tournamentStatus];
+      if (!fallbackStatus) return null;
+      return <span className={`text-xs px-2 py-0.5 rounded-full border ${fallbackStatus.cls}`}>{fallbackStatus.text}</span>;
+    }
 
-    // ── Paginated tournament query (only fires when user clicks "Load more") ─────
-    const {
-      data: moreTournamentData,
-      isFetching: loadingMoreTournaments,
-    } = useQuery({
-      queryKey: teamKeys.tournaments(id, tournamentPage),
-      queryFn: () => fetchTeamTournaments({ teamId: id, page: tournamentPage, limit: 10 }),
-      enabled: tournamentPage > 1,
-      staleTime: 5 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
-      refetchOnWindowFocus: false,
-      onSuccess: (data) => {
-        setExtraTournaments(prev => [...prev, ...(data?.tournaments ?? [])]);
-      },
-    });
-
-    const hasMoreMatches = moreMatchData ? matchPage < moreMatchData.totalPages : true;
-    const hasMoreTournaments = moreTournamentData ? tournamentPage < moreTournamentData.totalPages : true;
-
-    const handleLoadMoreMatches = () => {
-      const next = matchPage < 2 ? 2 : matchPage + 1;
-      setMatchPage(next);
-    };
-
-    const handleLoadMoreTournaments = () => {
-      const next = tournamentPage < 2 ? 2 : tournamentPage + 1;
-      setTournamentPage(next);
-    };
-
-    // Check if current user is the captain
-    const isCaptain = user && teamData && teamData.captain && user._id === teamData.captain._id;
-
-    // Mutation: Upload Logo
-    const uploadLogoMutation = useMutation({
-      mutationFn: async (formData) => {
-        const response = await axiosInstance.put(`/api/teams/${id}`, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-        return response.data;
-      },
-      onSuccess: (data) => {
-        toast.success('Team logo updated successfully!');
-        setShowEditLogoModal(false);
-        setSelectedFile(null);
-        queryClient.invalidateQueries({ queryKey: ['teamData', id] });
-      },
-      onError: (error) => {
-        toast.error(getErrorMessage(error, 'Failed to upload logo'));
-      },
-    });
-
-    // Mutation: Edit Team
-    const editTeamMutation = useMutation({
-      mutationFn: async (formData) => {
-        const response = await axiosInstance.put(`/api/teams/${id}`, formData);
-        return response.data;
-      },
-      onSuccess: (data) => {
-        toast.success('Team details updated successfully!');
-        setShowEditTeamModal(false);
-        queryClient.invalidateQueries({ queryKey: ['teamData', id] });
-      },
-      onError: (error) => {
-        toast.error(getErrorMessage(error, 'Failed to update team details'));
-      },
-    });
-
-    const openEditTeamModal = () => {
-      setEditTeamForm({
-        bio: teamData?.bio || '',
-        socials: {
-          discord: teamData?.socials?.discord || '',
-          twitter: teamData?.socials?.twitter || '',
-          instagram: teamData?.socials?.instagram || '',
-          youtube: teamData?.socials?.youtube || '',
-          website: teamData?.socials?.website || '',
-        }
-      });
-      setShowEditTeamModal(true);
-    };
-
-    const handleEditTeamSubmit = (e) => {
-      e.preventDefault();
-
-      // Trim leading '@' from social handles
-      const trimmedSocials = { ...editTeamForm.socials };
-      ['instagram', 'twitter', 'youtube', 'discord'].forEach(key => {
-        if (trimmedSocials[key]) {
-          trimmedSocials[key] = String(trimmedSocials[key]).replace(/^@+/, '');
-        }
-      });
-
-      editTeamMutation.mutate({ ...editTeamForm, socials: trimmedSocials });
-    };
-
-    // Mutation: Send Invitation
-    const sendInvitationMutation = useMutation({
-      mutationFn: async ({ playerId, message }) => {
-        const response = await axiosInstance.post(`/api/teams/${id}/invite`, { playerId, message });
-        return response.data;
-      },
-      onSuccess: () => {
-        toast.success('Invitation sent successfully!');
-        setShowInviteModal(false);
-        setSelectedPlayer(null);
-        setInviteMessage('');
-        setSearchQuery('');
-        setSearchResults([]);
-      },
-      onError: (error) => {
-        toast.error(getErrorMessage(error, 'Failed to send invitation'));
-      },
-    });
-
-    // Mutation: Kick Player
-    const kickPlayerMutation = useMutation({
-      mutationFn: async ({ teamId, playerId }) => {
-        const response = await axiosInstance.delete(`/api/teams/${teamId}/players/${playerId}`);
-        return response.data;
-      },
-      onSuccess: () => {
-        toast.success(`${kickPlayerData.playerUsername} has been kicked from the team`);
-        setShowKickConfirm(false);
-        setKickPlayerData(null);
-        queryClient.invalidateQueries({ queryKey: ['teamData', id] });
-      },
-      onError: (error) => {
-        toast.error(getErrorMessage(error, 'Failed to kick player'));
-      },
-    });
-
-    // Handle logo upload
-    const handleLogoUpload = async () => {
-      if (!selectedFile) {
-        toast.error('Please select a file first');
-        return;
-      }
-
-      const formData = new FormData();
-      formData.append('logo', selectedFile);
-      uploadLogoMutation.mutate(formData);
-    };
-
-    // Handle player search
-    const handlePlayerSearch = async (query) => {
-      if (!query.trim()) {
-        setSearchResults([]);
-        return;
-      }
-
-      setSearching(true);
-      try {
-        const response = await axiosInstance.get(`/api/teams/search/${encodeURIComponent(query)}`, {
-          params: { searchType: 'players' },
-        });
-        setSearchResults(response.data.players || []);
-      } catch (error) {
-        console.error('Error searching players:', error);
-        setSearchResults([]);
-      } finally {
-        setSearching(false);
-      }
-    };
-
-    // Handle player search with debounce
-    useEffect(() => {
-      if (!searchQuery.trim()) {
-        setSearchResults([]);
-        setSearching(false);
-        return;
-      }
-
-      setSearching(true);
-      const timer = setTimeout(() => {
-        handlePlayerSearch(searchQuery);
-      }, 300);
-
-      return () => clearTimeout(timer);
-    }, [searchQuery]);
-
-    // Handle sending invitation
-    const handleSendInvitation = async () => {
-      if (!selectedPlayer) {
-        toast.error('Please select a player to invite');
-        return;
-      }
-
-      sendInvitationMutation.mutate({
-        playerId: selectedPlayer._id,
-        message: inviteMessage || `Join ${teamData.teamName}!`,
-      });
-    };
-
-    // Handle kick player
-    const handleKickPlayer = (teamId, playerId, playerUsername) => {
-      setKickPlayerData({ teamId, playerId, playerUsername });
-      setShowKickConfirm(true);
-    };
-
-    const handleTransferCaptain = (teamId, playerId, playerUsername) => {
-      setTransferPlayerData({ teamId, playerId, playerUsername });
-      setShowTransferConfirm(true);
-    };
-
-    const confirmTransferCaptain = () => {
-      if (!transferPlayerData) return;
-      transferCaptainMutation.mutate({
-        teamId: transferPlayerData.teamId,
-        newCaptainId: transferPlayerData.playerId,
-      });
-    };
-
-    const confirmKickPlayer = () => {
-      if (!kickPlayerData) return;
-      kickPlayerMutation.mutate({
-        teamId: kickPlayerData.teamId,
-        playerId: kickPlayerData.playerId,
-      });
-    };
-
-    const leaveTeamMutation = useMutation({
-      mutationFn: async () => {
-        const response = await axiosInstance.delete(`/api/teams/${id}/players/${user._id}`);
-        return response.data;
-      },
-      onSuccess: () => {
-        toast.success(`You have left ${teamData.teamName}`);
-        setShowLeaveConfirm(false);
-        queryClient.invalidateQueries({ queryKey: ['teamData', id] });
-        window.location.href = '/my-teams';
-      },
-      onError: (error) => {
-        toast.error(getErrorMessage(error, 'Failed to leave team'));
-      },
-    });
-
-    const transferCaptainMutation = useMutation({
-      mutationFn: async ({ teamId, newCaptainId }) => {
-        const response = await axiosInstance.put(`/api/teams/${teamId}/transfer-captain`, { newCaptainId });
-        return response.data;
-      },
-      onSuccess: () => {
-        toast.success(`Captaincy transferred successfully`);
-        setShowTransferConfirm(false);
-        setTransferPlayerData(null);
-        queryClient.invalidateQueries({ queryKey: ['teamData', id] });
-      },
-      onError: (error) => {
-        toast.error(getErrorMessage(error, 'Failed to transfer captaincy'));
-      },
-    });
     const styleMap = {
       active: 'bg-green-500/15 text-green-400 border-green-500/25',
       eliminated: 'bg-red-500/15 text-red-400 border-red-500/25',
@@ -403,7 +389,7 @@ const fetchTeamData = async (teamId) => {
     };
     const iconMap = {
       active: <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />,
-      eliminated: <span>✕</span>,
+      eliminated: <span>x</span>,
       completed: <span>🏆</span>,
       pending: <span>⏳</span>,
       neutral: null,
