@@ -480,21 +480,26 @@ export default function ChatPage() {
                     }`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="relative">
+                    <div className="relative w-10 h-10 md:w-12 md:h-12 flex-shrink-0">
+                      <img
+                        src={chat.applicant?.profilePicture || botLogo}
+                        alt={chat.applicant?.username}
+                        className="absolute top-0 left-0 w-7 h-7 md:w-8 md:h-8 rounded-full border border-zinc-900 object-cover z-10"
+                      />
                       <img
                         src={chat.team?.logo || groupChatIcon}
-                        alt={chat.team.teamName}
-                        className="w-10 h-10 md:w-10 md:h-10 rounded-lg object-cover"
+                        alt={chat.team?.teamName}
+                        className="absolute bottom-0 right-0 w-7 h-7 md:w-8 md:h-8 rounded-lg border border-zinc-900 object-cover"
                       />
-                      <div className="absolute -bottom-1 -right-1 w-3 h-3 md:w-4 md:h-4 bg-orange-500 rounded-full border-2 border-zinc-900" />
+                      <div className="absolute -bottom-1 -right-1 w-3 h-3 md:w-3.5 md:h-3.5 bg-orange-500 rounded-full border-2 border-zinc-900 z-20" />
                     </div>
 
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-white truncate text-xs md:text-sm">
-                        {chat.team.teamName} Tryout
+                        {chat.applicant?.username} - {chat.team?.teamName}
                       </div>
-                      <div className="text-[10px] md:text-xs text-zinc-400 truncate">
-                        Tryout: {chat.applicant.username}
+                      <div className="text-[10px] md:text-xs text-orange-400 font-medium truncate">
+                        Tryout Chat
                       </div>
                     </div>
                   </div>
@@ -572,17 +577,28 @@ export default function ChatPage() {
                     <ArrowLeft className="w-5 h-5 text-zinc-400" />
                   </button>
 
-                  <div className="relative">
-                    <ChatAvatar
-                      src={
-                        chatType === 'tryout'
-                          ? (selectedChat.team?.logo || groupChatIcon)
-                          : selectedChat._id === 'system' ? botLogo : selectedChat.profilePicture
-                      }
-                      fallbackSeed={chatType === 'tryout' ? selectedChat.team?.teamName : selectedChat.username}
-                      alt={chatType === 'tryout' ? selectedChat.team?.teamName : selectedChat.username}
-                      className="w-8 h-8 md:w-10 md:h-10 rounded-lg border border-zinc-700"
-                    />
+                  <div className="relative w-10 h-10 md:w-12 md:h-12 flex-shrink-0">
+                    {chatType === 'tryout' ? (
+                      <>
+                        <img
+                          src={selectedChat.applicant?.profilePicture || botLogo}
+                          alt={selectedChat.applicant?.username}
+                          className="absolute top-0 left-0 w-7 h-7 md:w-8 md:h-8 rounded-full border border-zinc-900 object-cover z-10"
+                        />
+                        <img
+                          src={selectedChat.team?.logo || groupChatIcon}
+                          alt={selectedChat.team?.teamName}
+                          className="absolute bottom-0 right-0 w-7 h-7 md:w-8 md:h-8 rounded-lg border border-zinc-900 object-cover"
+                        />
+                      </>
+                    ) : (
+                      <ChatAvatar
+                        src={selectedChat._id === 'system' ? botLogo : selectedChat.profilePicture}
+                        fallbackSeed={selectedChat.username}
+                        alt={selectedChat.username}
+                        className="w-10 h-10 md:w-12 md:h-12 rounded-lg border border-zinc-700"
+                      />
+                    )}
                     {chatType === 'direct' && (
                       <div className={`absolute -bottom-1 -right-1 w-2.5 h-2.5 md:w-3 md:h-3 ${getStatusColor(getUserStatus(selectedChat._id))} rounded-full border border-zinc-900`} />
                     )}
@@ -592,7 +608,7 @@ export default function ChatPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-white text-sm md:text-base truncate">
                         {chatType === 'tryout'
-                          ? `${selectedChat.team?.teamName} Tryout`
+                          ? `${selectedChat.applicant?.username} - ${selectedChat.team?.teamName}`
                           : (selectedChat.realName || selectedChat.username)
                         }
                       </span>
@@ -624,7 +640,7 @@ export default function ChatPage() {
                     </div>
                     <div className="text-xs md:text-sm text-zinc-400 truncate">
                       {chatType === 'tryout'
-                        ? `Applicant: ${selectedChat.applicant?.username}`
+                        ? `Tryout Chat`
                         : `@${selectedChat.username}`
                       }
                     </div>

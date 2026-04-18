@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, CheckCircle, AlertCircle, Loader2, Sparkles, User, Globe, Phone, MapPin, AlignLeft, Instagram, ExternalLink } from 'lucide-react';
-import axios from 'axios';
+import { Sparkles, User, Globe, Phone, MapPin, AlignLeft, Instagram, ExternalLink, Building2, CheckCircle, Loader2 } from 'lucide-react';
+import axiosInstance from '../utils/axiosConfig';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 
@@ -84,7 +84,7 @@ export default function OrgProfileSetup() {
                 ownerInstagram: formData.ownerInstagram ? String(formData.ownerInstagram).replace(/^@+/, '') : ''
             };
 
-            const response = await axios.post(`${API_URL}/api/auth/complete-org-profile`, submissionData, {
+            const response = await axiosInstance.post('/api/auth/complete-org-profile', submissionData, {
                 withCredentials: true,
             });
 

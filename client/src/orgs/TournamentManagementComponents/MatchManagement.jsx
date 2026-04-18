@@ -340,7 +340,14 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                 teamId: r.teamId,
                 position: parseInt(r.position) || null,
                 kills: parseInt(r.kills) || 0,
-                // Now includes fuzzy-matched player kills from OCR
+                unmatchedKills: r.unmatchedKills || 0,
+                // Send full breakdown with isPlaying flags
+                playerBreakdown: (r.playerBreakdown || []).map(bd => ({
+                    player: bd.player,
+                    kills: bd.kills || 0,
+                    isPlaying: bd.isPlaying !== undefined ? bd.isPlaying : true,
+                })),
+                // Also send simple array as fallback
                 playerKills: r.playerKills || [],
             }));
 
@@ -1004,39 +1011,115 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                                                 const kills = parseInt(row.kills) || 0;
                                                 const posPts = POSITION_POINTS[pos] || 0;
                                                 const total = posPts + kills;
+                                                const breakdown = row.playerBreakdown || [];
+                                                const playingPlayers = breakdown.filter(bd => bd.isPlaying && bd.player);
+                                                const unmatchedPlayers = breakdown.filter(bd => !bd.player);
+
                                                 return (
-                                                    <tr key={row.teamId} className="bg-gray-800/40 hover:bg-gray-700/40 transition-colors">
-                                                        <td className="px-4 py-3">
-                                                            <p className="text-white font-medium">{row.teamName}</p>
-                                                            {row.rawPlayerNames?.length > 0 && (
-                                                                <p className="text-gray-500 text-xs mt-0.5 truncate max-w-[180px]" title={row.rawPlayerNames.join(', ')}>
-                                                                    {row.rawPlayerNames.join(', ')}
-                                                                </p>
-                                                            )}
-                                                        </td>
-                                                        <td className="px-4 py-3">
-                                                            <input
-                                                                type="number"
-                                                                value={row.position}
-                                                                min="1" max="25"
-                                                                onChange={e => setOcrResults(prev => prev.map((r, i) => i === idx ? { ...r, position: e.target.value } : r))}
-                                                                className="w-16 bg-gray-700 border border-gray-600 rounded-lg px-2 py-1 text-white text-center text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 mx-auto block"
-                                                                placeholder="1-25"
-                                                            />
-                                                        </td>
-                                                        <td className="px-4 py-3">
-                                                            <input
-                                                                type="number"
-                                                                value={row.kills}
-                                                                min="0"
-                                                                onChange={e => setOcrResults(prev => prev.map((r, i) => i === idx ? { ...r, kills: e.target.value } : r))}
-                                                                className="w-16 bg-gray-700 border border-gray-600 rounded-lg px-2 py-1 text-white text-center text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 mx-auto block"
-                                                            />
-                                                        </td>
-                                                        <td className="px-4 py-3 text-center text-blue-400 font-medium">{posPts}</td>
-                                                        <td className="px-4 py-3 text-center text-green-400 font-medium">{kills}</td>
-                                                        <td className="px-4 py-3 text-center text-orange-400 font-bold">{total}</td>
-                                                    </tr>
+                                                    <React.Fragment key={row.teamId}>
+                                                        <tr className="bg-gray-800/40 hover:bg-gray-700/40 transition-colors">
+                                                            <td className="px-4 py-3">
+                                                                <p className="text-white font-medium">{row.teamName}</p>
+                                                                <div className="flex items-center gap-2 mt-1">
+                                                                    <span className={`text-xs px-1.5 py-0.5 rounded ${playingPlayers.length > 0 ? 'bg-green-500/20 text-green-400' : 'bg-gray-600/30 text-gray-500'}`}>
+                                                                        {playingPlayers.length} matched
+                                                                    </span>
+                                                                    {(row.unmatchedKills || 0) > 0 && (
+                                                                        <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                                                                            +{row.unmatchedKills} unmatched kills
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-3">
+                                                                <input
+                                                                    type="number"
+                                                                    value={row.position}
+                                                                    min="1" max="25"
+                                                                    onChange={e => setOcrResults(prev => prev.map((r, i) => i === idx ? { ...r, position: e.target.value } : r))}
+                                                                    className="w-16 bg-gray-700 border border-gray-600 rounded-lg px-2 py-1 text-white text-center text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 mx-auto block"
+                                                                    placeholder="1-25"
+                                                                />
+                                                            </td>
+                                                            <td className="px-4 py-3">
+                                                                <input
+                                                                    type="number"
+                                                                    value={row.kills}
+                                                                    min="0"
+                                                                    onChange={e => setOcrResults(prev => prev.map((r, i) => i === idx ? { ...r, kills: e.target.value } : r))}
+                                                                    className="w-16 bg-gray-700 border border-gray-600 rounded-lg px-2 py-1 text-white text-center text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 mx-auto block"
+                                                                />
+                                                            </td>
+                                                            <td className="px-4 py-3 text-center text-blue-400 font-medium">{posPts}</td>
+                                                            <td className="px-4 py-3 text-center text-green-400 font-medium">{kills}</td>
+                                                            <td className="px-4 py-3 text-center text-orange-400 font-bold">{total}</td>
+                                                        </tr>
+                                                        {/* Player-level breakdown rows */}
+                                                        {breakdown.length > 0 && (
+                                                            <tr className="bg-gray-900/30">
+                                                                <td colSpan="6" className="px-4 py-2">
+                                                                    <div className="space-y-1.5">
+                                                                        {breakdown.map((bd, bIdx) => {
+                                                                            const scoreColor = bd.matchScore >= 80
+                                                                                ? 'text-green-400 bg-green-500/15 border-green-500/30'
+                                                                                : bd.matchScore >= 65
+                                                                                    ? 'text-amber-400 bg-amber-500/15 border-amber-500/30'
+                                                                                    : 'text-red-400 bg-red-500/15 border-red-500/30';
+                                                                            return (
+                                                                                <div key={bIdx} className="flex items-center gap-2 text-xs py-1 px-2 rounded bg-gray-800/50">
+                                                                                    {/* isPlaying toggle */}
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => {
+                                                                                            setOcrResults(prev => prev.map((r, rIdx) => {
+                                                                                                if (rIdx !== idx) return r;
+                                                                                                const newBreakdown = [...(r.playerBreakdown || [])];
+                                                                                                newBreakdown[bIdx] = { ...newBreakdown[bIdx], isPlaying: !newBreakdown[bIdx].isPlaying };
+                                                                                                return { ...r, playerBreakdown: newBreakdown };
+                                                                                            }));
+                                                                                        }}
+                                                                                        className={`w-5 h-5 rounded flex items-center justify-center border transition-colors shrink-0 ${bd.isPlaying ? 'bg-green-500/20 border-green-500/50 text-green-400' : 'bg-gray-700 border-gray-600 text-gray-500'}`}
+                                                                                        title={bd.isPlaying ? 'Playing — click to mark as not playing' : 'Not playing — click to mark as playing'}
+                                                                                    >
+                                                                                        {bd.isPlaying ? '✓' : '✕'}
+                                                                                    </button>
+
+                                                                                    {/* OCR detected name */}
+                                                                                    <span className="text-gray-400 min-w-0 truncate max-w-[120px]" title={bd.detectedName || '—'}>
+                                                                                        {bd.detectedName || '(not detected)'}
+                                                                                    </span>
+
+                                                                                    {/* Match confidence badge */}
+                                                                                    {bd.detectedName && (
+                                                                                        <>
+                                                                                            <span className="text-gray-600">→</span>
+                                                                                            <span className={`px-1.5 py-0.5 rounded border text-[10px] font-medium ${scoreColor}`}>
+                                                                                                {bd.matchScore}%
+                                                                                            </span>
+                                                                                        </>
+                                                                                    )}
+
+                                                                                    {/* Player status */}
+                                                                                    {bd.player ? (
+                                                                                        <span className="text-gray-300 truncate max-w-[100px]" title="Matched roster player">
+                                                                                            ✓ Roster
+                                                                                        </span>
+                                                                                    ) : (
+                                                                                        <span className="text-gray-500 italic">unmatched</span>
+                                                                                    )}
+
+                                                                                    {/* Kills */}
+                                                                                    <span className="ml-auto text-gray-300 font-medium">
+                                                                                        {bd.kills} kill{bd.kills !== 1 ? 's' : ''}
+                                                                                    </span>
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                    </React.Fragment>
                                                 );
                                             })}
                                         </tbody>
@@ -1051,7 +1134,14 @@ const MatchManagement = ({ tournament, onUpdate }) => {
 
                                 <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs text-amber-300 flex items-start gap-2">
                                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
-                                    OCR can make mistakes. Review all values before applying. Only teams detected from the slot list are shown — manually add any missing teams after applying.
+                                    <div>
+                                        <p className="font-medium text-amber-400 mb-1">Review carefully</p>
+                                        <ul className="list-disc list-inside space-y-0.5 text-amber-300/80">
+                                            <li>Green ✓ = player matched to roster. Yellow/Red = needs review.</li>
+                                            <li>Toggle the ✓/✕ button to control if a player's rating is affected.</li>
+                                            <li>Unmatched kills count toward team total but no individual player.</li>
+                                        </ul>
+                                    </div>
                                 </div>
 
                                 <div className="flex gap-3 pt-2">
