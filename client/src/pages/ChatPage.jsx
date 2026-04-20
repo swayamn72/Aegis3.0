@@ -1124,8 +1124,6 @@ export default function ChatPage() {
                   actions.setShowOfferModal(false);
                   actions.setOfferMessage('');
                 }}
-
-                {showRequestsPanel && <MessageRequestsPanel />}
                 className="flex-1 px-3 md:px-4 py-2 bg-zinc-800 text-white rounded-lg hover:bg-zinc-700 transition-colors text-sm"
               >
                 Cancel
@@ -1141,7 +1139,8 @@ export default function ChatPage() {
         </div>
       )}
 
+      {showRequestsPanel && <MessageRequestsPanel />}
       {showApplications && <ApplicationsPanel />}
     </div>
   );
-} ``
+}
