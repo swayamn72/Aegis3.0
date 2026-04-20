@@ -139,3 +139,31 @@ export const updateTournamentStatusAPI = async (id, status) => {
     throw error.response?.data || error;
   }
 };
+
+// ==================== MODERATION REPORT APIs ====================
+
+export const fetchReportsAPI = async (params = {}) => {
+  try {
+    const { data } = await API.get('/reports', { params });
+    return data;
+  } catch (error) {
+    throw error.response?.data || error;
+  }
+};
+
+export const updateReportStatusAPI = async ({ reportId, status, adminNotes = '' }) => {
+  try {
+    if (!reportId || typeof reportId !== 'string') {
+      throw new Error('Invalid report ID');
+    }
+
+    if (!['open', 'in_review', 'actioned', 'dismissed'].includes(status)) {
+      throw new Error('Invalid report status');
+    }
+
+    const { data } = await API.patch(`/reports/${reportId}`, { status, adminNotes });
+    return data;
+  } catch (error) {
+    throw error.response?.data || error;
+  }
+};

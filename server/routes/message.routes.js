@@ -3,17 +3,190 @@ import mongoose from "mongoose";
 import ChatMessage from "../models/chat.model.js";
 import Player from "../models/player.model.js";
 import Tournament from "../models/tournament.model.js";
+import DirectMessageRequest from '../models/directMessageRequest.model.js';
 import auth from "../middleware/auth.js";
 import notificationService from '../services/notification.service.js';
+import { getBlockedUserIdSetForUser, isEitherUserBlocked } from '../utils/blockUtils.js';
+import { ensurePendingMessageRequest, getMessageRequestRelationship } from '../utils/directMessageRequestUtils.js';
 
 const router = express.Router();
 
 // IMPORTANT: Specific routes MUST come BEFORE parameterized routes
 
+// GET /api/chat/requests/incoming
+router.get('/requests/incoming', auth, async (req, res) => {
+  try {
+    const requests = await DirectMessageRequest.find({
+      recipient: req.user.id,
+      status: 'pending',
+    })
+      .sort({ createdAt: -1 })
+      .populate('requester', '_id username realName profilePicture aegisRating inGameRole')
+      .lean();
+
+    res.json({ requests });
+  } catch (error) {
+    console.error('Error fetching incoming message requests:', error);
+    res.status(500).json({ message: 'Failed to fetch incoming message requests' });
+  }
+});
+
+// GET /api/chat/requests/outgoing
+router.get('/requests/outgoing', auth, async (req, res) => {
+  try {
+    const requests = await DirectMessageRequest.find({
+      requester: req.user.id,
+      status: 'pending',
+    })
+      .sort({ createdAt: -1 })
+      .populate('recipient', '_id username realName profilePicture aegisRating inGameRole')
+      .lean();
+
+    res.json({ requests });
+  } catch (error) {
+    console.error('Error fetching outgoing message requests:', error);
+    res.status(500).json({ message: 'Failed to fetch outgoing message requests' });
+  }
+});
+
+// GET /api/chat/requests/relationship/:targetUserId
+router.get('/requests/relationship/:targetUserId', auth, async (req, res) => {
+  try {
+    const targetUserId = req.params.targetUserId;
+
+    if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
+      return res.status(400).json({ message: 'Invalid target user ID' });
+    }
+
+    if (req.user.id.toString() === targetUserId.toString()) {
+      return res.json({
+        canMessage: false,
+        status: 'self',
+        requestId: null,
+      });
+    }
+
+    const isBlocked = await isEitherUserBlocked(req.user.id, targetUserId);
+    if (isBlocked) {
+      return res.json({
+        canMessage: false,
+        status: 'blocked',
+        requestId: null,
+      });
+    }
+
+    const relationship = await getMessageRequestRelationship(req.user.id, targetUserId);
+    res.json(relationship);
+  } catch (error) {
+    console.error('Error fetching message request relationship:', error);
+    res.status(500).json({ message: 'Failed to fetch relationship' });
+  }
+});
+
+// POST /api/chat/requests/:targetUserId
+router.post('/requests/:targetUserId', auth, async (req, res) => {
+  try {
+    const targetUserId = req.params.targetUserId;
+    const initialMessage = (req.body?.initialMessage || '').toString();
+
+    if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
+      return res.status(400).json({ message: 'Invalid target user ID' });
+    }
+
+    if (req.user.id.toString() === targetUserId.toString()) {
+      return res.status(400).json({ message: 'Cannot create a request to yourself' });
+    }
+
+    if (await isEitherUserBlocked(req.user.id, targetUserId)) {
+      return res.status(403).json({ message: 'Cannot send message request due to block settings', blocked: true });
+    }
+
+    const targetExists = await Player.exists({ _id: targetUserId });
+    if (!targetExists) {
+      return res.status(404).json({ message: 'Target user not found' });
+    }
+
+    const relationship = await getMessageRequestRelationship(req.user.id, targetUserId);
+    if (relationship.canMessage) {
+      return res.json({
+        message: 'Messaging already enabled',
+        status: relationship.status,
+        requestId: relationship.requestId,
+      });
+    }
+
+    const pending = await ensurePendingMessageRequest({
+      requesterId: req.user.id,
+      recipientId: targetUserId,
+      initialMessage,
+    });
+
+    if (pending.status === 'pending_received') {
+      return res.status(409).json({
+        message: 'This player has already requested to message you. Accept their request from chat.',
+        status: 'pending_received',
+        requestId: pending.request?._id || null,
+      });
+    }
+
+    res.status(pending.created ? 201 : 200).json({
+      message: pending.created ? 'Message request sent' : 'Message request already pending',
+      status: pending.status,
+      requestId: pending.request?._id || null,
+    });
+  } catch (error) {
+    console.error('Error creating message request:', error);
+    res.status(500).json({ message: 'Failed to create message request' });
+  }
+});
+
+// PATCH /api/chat/requests/:requestId
+router.patch('/requests/:requestId', auth, async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { action } = req.body || {};
+
+    if (!mongoose.Types.ObjectId.isValid(requestId)) {
+      return res.status(400).json({ message: 'Invalid request ID' });
+    }
+
+    if (!['accept', 'decline'].includes(action)) {
+      return res.status(400).json({ message: 'Action must be accept or decline' });
+    }
+
+    const request = await DirectMessageRequest.findById(requestId);
+    if (!request || request.status !== 'pending') {
+      return res.status(404).json({ message: 'Pending request not found' });
+    }
+
+    if (request.recipient.toString() !== req.user.id.toString()) {
+      return res.status(403).json({ message: 'Not authorized to update this request' });
+    }
+
+    if (await isEitherUserBlocked(request.requester, request.recipient)) {
+      return res.status(403).json({ message: 'Cannot update message request due to block settings', blocked: true });
+    }
+
+    request.status = action === 'accept' ? 'accepted' : 'declined';
+    request.respondedAt = new Date();
+    await request.save();
+
+    res.json({
+      message: action === 'accept' ? 'Message request accepted' : 'Message request declined',
+      status: request.status,
+      requestId: request._id,
+    });
+  } catch (error) {
+    console.error('Error updating message request:', error);
+    res.status(500).json({ message: 'Failed to update message request' });
+  }
+});
+
 // GET /api/chat/users/with-chats
 router.get("/users/with-chats", auth, async (req, res) => {
   try {
     const userId = req.user.id;
+    const blockedSet = await getBlockedUserIdSetForUser(userId);
 
     // Aggregate direct (non-system) chat users
     const messages = await ChatMessage.aggregate([
@@ -56,7 +229,8 @@ router.get("/users/with-chats", auth, async (req, res) => {
           id &&
           id !== "system" &&
           id.toString() !== userId.toString() &&
-          mongoose.Types.ObjectId.isValid(id)
+          mongoose.Types.ObjectId.isValid(id) &&
+          !blockedSet.has(id.toString())
         );
       });
 
@@ -140,6 +314,11 @@ router.get("/:receiverId", auth, async (req, res) => {
       return res.status(400).json({ message: "Invalid receiver ID" });
     }
 
+    const isBlocked = await isEitherUserBlocked(senderId, receiverId);
+    if (isBlocked) {
+      return res.status(403).json({ message: 'Conversation unavailable due to block settings', blocked: true });
+    }
+
     const rawLimit = parseInt(req.query.limit, 10);
     const limit = Math.min(isNaN(rawLimit) ? 50 : rawLimit, 100);
 
@@ -171,7 +350,8 @@ router.get("/:receiverId", auth, async (req, res) => {
       })
       .lean();
 
-    res.json({ messages: messages.reverse() });
+    const requestGate = await getMessageRequestRelationship(senderId, receiverId);
+    res.json({ messages: messages.reverse(), requestGate });
   } catch (err) {
     console.error("Error fetching messages:", err);
     res.status(500).json({ message: "Server error fetching messages" });
@@ -189,6 +369,10 @@ router.post("/tournament-reference/:tournamentId", auth, async (req, res) => {
 
     if (!captainId) {
       return res.status(400).json({ message: 'Captain ID is required' });
+    }
+
+    if (await isEitherUserBlocked(req.user.id, captainId)) {
+      return res.status(403).json({ message: 'Cannot send message due to block settings' });
     }
 
     // Verify tournament exists and fetch relevant fields
@@ -286,6 +470,31 @@ router.post("/send-notification", auth, async (req, res) => {
 
     // Allow system messages if senderId is 'system', otherwise use req.user.id
     const actualSenderId = senderId === 'system' ? 'system' : req.user.id;
+
+    if (actualSenderId !== 'system') {
+      const isBlocked = await isEitherUserBlocked(actualSenderId, receiverId);
+      if (isBlocked) {
+        return res.status(403).json({ message: 'Cannot send message due to block settings', blocked: true });
+      }
+
+      const relationship = await getMessageRequestRelationship(actualSenderId, receiverId);
+      if (!relationship.canMessage) {
+        const pending = await ensurePendingMessageRequest({
+          requesterId: actualSenderId,
+          recipientId: receiverId,
+          initialMessage: message,
+        });
+
+        return res.status(403).json({
+          message: pending.status === 'pending_received'
+            ? 'This player already requested to message you. Accept the request first.'
+            : 'Message request required before chatting',
+          requestRequired: true,
+          requestStatus: pending.status,
+          requestId: pending.request?._id || relationship.requestId || null,
+        });
+      }
+    }
 
     // Create notification message
     const notificationMessage = new ChatMessage({

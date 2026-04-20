@@ -28,6 +28,7 @@ const MyTeamsPage = lazy(() => import("./pages/MyTeamsPage"));
 const DetailedTeamInfoPage = lazy(() => import("./pages/DetailedTeamInfoPage"));
 const ChatPage = lazy(() => import("./pages/ChatPage"));
 const RecruitmentActualPage = lazy(() => import("./pages/RecruitmentActualPage"));
+const FindPlayersPage = lazy(() => import("./pages/FindPlayersPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const MyProfilePage = lazy(() => import("./pages/MyProfilePage"));
 const MyGameIdsPage = lazy(() => import("./pages/MyGameIdsPage"));
@@ -130,6 +131,14 @@ function AppContent() {
               element={
                 <ProtectedRoute requireRole="player">
                   <RecruitmentActualPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/find-players"
+              element={
+                <ProtectedRoute requireRole="player">
+                  <FindPlayersPage />
                 </ProtectedRoute>
               }
             />

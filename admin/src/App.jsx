@@ -4,6 +4,7 @@ import AdminDashboard from "./pages/adminDashboard";
 import AdminOrganizations from "./pages/adminOrganizations";
 import AdminMatches from "./pages/adminMatches";
 import AdminTournaments from "./pages/adminTournaments";
+import AdminReports from "./pages/adminReports";
 import ProtectedRoute from "./components/protectedRoute";
 
 export default function App() {
@@ -39,6 +40,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <AdminTournaments />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/reports"
+        element={
+          <ProtectedRoute>
+            <AdminReports />
           </ProtectedRoute>
         }
       />

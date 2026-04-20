@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import {
     Check, Star, Trophy, Calendar, MapPin, Users, Target, TrendingUp,
-    Award, Gamepad2, Settings, Share2, MessageCircle, UserPlus,
+    Award, Gamepad2, Settings, Share2, MessageCircle, UserPlus, Flag, UserX,
     ArrowUp, ArrowDown, Activity, Clock, Zap, Shield, Sword,
     Medal, Crown, ChevronRight, ExternalLink, Hash, Globe, Mail,
     Flame, Timer, Crosshair, Eye, BarChart3, Percent, Sparkles,
@@ -10,9 +10,12 @@ import {
 } from 'lucide-react';
 import { FaDiscord, FaInstagram, FaYoutube, FaTwitter } from 'react-icons/fa';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'react-toastify';
 import { getPlayerById } from '../api/players';
+import { blockUser, getRelationshipStatus, reportUser, unblockUser } from '../api/moderation';
 import { fetchPlayerMatches } from '../api/playerMatches';
 import { usePlayerMatches, usePlayerTournaments } from '../hooks/useProfile';
+import { useAuth } from '../context/AuthContext';
 import { getRatingBadge, formatDelta } from '../utils/aegisRatingUtils';
 
 import ErangelMap from '../assets/mapImages/erangel.jpg';
@@ -407,9 +410,14 @@ const TeamMemberAvatar = ({ member }) => {
 const DetailedPlayerProfile = () => {
     const navigate = useNavigate();
     const { id } = useParams();
+    const { user } = useAuth();
     const [activeTab, setActiveTab] = useState('overview');
     const [showCopyMessage, setShowCopyMessage] = useState(false);
     const [imageError, setImageError] = useState(false);
+    const [relationship, setRelationship] = useState({ iBlocked: false, blockedMe: false, isBlocked: false });
+    const [moderationBusy, setModerationBusy] = useState(false);
+
+    const isOwnProfile = user?._id && id ? user._id === id : false;
 
     // Fetch player profile data
     const {
@@ -461,6 +469,30 @@ const DetailedPlayerProfile = () => {
 
     useEffect(() => { setImageError(false); }, [playerData?.profilePicture]);
 
+    useEffect(() => {
+        let isMounted = true;
+        const loadRelationship = async () => {
+            if (!user?._id || !id || isOwnProfile) return;
+            try {
+                const data = await getRelationshipStatus(id);
+                if (isMounted) {
+                    setRelationship({
+                        iBlocked: Boolean(data.iBlocked),
+                        blockedMe: Boolean(data.blockedMe),
+                        isBlocked: Boolean(data.isBlocked),
+                    });
+                }
+            } catch (_error) {
+                // Keep page functional even if relationship status fails.
+            }
+        };
+
+        loadRelationship();
+        return () => {
+            isMounted = false;
+        };
+    }, [user?._id, id, isOwnProfile]);
+
     // Loading and error states
     if (playerLoading) {
         return (
@@ -489,6 +521,49 @@ const DetailedPlayerProfile = () => {
             setTimeout(() => setShowCopyMessage(false), 2000);
         } catch (err) {
             console.error('Failed to copy:', err);
+        }
+    };
+
+    const handleToggleBlock = async () => {
+        if (!user?._id || !id || isOwnProfile || moderationBusy) return;
+        setModerationBusy(true);
+        try {
+            if (relationship.iBlocked) {
+                await unblockUser(id);
+                setRelationship(prev => ({ ...prev, iBlocked: false, isBlocked: prev.blockedMe }));
+                toast.success('User unblocked');
+            } else {
+                const reason = window.prompt('Optional block reason (leave empty to skip):') || '';
+                await blockUser(id, reason);
+                setRelationship(prev => ({ ...prev, iBlocked: true, isBlocked: true }));
+                toast.success('User blocked');
+            }
+        } catch (error) {
+            toast.error(error?.message || 'Failed to update block status');
+        } finally {
+            setModerationBusy(false);
+        }
+    };
+
+    const handleReport = async () => {
+        if (!user?._id || !id || isOwnProfile || moderationBusy) return;
+        const reason = window.prompt('Report reason: harassment, hate_speech, spam, sexual_content, violence, impersonation, scam_fraud, other', 'harassment');
+        if (!reason) return;
+        const details = window.prompt('Additional details (optional):', '') || '';
+
+        setModerationBusy(true);
+        try {
+            await reportUser({
+                targetUserId: id,
+                reason,
+                details,
+                chatType: 'unknown',
+            });
+            toast.success('Report submitted successfully');
+        } catch (error) {
+            toast.error(error?.message || 'Failed to submit report');
+        } finally {
+            setModerationBusy(false);
         }
     };
 
@@ -556,7 +631,7 @@ const DetailedPlayerProfile = () => {
                                     )}
                                 </div>
                             </div>
-                            <div className="flex gap-2 mt-4 md:mt-0">
+                            <div className="flex gap-2 mt-4 md:mt-0 flex-wrap justify-center md:justify-end">
                                 <button
                                     onClick={handleShare}
                                     className="px-6 py-2.5 bg-[#FF4500] hover:bg-[#FF4500]/90 text-white rounded-lg flex items-center gap-2 transition-all font-semibold shadow-lg shadow-[#FF4500]/20"
@@ -564,6 +639,31 @@ const DetailedPlayerProfile = () => {
                                     <Share2 className="w-4 h-4" />
                                     {showCopyMessage ? 'Copied!' : 'Share Profile'}
                                 </button>
+                                {!isOwnProfile && (
+                                    <>
+                                        <button
+                                            onClick={handleReport}
+                                            disabled={moderationBusy}
+                                            className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg flex items-center gap-2 transition-all font-semibold border border-zinc-700 disabled:opacity-60"
+                                            title="Report user"
+                                        >
+                                            <Flag className="w-4 h-4" />
+                                            Report
+                                        </button>
+                                        <button
+                                            onClick={handleToggleBlock}
+                                            disabled={moderationBusy}
+                                            className={`px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all font-semibold border disabled:opacity-60 ${relationship.iBlocked
+                                                ? 'bg-emerald-900/40 border-emerald-700 text-emerald-200 hover:bg-emerald-900/60'
+                                                : 'bg-red-900/30 border-red-700 text-red-200 hover:bg-red-900/50'
+                                                }`}
+                                            title={relationship.iBlocked ? 'Unblock user' : 'Block user'}
+                                        >
+                                            <UserX className="w-4 h-4" />
+                                            {relationship.iBlocked ? 'Unblock' : 'Block'}
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         </div>
 

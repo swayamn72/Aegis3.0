@@ -1,11 +1,14 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ExternalLink, Trophy, Sparkles } from 'lucide-react';
+import { ExternalLink, Trophy, Flag, UserX } from 'lucide-react';
 import botLogo from '../assets/bot_logo.png';
 import ChatAvatar from './ChatAvatar';
+import { toast } from 'react-toastify';
+import { blockUser, reportUser } from '../api/moderation';
 
 const ChatMessage = ({ msg, userId, chatType, selectedChat, index, messages }) => {
     const navigate = useNavigate();
+    const [moderationBusy, setModerationBusy] = useState(false);
     // Helper function to format timestamp
     const formatTime = (timestamp) => {
         const date = new Date(timestamp);
@@ -88,6 +91,61 @@ const ChatMessage = ({ msg, userId, chatType, selectedChat, index, messages }) =
     // Check if this is a tournament reference message
     const isTournamentReference = msg.messageType === 'tournament_reference';
 
+    const targetUserId = useMemo(() => {
+        if (chatType === 'direct') {
+            const sender = msg.senderId?.toString();
+            const receiver = msg.receiverId?.toString();
+            if (sender && sender !== userId?.toString() && sender !== 'system') return sender;
+            if (receiver && receiver !== userId?.toString() && receiver !== 'system') return receiver;
+            return null;
+        }
+
+        const sender = (msg.sender?._id || msg.sender)?.toString();
+        if (!sender || sender === userId?.toString() || sender === 'system') return null;
+        return sender;
+    }, [chatType, msg.senderId, msg.receiverId, msg.sender, userId]);
+
+    const handleReportMessage = async () => {
+        if (!targetUserId || moderationBusy) return;
+
+        const reason = window.prompt('Report reason: harassment, hate_speech, spam, sexual_content, violence, impersonation, scam_fraud, other', 'harassment');
+        if (!reason) return;
+        const details = window.prompt('Additional details (optional):', '') || '';
+
+        setModerationBusy(true);
+        try {
+            await reportUser({
+                targetUserId,
+                reason,
+                details,
+                messageId: msg._id || null,
+                chatType: chatType === 'tryout' ? 'tryout' : 'direct',
+            });
+            toast.success('Report submitted');
+        } catch (error) {
+            toast.error(error?.message || 'Failed to submit report');
+        } finally {
+            setModerationBusy(false);
+        }
+    };
+
+    const handleBlockUser = async () => {
+        if (!targetUserId || moderationBusy) return;
+
+        const shouldBlock = window.confirm('Block this user? You will no longer be able to exchange messages.');
+        if (!shouldBlock) return;
+
+        setModerationBusy(true);
+        try {
+            await blockUser(targetUserId);
+            toast.success('User blocked');
+        } catch (error) {
+            toast.error(error?.message || 'Failed to block user');
+        } finally {
+            setModerationBusy(false);
+        }
+    };
+
     return (
         <div className={`flex w-full ${isMine ? 'justify-end' : 'justify-start'} items-end gap-2`}>
             {/* Sender Avatar (Group Chats Only, Left Side) */}
@@ -167,6 +225,28 @@ const ChatMessage = ({ msg, userId, chatType, selectedChat, index, messages }) =
                         <p className="text-[15px] leading-relaxed whitespace-pre-wrap">
                             {msg.message}
                         </p>
+                    )}
+
+                    {/* Moderation actions (for received user messages) */}
+                    {targetUserId && !isMine && (
+                        <div className="mt-2 flex items-center gap-2">
+                            <button
+                                onClick={handleReportMessage}
+                                disabled={moderationBusy}
+                                className="px-2 py-1 rounded-md bg-zinc-700/60 hover:bg-zinc-600/70 text-zinc-100 text-xs flex items-center gap-1 disabled:opacity-60"
+                            >
+                                <Flag className="w-3.5 h-3.5" />
+                                Report
+                            </button>
+                            <button
+                                onClick={handleBlockUser}
+                                disabled={moderationBusy}
+                                className="px-2 py-1 rounded-md bg-red-800/40 hover:bg-red-800/60 text-red-100 text-xs flex items-center gap-1 disabled:opacity-60"
+                            >
+                                <UserX className="w-3.5 h-3.5" />
+                                Block
+                            </button>
+                        </div>
                     )}
 
                     {/* Tournament Button */}

@@ -264,7 +264,14 @@ export const useChatActions = ({ userId, selectedChat, chatType }) => {
                 })
                 .catch((error) => {
                     console.error('Failed to save message:', error);
-                    toast.error('Failed to send message');
+                    const apiError = error?.response?.data;
+                    if (apiError?.requestRequired) {
+                        toast.info(apiError?.message || 'Message request is pending. Wait for acceptance to chat.');
+                        queryClient.invalidateQueries({ queryKey: ['incomingMessageRequests'] });
+                        queryClient.invalidateQueries({ queryKey: ['outgoingMessageRequests'] });
+                    } else {
+                        toast.error(apiError?.message || 'Failed to send message');
+                    }
                     // Remove optimistic update on failure
                     queryClient.setQueryData(queryKey, (old) => {
                         return old ? old.filter(m => m.timestamp !== msg.timestamp) : old;

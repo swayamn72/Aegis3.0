@@ -11,6 +11,8 @@ import { createTryoutMessage } from '../services/tryoutMessage.service.js';
 import notificationService from '../services/notification.service.js';
 import { allowedOrigins } from './cors.js';
 import logger from './logger.js';
+import { isEitherUserBlocked } from '../utils/blockUtils.js';
+import { ensurePendingMessageRequest, getMessageRequestRelationship } from '../utils/directMessageRequestUtils.js';
 
 const SOCKET_REDIS_CONNECT_TIMEOUT_MS = parseInt(process.env.SOCKET_REDIS_CONNECT_TIMEOUT_MS || '5000', 10);
 
@@ -242,6 +244,31 @@ const initChat = async (server) => {
           return;
         }
 
+        const isBlocked = await isEitherUserBlocked(senderId, receiverId);
+        if (isBlocked) {
+          socket.emit('error', { message: 'Cannot send message due to block settings', blocked: true });
+          return;
+        }
+
+        const relationship = await getMessageRequestRelationship(senderId, receiverId);
+        if (!relationship.canMessage) {
+          const pending = await ensurePendingMessageRequest({
+            requesterId: senderId,
+            recipientId: receiverId,
+            initialMessage: message,
+          });
+
+          socket.emit('error', {
+            message: pending.status === 'pending_received'
+              ? 'This player already requested to message you. Accept the request first.'
+              : 'Message request required before chatting',
+            requestRequired: true,
+            requestStatus: pending.status,
+            requestId: pending.request?._id || relationship.requestId || null,
+          });
+          return;
+        }
+
         const MAX_MESSAGE_LENGTH = 2000;
         const trimmedMessage = (message || '').trim();
         if (!trimmedMessage) {
@@ -336,6 +363,17 @@ const initChat = async (server) => {
         if (!chat.participants.some(p => p.toString() === authenticatedSenderId)) {
           socket.emit('error', { message: 'Not authorized' });
           return;
+        }
+
+        const otherParticipants = chat.participants
+          .map((p) => p.toString())
+          .filter((id) => id !== authenticatedSenderId.toString());
+        for (const otherId of otherParticipants) {
+          // Prevent message flow in either direction if either side blocked the other.
+          if (await isEitherUserBlocked(authenticatedSenderId, otherId)) {
+            socket.emit('error', { message: 'Cannot send message due to block settings', blocked: true });
+            return;
+          }
         }
 
         const MAX_MESSAGE_LENGTH = 2000;

@@ -6,7 +6,7 @@ import botLogo from '../assets/bot_logo.png';
 import groupChatIcon from '../assets/group_chat.png';
 import {
   Send, Search, MoreVertical, Users, Hash, Crown, Shield, Gamepad2, Bell, Check, X, UserPlus,
-  AlertCircle, Ban, CheckCircle, XCircle, ArrowLeft, LogOut, Menu, User
+  AlertCircle, Ban, CheckCircle, XCircle, ArrowLeft, LogOut, Menu, User, Inbox
 } from 'lucide-react';
 import ChatMessage from '../components/ChatMessage';
 import ChatAvatar from '../components/ChatAvatar';
@@ -17,6 +17,11 @@ import { useChatActions } from '../hooks/useChatActions';
 import { chatKeys } from '../hooks/queryKeys';
 import axios from '../utils/axiosConfig';
 import { toast } from 'react-toastify';
+import {
+  fetchIncomingMessageRequests,
+  fetchMessageRequestRelationship,
+  updateMessageRequest,
+} from '../api/messageRequests';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
@@ -40,6 +45,7 @@ export default function ChatPage() {
   const isInitialLoadRef = useRef(false); // tracks when we just switched chats
   const [showMobileSidebar, setShowMobileSidebar] = useState(true);
   const [showCaptainMenu, setShowCaptainMenu] = useState(false);
+  const [showRequestsPanel, setShowRequestsPanel] = useState(false);
 
   const captainId = user?.team?.captain?._id || user?.team?.captain;
   const isTeamCaptain = !!(user?.team && captainId && captainId === userId);
@@ -73,6 +79,25 @@ export default function ChatPage() {
     refetchTryouts,
     refetchApproaches,
   } = useChatData(user);
+
+  const {
+    data: incomingRequests = [],
+    refetch: refetchIncomingRequests,
+  } = useQuery({
+    queryKey: ['incomingMessageRequests'],
+    queryFn: fetchIncomingMessageRequests,
+    enabled: !!userId,
+    staleTime: 20 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  const { data: directRequestGate } = useQuery({
+    queryKey: ['directRequestGate', selectedChat?._id],
+    queryFn: () => fetchMessageRequestRelationship(selectedChat._id),
+    enabled: chatType === 'direct' && !!selectedChat?._id && selectedChat?._id !== 'system',
+    staleTime: 10 * 1000,
+    refetchOnWindowFocus: false,
+  });
 
   // Tournament details query
   const { data: tournamentDetails } = useQuery({
@@ -252,6 +277,24 @@ export default function ChatPage() {
     return null;
   };
 
+  const handleMessageRequestAction = async (requestId, action, requesterProfile) => {
+    try {
+      await updateMessageRequest(requestId, action);
+      toast.success(action === 'accept' ? 'Message request accepted' : 'Message request declined');
+      queryClient.invalidateQueries({ queryKey: ['incomingMessageRequests'] });
+      queryClient.invalidateQueries({ queryKey: ['discoverPlayers'] });
+      queryClient.invalidateQueries({ queryKey: ['directRequestGate'] });
+
+      if (action === 'accept' && requesterProfile?._id) {
+        setSelectedChat(requesterProfile);
+        setChatType('direct');
+        setShowMobileSidebar(false);
+      }
+    } catch (error) {
+      toast.error(error?.response?.data?.message || error?.message || 'Failed to update request');
+    }
+  };
+
   // Action handlers with refetch
   const handleStartTryoutWithRefresh = (applicationId) => {
     actions.handleStartTryout(applicationId, {
@@ -392,6 +435,67 @@ export default function ChatPage() {
     </div>
   );
 
+  const MessageRequestsPanel = () => (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-0 md:p-4">
+      <div className="bg-zinc-900 border-t md:border border-zinc-700 rounded-t-2xl md:rounded-2xl max-w-3xl w-full max-h-[90vh] md:max-h-[80vh] overflow-hidden flex flex-col">
+        <div className="p-3 md:p-4 border-b border-zinc-800 flex items-center justify-between">
+          <h2 className="text-lg md:text-xl font-bold text-white flex items-center gap-2">
+            <Inbox className="w-5 h-5 text-orange-400" />
+            Message Requests ({incomingRequests.length})
+          </h2>
+          <button onClick={() => setShowRequestsPanel(false)} className="p-2 hover:bg-zinc-800 rounded-lg transition-colors">
+            <X className="w-5 h-5 text-zinc-400" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {incomingRequests.length === 0 ? (
+            <div className="text-center py-10 text-zinc-400">No pending message requests.</div>
+          ) : (
+            incomingRequests.map((request) => (
+              <div key={request._id} className="bg-zinc-800/40 border border-zinc-700 rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  <ChatAvatar
+                    src={request.requester?.profilePicture}
+                    fallbackSeed={request.requester?.username || 'user'}
+                    alt={request.requester?.username || 'User'}
+                    className="w-12 h-12 rounded-xl border border-zinc-700"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-white font-semibold truncate">{request.requester?.realName || request.requester?.username}</div>
+                    <div className="text-xs text-zinc-400 truncate">@{request.requester?.username}</div>
+                    <div className="text-xs text-zinc-500 mt-0.5">Requested {new Date(request.createdAt).toLocaleString()}</div>
+                  </div>
+                </div>
+
+                {request.initialMessage ? (
+                  <div className="mt-3 bg-zinc-900/70 border border-zinc-700 rounded-lg p-3 text-sm text-zinc-300">
+                    {request.initialMessage}
+                  </div>
+                ) : null}
+
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={() => handleMessageRequestAction(request._id, 'accept', request.requester)}
+                    className="flex-1 px-3 py-2 rounded-lg bg-green-500 hover:bg-green-600 text-white text-sm font-medium"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    onClick={() => handleMessageRequestAction(request._id, 'decline', request.requester)}
+                    className="flex-1 px-3 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium"
+                  >
+                    Decline
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex h-screen bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 text-white font-sans overflow-hidden">
       {/* Left Sidebar - Hidden on mobile when chat is selected */}
@@ -403,6 +507,21 @@ export default function ChatPage() {
               Chats
             </h2>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  refetchIncomingRequests();
+                  setShowRequestsPanel(true);
+                }}
+                className="relative p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+                title="Message requests"
+              >
+                <Inbox className="w-4 h-4 text-zinc-400" />
+                {incomingRequests.length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full text-[10px] flex items-center justify-center">
+                    {incomingRequests.length}
+                  </span>
+                )}
+              </button>
               {isTeamCaptain && (
                 <button
                   onClick={() => setShowApplications(true)}
@@ -880,7 +999,33 @@ export default function ChatPage() {
 
             {/* Chat Input */}
             <div className="p-3 md:p-4 border-t border-zinc-800">
-              {chatType === 'tryout' && ['ended_by_team', 'ended_by_player', 'offer_sent', 'offer_accepted', 'offer_rejected'].includes(selectedChat.tryoutStatus) ? (
+              {chatType === 'direct' && selectedChat._id !== 'system' && directRequestGate && !directRequestGate.canMessage ? (
+                <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-3 md:p-4 space-y-3">
+                  <p className="text-zinc-300 text-sm">
+                    {directRequestGate.status === 'pending_sent' && 'Message request sent. Wait for them to accept before chatting.'}
+                    {directRequestGate.status === 'pending_received' && 'This player requested to message you. Accept to start chatting.'}
+                    {directRequestGate.status === 'blocked' && 'Messaging is unavailable due to block settings.'}
+                    {directRequestGate.status === 'none' && 'Send a message request from Find Players to start this chat.'}
+                  </p>
+
+                  {directRequestGate.status === 'pending_received' && directRequestGate.requestId && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleMessageRequestAction(directRequestGate.requestId, 'accept', selectedChat)}
+                        className="px-3 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm"
+                      >
+                        Accept Request
+                      </button>
+                      <button
+                        onClick={() => handleMessageRequestAction(directRequestGate.requestId, 'decline', selectedChat)}
+                        className="px-3 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg text-sm"
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : chatType === 'tryout' && ['ended_by_team', 'ended_by_player', 'offer_sent', 'offer_accepted', 'offer_rejected'].includes(selectedChat.tryoutStatus) ? (
                 <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-3 md:p-4 text-center">
                   <AlertCircle className="w-8 h-8 text-zinc-500 mx-auto mb-2" />
                   <p className="text-zinc-400 text-sm">
@@ -979,6 +1124,8 @@ export default function ChatPage() {
                   actions.setShowOfferModal(false);
                   actions.setOfferMessage('');
                 }}
+
+                {showRequestsPanel && <MessageRequestsPanel />}
                 className="flex-1 px-3 md:px-4 py-2 bg-zinc-800 text-white rounded-lg hover:bg-zinc-700 transition-colors text-sm"
               >
                 Cancel

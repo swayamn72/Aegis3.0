@@ -12,7 +12,10 @@ import cloudinary from '../config/cloudinary.js';
 import bcrypt from 'bcrypt';
 import { AUTH_CONSTANTS } from '../config/constants.js';
 import LFPPost from '../models/lfpPost.model.js';
+import ChatMessage from '../models/chat.model.js';
+import DirectMessageRequest from '../models/directMessageRequest.model.js';
 import { validateUploadedImage } from '../utils/imageValidation.js';
+import { getBlockedUserIdSetForUser } from '../utils/blockUtils.js';
 
 // ============================================================================
 // PHASE STATUS HELPER (mirrors team.routes.js)
@@ -91,6 +94,155 @@ router.get('/leaderboard/aegis', async (req, res) => {
   } catch (error) {
     console.error('Error fetching Aegis leaderboard:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// GET /api/players/discover - Find players with search + sort + role filter
+router.get('/discover', auth, async (req, res) => {
+  try {
+    const viewerId = req.user.id?.toString();
+    const q = (req.query.q || '').toString().trim();
+    const role = (req.query.role || '').toString().trim();
+    const primaryGame = (req.query.primaryGame || '').toString().trim();
+    const sortBy = (req.query.sortBy || 'aegisRating').toString();
+    const sortOrderRaw = (req.query.sortOrder || 'desc').toString().toLowerCase();
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
+    const skip = (page - 1) * limit;
+
+    const sortOrder = sortOrderRaw === 'asc' ? 1 : -1;
+    const allowedSortFields = new Set(['aegisRating', 'createdAt', 'username']);
+    const safeSortBy = allowedSortFields.has(sortBy) ? sortBy : 'aegisRating';
+
+    const blockedSet = await getBlockedUserIdSetForUser(viewerId);
+    const blockedIds = Array.from(blockedSet);
+
+    const query = {
+      _id: {
+        $ne: viewerId,
+        ...(blockedIds.length > 0 ? { $nin: blockedIds } : {}),
+      },
+      profileVisibility: 'public',
+    };
+
+    if (q) {
+      query.$or = [
+        { username: { $regex: q, $options: 'i' } },
+        { realName: { $regex: q, $options: 'i' } },
+      ];
+    }
+
+    if (role) {
+      query.inGameRole = { $in: [role] };
+    }
+
+    if (primaryGame) {
+      query.primaryGame = primaryGame;
+    }
+
+    const [total, players] = await Promise.all([
+      Player.countDocuments(query),
+      Player.find(query)
+        .select('_id username realName profilePicture aegisRating primaryGame inGameRole teamStatus verified')
+        .sort({ [safeSortBy]: sortOrder, username: 1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+    ]);
+
+    const targetIds = players.map((p) => p._id.toString());
+
+    const [acceptedRequests, pendingSent, pendingReceived, legacyDirectMessages] = await Promise.all([
+      targetIds.length > 0
+        ? DirectMessageRequest.find({
+          status: 'accepted',
+          $or: [
+            { requester: viewerId, recipient: { $in: targetIds } },
+            { recipient: viewerId, requester: { $in: targetIds } },
+          ],
+        })
+          .select('requester recipient')
+          .lean()
+        : [],
+      targetIds.length > 0
+        ? DirectMessageRequest.find({ requester: viewerId, recipient: { $in: targetIds }, status: 'pending' })
+          .select('recipient')
+          .lean()
+        : [],
+      targetIds.length > 0
+        ? DirectMessageRequest.find({ recipient: viewerId, requester: { $in: targetIds }, status: 'pending' })
+          .select('requester')
+          .lean()
+        : [],
+      targetIds.length > 0
+        ? ChatMessage.aggregate([
+          {
+            $match: {
+              senderId: { $ne: 'system' },
+              receiverId: { $ne: 'system' },
+              $or: [
+                { senderId: viewerId, receiverId: { $in: targetIds } },
+                { receiverId: viewerId, senderId: { $in: targetIds } },
+              ],
+            },
+          },
+          {
+            $project: {
+              otherUserId: {
+                $cond: [{ $eq: ['$senderId', viewerId] }, '$receiverId', '$senderId'],
+              },
+            },
+          },
+          {
+            $group: {
+              _id: '$otherUserId',
+            },
+          },
+        ])
+        : [],
+    ]);
+
+    const acceptedSet = new Set();
+    acceptedRequests.forEach((row) => {
+      const requester = row.requester?.toString();
+      const recipient = row.recipient?.toString();
+      if (requester === viewerId && recipient) acceptedSet.add(recipient);
+      if (recipient === viewerId && requester) acceptedSet.add(requester);
+    });
+
+    const pendingSentSet = new Set(pendingSent.map((row) => row.recipient?.toString()).filter(Boolean));
+    const pendingReceivedSet = new Set(pendingReceived.map((row) => row.requester?.toString()).filter(Boolean));
+    const legacySet = new Set(legacyDirectMessages.map((row) => row._id?.toString()).filter(Boolean));
+
+    const result = players.map((player) => {
+      const playerId = player._id.toString();
+      const canMessage = legacySet.has(playerId) || acceptedSet.has(playerId);
+
+      let requestStatus = 'none';
+      if (legacySet.has(playerId)) requestStatus = 'legacy_conversation';
+      else if (acceptedSet.has(playerId)) requestStatus = 'accepted';
+      else if (pendingSentSet.has(playerId)) requestStatus = 'pending_sent';
+      else if (pendingReceivedSet.has(playerId)) requestStatus = 'pending_received';
+
+      return {
+        ...player,
+        canMessage,
+        requestStatus,
+      };
+    });
+
+    res.json({
+      players: result,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching discover players:', error);
+    res.status(500).json({ message: 'Failed to fetch discover players' });
   }
 });
 

@@ -6,6 +6,7 @@ import Tournament from '../models/tournament.model.js';
 import Match from '../models/match.model.js';
 import Registration from '../models/registration.model.js';
 import Organization from '../models/organization.model.js';
+import UserReport from '../models/userReport.model.js';
 import mongoose from 'mongoose';
 
 const router = express.Router();
@@ -942,6 +943,103 @@ router.post('/tournaments/:tournamentId/phases/:phaseName/recalculate-ratings', 
   } catch (error) {
     console.error('Error recalculating phase ratings:', error);
     res.status(500).json({ error: 'Failed to recalculate ratings' });
+  }
+});
+
+// ==================== MODERATION REPORT ROUTES ====================
+
+// Get user reports with pagination and status filter
+router.get('/reports', verifyAdminToken, async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+    const skip = (page - 1) * limit;
+    const status = req.query.status;
+    const reason = req.query.reason;
+
+    const query = {};
+    if (status && ['open', 'in_review', 'actioned', 'dismissed'].includes(status)) {
+      query.status = status;
+    }
+    if (reason && [
+      'harassment',
+      'hate_speech',
+      'spam',
+      'sexual_content',
+      'violence',
+      'impersonation',
+      'scam_fraud',
+      'other',
+    ].includes(reason)) {
+      query.reason = reason;
+    }
+
+    const [reports, total] = await Promise.all([
+      UserReport.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate('reporter', '_id username profilePicture')
+        .populate('target.user', '_id username profilePicture')
+        .populate('reviewedBy', '_id username email')
+        .lean(),
+      UserReport.countDocuments(query),
+    ]);
+
+    res.json({
+      reports,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error('Admin get reports error:', error);
+    res.status(500).json({ error: 'Failed to fetch reports' });
+  }
+});
+
+// Update report status and moderation notes
+router.patch('/reports/:id', verifyAdminToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, adminNotes = '' } = req.body || {};
+
+    if (!validateObjectId(id)) {
+      return res.status(400).json({ error: 'Invalid report ID format' });
+    }
+
+    if (!['open', 'in_review', 'actioned', 'dismissed'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status value' });
+    }
+
+    const report = await UserReport.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          status,
+          adminNotes: typeof adminNotes === 'string' ? adminNotes.trim() : '',
+          reviewedBy: req.admin.adminId,
+          reviewedAt: new Date(),
+        },
+      },
+      { new: true, runValidators: true }
+    )
+      .populate('reporter', '_id username profilePicture')
+      .populate('target.user', '_id username profilePicture')
+      .populate('reviewedBy', '_id username email')
+      .lean();
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    res.json({ message: 'Report updated successfully', report });
+  } catch (error) {
+    console.error('Admin update report error:', error);
+    res.status(500).json({ error: 'Failed to update report' });
   }
 });
 

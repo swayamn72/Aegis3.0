@@ -15,6 +15,7 @@ const Navbar = () => {
 
   const navLinks = [
     { to: "/", text: "Dashboard" },
+    { to: "/find-players", text: "Find Players" },
     { to: "/recruitment", text: "Opportunities" },
     { to: "/tournaments", text: "Tournaments" },
   ];

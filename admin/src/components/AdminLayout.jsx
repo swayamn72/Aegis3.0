@@ -8,7 +8,8 @@ import {
   Calendar,
   LogOut,
   Menu,
-  Shield
+  Shield,
+  ShieldAlert
 } from 'lucide-react';
 
 const AdminLayout = ({ children }) => {
@@ -27,6 +28,7 @@ const AdminLayout = ({ children }) => {
     { name: 'Organizations', href: '/admin/organizations', icon: Building2 },
     { name: 'Tournaments', href: '/admin/tournaments', icon: Trophy },
     { name: 'Matches', href: '/admin/matches', icon: Calendar },
+    { name: 'Reports', href: '/admin/reports', icon: ShieldAlert },
   ];
 
   const isActive = (href) => {
