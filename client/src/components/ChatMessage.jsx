@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ExternalLink, Trophy, Flag, UserX } from 'lucide-react';
+import { ExternalLink, Trophy, Flag, UserX, MoreVertical } from 'lucide-react';
 import botLogo from '../assets/bot_logo.png';
 import ChatAvatar from './ChatAvatar';
 import { toast } from 'react-toastify';
