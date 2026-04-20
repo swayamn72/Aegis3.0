@@ -263,8 +263,9 @@ export const useChatActions = ({ userId, selectedChat, chatType }) => {
                     console.log('✅ Message saved to database');
                 })
                 .catch((error) => {
-                    console.error('Failed to save message:', error);
-                    const apiError = error?.response?.data;
+                    // In this codebase, the axios interceptor rejects with 'data' directly
+                    const apiError = error; 
+                    
                     if (apiError?.requestRequired) {
                         toast.info(apiError?.message || 'Message request is pending. Wait for acceptance to chat.');
                         queryClient.invalidateQueries({ queryKey: chatKeys.messages(selectedChat._id) });
