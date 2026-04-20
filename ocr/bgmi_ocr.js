@@ -60,9 +60,10 @@ async function detectText(imagePath) {
 // ===== 3. POINTS IMAGE PARSING =====
 function extractPointsFromDetections(detections) {
     const lines = detections
-        .filter(d => d.Type === "LINE" && d.Confidence >= 20)
+        .filter(d => d.Type === "LINE" && d.Confidence >= 15)
         .map(d => ({
             text: d.DetectedText,
+            confidence: d.Confidence,
             left: d.Geometry.BoundingBox.Left,
             top: d.Geometry.BoundingBox.Top,
             w: d.Geometry.BoundingBox.Width,
@@ -72,9 +73,10 @@ function extractPointsFromDetections(detections) {
         }));
 
     const words = detections
-        .filter(d => d.Type === "WORD" && d.Confidence >= 20)
+        .filter(d => d.Type === "WORD" && d.Confidence >= 15)
         .map(d => ({
             text: d.DetectedText,
+            confidence: d.Confidence,
             left: d.Geometry.BoundingBox.Left,
             top: d.Geometry.BoundingBox.Top,
             w: d.Geometry.BoundingBox.Width,
@@ -84,25 +86,61 @@ function extractPointsFromDetections(detections) {
         }));
 
     // --- Parse finish/kill lines ---
-    // Rekognition quirks: "0" → "O"/"D", "1" → "I", "finish es" (with space)
+    // Rekognition quirks: "0" → "O"/"D", "1" → "I"/"l", "finish es" (with space)
     const finishLines = [];
     for (const line of lines) {
-        let text = line.text.trim().replace(/finish\s+es/gi, "finishes");
-        const m = text.match(/^([0OoDdIi\d]+)\s+finish(?:es)?$/i);
+        let text = line.text.trim()
+            .replace(/finish\s+es/gi, "finishes")
+            .replace(/finish\s*es\s*$/gi, "finishes");
+
+        // Pattern 1: "N finishes" or "N finish"
+        const m = text.match(/^([0OoDdIil\d]+)\s+finish(?:es)?$/i);
         if (m) {
             let k = m[1].toUpperCase();
-            let kills = (k === "O" || k === "D") ? 0 : (k === "I" ? 1 : parseInt(k));
+            let kills;
+            if (k === "O" || k === "D") kills = 0;
+            else if (k === "I" || k === "L") kills = 1;
+            else kills = parseInt(k);
             if (isNaN(kills)) kills = 0;
             finishLines.push({ kills, ...line });
             continue;
         }
+
+        // Pattern 2: standalone "finish" (= 1 finish)
         if (/^finish$/i.test(text)) {
             finishLines.push({ kills: 1, ...line });
+            continue;
+        }
+
+        // Pattern 3: "O finishes" where Rekognition reads O as letter
+        const m2 = text.match(/^([Oo])\s+finish(?:es)?$/i);
+        if (m2) {
+            finishLines.push({ kills: 0, ...line });
+        }
+    }
+
+    // Also look for WORD-level finish detections split differently from LINE-level
+    for (const w of words) {
+        const wt = w.text.trim();
+        if (/^\d{1,2}$/.test(wt) && w.h < 0.03) {
+            const nearbyFinish = words.find(fw =>
+                /^finish(?:es)?$/i.test(fw.text.trim()) &&
+                Math.abs(fw.cy - w.cy) < 0.02 &&
+                fw.left > w.left
+            );
+            if (nearbyFinish) {
+                const alreadyCaptured = finishLines.some(fl =>
+                    Math.abs(fl.cy - w.cy) < 0.02 && Math.abs(fl.left - w.left) < 0.05
+                );
+                if (!alreadyCaptured) {
+                    finishLines.push({ kills: parseInt(wt), ...w });
+                }
+            }
         }
     }
 
     // --- Parse player name lines ---
-    const NOISE = /^(continue|finishes?|stage|remaining|team|damage|0|finish\s*es)$/i;
+    const NOISE = /^(continue|finishes?|stage|remaining|team|damage|finish\s*es|eliminations?|\/\d+\s*eliminations?)$/i;
     const playerLines = [];
     for (const line of lines) {
         let text = line.text.trim().replace(/finish\s+es/gi, "finishes");
@@ -111,6 +149,9 @@ function extractPointsFromDetections(detections) {
         if (/^\d{1,2}$/.test(text)) continue;
         if (text.length < 2) continue;
         if (line.top < 0.1) continue;
+        if (line.top > 0.92) continue;
+        if (/elimination/i.test(text)) continue;
+        if (text === "0" || text === "O") continue;
         playerLines.push(line);
     }
 
@@ -123,9 +164,9 @@ function extractPointsFromDetections(detections) {
             if (usedFinishes.has(fi)) continue;
             const f = finishLines[fi];
             const yDist = Math.abs(f.cy - player.cy);
-            if (yDist < 0.04 && f.left > player.left - 0.05) {
-                if (yDist < bestDist) { bestDist = yDist; bestIdx = fi; }
-            }
+            if (yDist > 0.05) continue;
+            if (f.cx < player.left - 0.02) continue;
+            if (yDist < bestDist) { bestDist = yDist; bestIdx = fi; }
         }
         if (bestIdx >= 0) {
             usedFinishes.add(bestIdx);
@@ -148,10 +189,16 @@ function extractPointsFromDetections(detections) {
     const posMap = {};
     for (const w of words) {
         const num = parseInt(w.text);
-        if (!isNaN(num) && num >= 1 && num <= 25 && /^\d{1,2}$/.test(w.text) && w.h >= 0.035) {
-            if (!posMap[num] || w.h > posMap[num].h) {
-                posMap[num] = { pos: num, ...w };
-            }
+        if (isNaN(num) || num < 1 || num > 25) continue;
+        if (!/^\d{1,2}$/.test(w.text)) continue;
+        if (w.h < 0.025) continue;
+        // Avoid picking up kill counts as position numbers
+        const nearFinish = finishLines.some(fl =>
+            Math.abs(fl.cy - w.cy) < 0.03 && Math.abs(fl.left - w.left) < 0.15
+        );
+        if (nearFinish && num <= 15) continue;
+        if (!posMap[num] || w.h > posMap[num].h) {
+            posMap[num] = { pos: num, ...w };
         }
     }
     const uniquePos = Object.values(posMap).sort((a, b) => a.top - b.top);
@@ -169,17 +216,17 @@ function extractPointsFromDetections(detections) {
             const gap = sorted[i + 1].cy - sorted[i].cy;
             if (gap > gapSize) { gapSize = gap; gapIdx = i; }
         }
-        if (gapIdx >= 0 && gapSize > 0.06) {
+        if (gapIdx >= 0 && gapSize > 0.05) {
             const mid = (sorted[gapIdx].cy + sorted[gapIdx + 1].cy) / 2;
-            positions[1] = sorted.filter(p => p.cy < mid).map(p => ({ name: p.name, kills: p.kills }));
-            positions[2] = sorted.filter(p => p.cy >= mid).map(p => ({ name: p.name, kills: p.kills }));
+            positions[1] = sorted.filter(p => p.cy < mid).slice(0, 4).map(p => ({ name: p.name, kills: p.kills }));
+            positions[2] = sorted.filter(p => p.cy >= mid).slice(0, 4).map(p => ({ name: p.name, kills: p.kills }));
         } else {
-            positions[1] = sorted.map(p => ({ name: p.name, kills: p.kills }));
+            positions[1] = sorted.slice(0, 4).map(p => ({ name: p.name, kills: p.kills }));
         }
     }
 
     // Right side: group by position anchors with midpoint boundaries
-    const rightAnchors = uniquePos.filter(a => a.cx >= 0.5 && a.pos !== 2).sort((a, b) => a.top - b.top);
+    const rightAnchors = uniquePos.filter(a => a.cx >= 0.45 && a.pos !== 2).sort((a, b) => a.top - b.top);
     for (let i = 0; i < rightAnchors.length; i++) {
         const anchor = rightAnchors[i];
         const topBound = i > 0
@@ -194,7 +241,7 @@ function extractPointsFromDetections(detections) {
 
         // Add orphan finishes in this region (kills without player names)
         const regionOrphans = orphanFinishes.filter(f =>
-            f.cx >= 0.55 && f.cy >= topBound && f.cy < bottomBound
+            f.cx >= 0.50 && f.cy >= topBound && f.cy < bottomBound
         );
         const combined = posPlayers.map(p => ({ name: p.name, kills: p.kills }));
         for (const orphan of regionOrphans) {
@@ -237,8 +284,9 @@ function groupPointsImagesByMatch(allImageResults) {
 }
 
 async function parseAllPointsImages(imageDir) {
+    // Accept both points*.jpg and result*.jpg file patterns
     const files = fs.readdirSync(imageDir)
-        .filter(f => /^points\d+\.(jpg|png|jpeg)$/i.test(f))
+        .filter(f => /^(?:points|result)\d+\.(jpg|png|jpeg|webp)$/i.test(f))
         .sort((a, b) => {
             const na = parseInt(a.match(/\d+/)[0]);
             const nb = parseInt(b.match(/\d+/)[0]);

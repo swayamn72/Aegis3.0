@@ -147,18 +147,13 @@ router.get('/dashboard/stats', verifyAdminToken, async (req, res) => {
     ]);
 
     // Player stats (unique players in approved/checked_in teams for all tournaments)
-    const registrations = await Registration.find({ status: { $in: ['approved', 'checked_in'] } }).populate('roster.player', '_id');
-    const playerIds = new Set();
-    registrations.forEach(reg => {
-      if (reg.roster && Array.isArray(reg.roster)) {
-        reg.roster.forEach(member => {
-          if (member.player && member.player._id) {
-            playerIds.add(String(member.player._id));
-          }
-        });
-      }
-    });
-    const totalPlayers = playerIds.size;
+    const uniquePlayersResult = await Registration.aggregate([
+      { $match: { status: { $in: ['approved', 'checked_in'] } } },
+      { $unwind: "$roster" },
+      { $group: { _id: "$roster.player" } },
+      { $count: "totalPlayers" }
+    ]);
+    const totalPlayers = uniquePlayersResult[0]?.totalPlayers || 0;
 
     // Compose stats
     const stats = {

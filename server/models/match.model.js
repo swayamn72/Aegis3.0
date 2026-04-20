@@ -74,10 +74,12 @@ const matchSchema = new mongoose.Schema(
         },
         kills: {
           total: { type: Number, default: 0 },
+          unmatchedKills: { type: Number, default: 0 },
           breakdown: [
             {
               player: { type: mongoose.Schema.Types.ObjectId, ref: 'Player' },
               kills: { type: Number, default: 0 },
+              isPlaying: { type: Boolean, default: true },
             }
           ]
         },

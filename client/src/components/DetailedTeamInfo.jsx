@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -66,6 +66,7 @@ const DetailedTeamInfo = () => {
 
   // Captain functionality states
   const [showEditLogoModal, setShowEditLogoModal] = useState(false);
+  const [editLogoBio, setEditLogoBio] = useState('');
   const [showEditTeamModal, setShowEditTeamModal] = useState(false);
   const [editTeamForm, setEditTeamForm] = useState({
     bio: '',
@@ -84,6 +85,8 @@ const DetailedTeamInfo = () => {
   const [transferPlayerData, setTransferPlayerData] = useState(null);
   const [brokenImages, setBrokenImages] = useState({});
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const navigate = useNavigate();
 
   const handleImageError = (imageId) => {
     setBrokenImages(prev => ({ ...prev, [imageId]: true }));
@@ -365,6 +368,21 @@ const DetailedTeamInfo = () => {
     },
     onError: (mutationError) => {
       toast.error(getErrorMessage(mutationError, 'Failed to transfer captaincy'));
+    },
+  });
+
+  const deleteTeamMutation = useMutation({
+    mutationFn: async () => {
+      const response = await axiosInstance.delete(`/api/teams/${id}`);
+      return response.data;
+    },
+    onSuccess: () => {
+      toast.success('Team disbanded successfully');
+      setShowDeleteConfirm(false);
+      navigate('/my-teams');
+    },
+    onError: (mutationError) => {
+      toast.error(getErrorMessage(mutationError, 'Failed to disband team'));
     },
   });
 
@@ -654,12 +672,15 @@ const DetailedTeamInfo = () => {
                 <span className="hidden sm:inline">Edit Details</span>
               </button>
               <button
-                onClick={() => setShowEditLogoModal(true)}
+                onClick={() => {
+                  setEditLogoBio(teamData?.bio || '');
+                  setShowEditLogoModal(true);
+                }}
                 className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors flex items-center gap-2"
-                title="Edit Team Logo"
+                title="Edit Team Profile"
               >
                 <Edit className="w-4 h-4" />
-                <span className="hidden sm:inline">Edit Logo</span>
+                <span className="hidden sm:inline">Edit Profile</span>
               </button>
               <button
                 onClick={() => setShowInviteModal(true)}
@@ -669,6 +690,16 @@ const DetailedTeamInfo = () => {
                 <UserPlus className="w-4 h-4" />
                 <span className="hidden sm:inline">Invite Player</span>
               </button>
+              {teamData?.players?.length === 1 && (
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="px-4 py-2 bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white border border-red-500/30 rounded-lg transition-colors flex items-center gap-2"
+                  title="Disband Team"
+                >
+                  <AlertCircle className="w-4 h-4" />
+                  <span className="hidden sm:inline">Disband Team</span>
+                </button>
+              )}
             </div>
           )}
 
@@ -1316,7 +1347,7 @@ const DetailedTeamInfo = () => {
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl max-w-md w-full">
               <div className="p-6">
                 <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-bold text-white">Edit Team Logo</h3>
+                  <h3 className="text-xl font-bold text-white">Edit Team Profile</h3>
                   <button
                     onClick={() => {
                       setShowEditLogoModal(false);
@@ -1346,24 +1377,42 @@ const DetailedTeamInfo = () => {
                     />
                     <label
                       htmlFor="team-logo-edit-input"
-                      className="inline-flex items-center gap-2 px-6 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg cursor-pointer transition-all active:scale-95 mb-6"
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg cursor-pointer transition-all active:scale-95"
                     >
                       <Upload className="w-4 h-4" />
                       {selectedFile ? 'Change Image' : 'Select Image'}
                     </label>
 
-                    {selectedFile && (
-                      <div className="w-full flex gap-3">
+                    <div className="w-full mt-6 mb-2">
+                      <label className="block text-zinc-400 text-sm font-medium mb-2 text-left">Team Bio</label>
+                      <textarea
+                        value={editLogoBio}
+                        onChange={(e) => setEditLogoBio(e.target.value)}
+                        placeholder="Tell us about your team..."
+                        maxLength={150}
+                        rows={3}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-3 text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-500 resize-none text-left"
+                      />
+                    </div>
+
+                    <div className="w-full flex gap-3 mt-4">
                         <button
-                          onClick={() => setSelectedFile(null)}
+                          onClick={() => {
+                            setShowEditLogoModal(false);
+                            setSelectedFile(null);
+                          }}
                           className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg transition-colors border border-zinc-700"
                         >
-                          Clear
+                          Cancel
                         </button>
                         <button
                           onClick={() => {
                             const formData = new FormData();
-                            formData.append('logo', selectedFile);
+                            if (selectedFile) formData.append('logo', selectedFile);
+                            if (editLogoBio.trim() !== (teamData?.bio || '')) {
+                              formData.append('data', JSON.stringify({ bio: editLogoBio.trim() }));
+                            }
+                            
                             uploadLogoMutation.mutate(formData, {
                               onSuccess: () => {
                                 setSelectedFile(null);
@@ -1371,22 +1420,12 @@ const DetailedTeamInfo = () => {
                               }
                             });
                           }}
-                          disabled={uploadLogoMutation.isLoading}
+                          disabled={(!selectedFile && editLogoBio.trim() === (teamData?.bio || '')) || uploadLogoMutation.isLoading}
                           className="flex-[2] py-3 bg-zinc-100 hover:bg-white text-black font-bold rounded-lg transition-all disabled:opacity-50"
                         >
-                          {uploadLogoMutation.isLoading ? 'Uploading...' : 'Confirm Upload'}
+                          {uploadLogoMutation.isLoading ? 'Saving...' : 'Save Profile'}
                         </button>
-                      </div>
-                    )}
-
-                    {!selectedFile && (
-                      <button
-                        onClick={() => setShowEditLogoModal(false)}
-                        className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg transition-colors border border-zinc-700"
-                      >
-                        Cancel
-                      </button>
-                    )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1707,6 +1746,58 @@ const DetailedTeamInfo = () => {
                       )}
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Team Modal */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-zinc-900 border border-red-900/50 rounded-xl max-w-md w-full overflow-hidden shadow-2xl shadow-red-900/20">
+              <div className="p-6">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
+                    <AlertCircle className="w-6 h-6 text-red-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-white">Disband Team?</h3>
+                    <p className="text-zinc-400 text-sm mt-1">
+                      Are you sure you want to disband <span className="text-white font-semibold">{teamData?.teamName}</span>?
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 mb-6">
+                  <p className="text-red-400 text-sm leading-relaxed">
+                    This action cannot be undone. All active invitations will be cancelled and the team profile will be marked as disbanded permanently.
+                  </p>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowDeleteConfirm(false)}
+                    className="flex-1 px-4 py-3 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => deleteTeamMutation.mutate()}
+                    disabled={deleteTeamMutation.isLoading}
+                    className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {deleteTeamMutation.isLoading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Disbanding...
+                      </>
+                    ) : (
+                      <>
+                        Disband
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             </div>

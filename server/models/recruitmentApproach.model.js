@@ -15,6 +15,8 @@ const recruitmentApproachSchema = new mongoose.Schema(
 // Indexes
 recruitmentApproachSchema.index({ team: 1, status: 1 });
 recruitmentApproachSchema.index({ player: 1, status: 1 });
+// Optimised lookup for approach cooldowns
+recruitmentApproachSchema.index({ team: 1, player: 1, createdAt: -1 });
 // Removed unique index on { team, player } to allow multiple approaches between the same team and player
 
 const RecruitmentApproach = mongoose.model('RecruitmentApproach', recruitmentApproachSchema);

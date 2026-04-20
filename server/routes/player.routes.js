@@ -1,4 +1,5 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import Player from '../models/player.model.js';
 import Team from '../models/team.model.js';
 import Tournament from '../models/tournament.model.js';
@@ -170,25 +171,32 @@ router.put("/update-profile", auth, async (req, res) => {
       'instagram', 'youtube', 'twitter'
     ];
 
-    const updateData = {};
+    const updateQuery = { $set: {}, $unset: {} };
     for (const field of ALLOWED_FIELDS) {
-      if (req.body[field] !== undefined && req.body[field] !== '') {
-        updateData[field] = req.body[field];
+      if (req.body[field] !== undefined) {
+        if (req.body[field] === '') {
+          updateQuery.$unset[field] = 1;
+        } else {
+          updateQuery.$set[field] = req.body[field];
+        }
       }
     }
 
     // Force public visibility for all profile updates
-    updateData.profileVisibility = 'public';
+    updateQuery.$set.profileVisibility = 'public';
 
     // Validate required fields if provided
-    if (updateData.age && (updateData.age < 13 || updateData.age > 99)) {
+    if (updateQuery.$set.age && (updateQuery.$set.age < 13 || updateQuery.$set.age > 99)) {
       return res.fail(400, 'Age must be between 13 and 99');
     }
+
+    if (Object.keys(updateQuery.$set).length === 0) delete updateQuery.$set;
+    if (Object.keys(updateQuery.$unset).length === 0) delete updateQuery.$unset;
 
     // Update the player document
     const updatedPlayer = await Player.findByIdAndUpdate(
       userId,
-      { $set: updateData },
+      updateQuery,
       { new: true, runValidators: true }
     ).select("-password");
 
@@ -269,6 +277,11 @@ router.post("/change-password", auth, async (req, res) => {
 
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ message: "Current and new passwords are required" });
+    }
+
+    // Enforce minimum password strength
+    if (newPassword.length < 8) {
+      return res.status(400).json({ message: "New password must be at least 8 characters long" });
     }
 
     // Find player and include password for comparison
@@ -652,6 +665,10 @@ router.get('/recent3matches', auth, async (req, res) => {
 router.get('/:id/matches', async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid player ID format' });
+    }
     const limit = Math.min(parseInt(req.query.limit) || 10, 20);
     const page = Math.max(parseInt(req.query.page) || 1, 1);
     const skip = (page - 1) * limit;
@@ -736,6 +753,10 @@ router.get('/:id/matches', async (req, res) => {
 router.get('/:id/tournaments', async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid player ID format' });
+    }
     const limit = Math.min(parseInt(req.query.limit) || 5, 20);
     const page = Math.max(parseInt(req.query.page) || 1, 1);
     const skip = (page - 1) * limit;
@@ -861,6 +882,10 @@ router.get('/:id/profile', async (req, res) => {
 // GET /api/players/:id/rating-history — Paginated Aegis Rating history
 router.get('/:id/rating-history', async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid player ID format' });
+    }
+
     const page = Math.max(parseInt(req.query.page) || 1, 1);
     const limit = Math.min(parseInt(req.query.limit) || 20, 50);
     const skip = (page - 1) * limit;

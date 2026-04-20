@@ -39,40 +39,57 @@ export const createTryoutMessage = async ({
 
 export const fetchTryoutMessages = async (
     chatId,
-    { includeLegacy = true, legacyMessages = [], sort = 1 } = {}
+    { includeLegacy = true, legacyMessages = [], sort = 1, previewLimit = null } = {}
 ) => {
     const chatObjectId = asObjectId(chatId);
     if (!chatObjectId) return [];
 
-    const storedMessages = await TryoutMessage.find({ chatId: chatObjectId })
-        .sort({ timestamp: sort, _id: sort })
-        .lean();
+    const hasLegacy = includeLegacy && Array.isArray(legacyMessages) && legacyMessages.length > 0;
 
-    const transformedStored = storedMessages.map((msg) => {
-        return {
+    // Fast path: list preview with no legacy messages — push limit into the DB query.
+    // Fetch the tail cheaply by sorting DESC, limiting, then reversing to ASC.
+    if (previewLimit !== null && !hasLegacy) {
+        const tail = await TryoutMessage.find({ chatId: chatObjectId })
+            .sort({ timestamp: -1, _id: -1 })
+            .limit(previewLimit)
+            .lean();
+        tail.reverse(); // back to chronological ASC
+        return tail.map((msg) => ({
             _id: msg._id,
             sender: msg.sender,
             message: msg.message,
             messageType: msg.messageType,
             ...(msg.metadata ? { metadata: msg.metadata } : {}),
             timestamp: msg.timestamp,
-        };
-    });
+        }));
+    }
 
-    if (!includeLegacy || !Array.isArray(legacyMessages) || legacyMessages.length === 0) {
+    // Full fetch path (single-chat view or legacy-merge required)
+    const storedMessages = await TryoutMessage.find({ chatId: chatObjectId })
+        .sort({ timestamp: sort, _id: sort })
+        .lean();
+
+    const transformedStored = storedMessages.map((msg) => ({
+        _id: msg._id,
+        sender: msg.sender,
+        message: msg.message,
+        messageType: msg.messageType,
+        ...(msg.metadata ? { metadata: msg.metadata } : {}),
+        timestamp: msg.timestamp,
+    }));
+
+    if (!hasLegacy) {
         return transformedStored;
     }
 
-    const transformedLegacy = legacyMessages.map((msg, index) => {
-        return {
-            _id: msg._id || `legacy_${index}`,
-            sender: msg.sender,
-            message: msg.message,
-            messageType: msg.messageType || 'text',
-            ...(msg.metadata ? { metadata: msg.metadata } : {}),
-            timestamp: msg.timestamp,
-        };
-    });
+    const transformedLegacy = legacyMessages.map((msg, index) => ({
+        _id: msg._id || `legacy_${index}`,
+        sender: msg.sender,
+        message: msg.message,
+        messageType: msg.messageType || 'text',
+        ...(msg.metadata ? { metadata: msg.metadata } : {}),
+        timestamp: msg.timestamp,
+    }));
 
     const merged = [...transformedLegacy, ...transformedStored];
     const deduped = [];
@@ -87,6 +104,11 @@ export const fetchTryoutMessages = async (
     }
 
     deduped.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    // Apply previewLimit on merged result
+    if (previewLimit !== null && deduped.length > previewLimit) {
+        return deduped.slice(-previewLimit);
+    }
     return deduped;
 };
 

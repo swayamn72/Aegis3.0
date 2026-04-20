@@ -28,46 +28,46 @@ import { deactivateLFTPost } from '../utils/recruitmentHelpers.js';
 function computePhaseStatus(registration, tournament) {
   const { phase: teamPhase, status: regStatus, finalPosition } = registration;
   const tStatus = tournament.status;
-  const phases  = tournament.phases || [];
- 
-   if (regStatus === 'disqualified') return { label: 'Disqualified', type: 'eliminated' };
-   if (regStatus === 'withdrawn')    return { label: 'Withdrawn',    type: 'neutral'   };
- 
-   // Completed tournament
-   if (tStatus === 'completed') {
-     if (finalPosition) return { label: `#${finalPosition} Final`, type: 'completed' };
-     return { label: 'Completed', type: 'completed' };
-   }
- 
-   // Active tournament — derive current competition phase
-   const teamPhaseDoc  = phases.find(p => p.name === teamPhase);
-   const activePhase   = phases.find(p => p.status === 'in_progress');
-   const startedPhases = phases.filter(p => p.status !== 'upcoming');
-   const lastPhase     = startedPhases[startedPhases.length - 1];
- 
-   // SCALABILITY OPTIMIZATION for 1 Lakh+ users:
-   // Instead of scanning tournament.phases[].teams (which could be 100k long),
-   // we compare against the indexed registration.phase string.
-   const isTeamInActivePhase = teamPhaseDoc?.status === 'in_progress';
- 
-   if (isTeamInActivePhase) {
-     return { label: `In Phase: ${teamPhase}`, type: 'active' };
-   }
- 
-   if (teamPhaseDoc?.status === 'upcoming') {
-     return { label: `Phase: ${teamPhase}`, type: 'pending' };
-   }
- 
-   if (activePhase) {
-     // Team not in active phase — were they eliminated or did they finish?
-     const isLastPhase = lastPhase && teamPhase && lastPhase.name === teamPhase;
-     if (isLastPhase) {
-       if (finalPosition) return { label: `#${finalPosition} Final`, type: 'completed' };
-       return { label: `Phase: ${teamPhase}`, type: 'pending' };
-     }
-     const eliminatedAt = teamPhase || 'Qualifiers';
-     return { label: `Eliminated: ${eliminatedAt}`, type: 'eliminated' };
-   }
+  const phases = tournament.phases || [];
+
+  if (regStatus === 'disqualified') return { label: 'Disqualified', type: 'eliminated' };
+  if (regStatus === 'withdrawn') return { label: 'Withdrawn', type: 'neutral' };
+
+  // Completed tournament
+  if (tStatus === 'completed') {
+    if (finalPosition) return { label: `#${finalPosition} Final`, type: 'completed' };
+    return { label: 'Completed', type: 'completed' };
+  }
+
+  // Active tournament — derive current competition phase
+  const teamPhaseDoc = phases.find(p => p.name === teamPhase);
+  const activePhase = phases.find(p => p.status === 'in_progress');
+  const startedPhases = phases.filter(p => p.status !== 'upcoming');
+  const lastPhase = startedPhases[startedPhases.length - 1];
+
+  // SCALABILITY OPTIMIZATION for 1 Lakh+ users:
+  // Instead of scanning tournament.phases[].teams (which could be 100k long),
+  // we compare against the indexed registration.phase string.
+  const isTeamInActivePhase = teamPhaseDoc?.status === 'in_progress';
+
+  if (isTeamInActivePhase) {
+    return { label: `In Phase: ${teamPhase}`, type: 'active' };
+  }
+
+  if (teamPhaseDoc?.status === 'upcoming') {
+    return { label: `Phase: ${teamPhase}`, type: 'pending' };
+  }
+
+  if (activePhase) {
+    // Team not in active phase — were they eliminated or did they finish?
+    const isLastPhase = lastPhase && teamPhase && lastPhase.name === teamPhase;
+    if (isLastPhase) {
+      if (finalPosition) return { label: `#${finalPosition} Final`, type: 'completed' };
+      return { label: `Phase: ${teamPhase}`, type: 'pending' };
+    }
+    const eliminatedAt = teamPhase || 'Qualifiers';
+    return { label: `Eliminated: ${eliminatedAt}`, type: 'eliminated' };
+  }
 
   // No active phase but tournament is in_progress (between phases)
   if (tStatus === 'in_progress') {
@@ -76,6 +76,21 @@ function computePhaseStatus(registration, tournament) {
   }
 
   return { label: tStatus?.replace(/_/g, ' ') || 'Unknown', type: 'neutral' };
+}
+
+// ============================================================================
+// HELPER: ACTIVE TOURNAMENT CHECK
+// ============================================================================
+async function isTeamInActiveTournament(teamId) {
+  const activeRegistrations = await Registration.find({
+    team: teamId,
+    status: { $in: ['pending', 'approved', 'checked_in'] }
+  }).populate('tournament', 'status');
+
+  return activeRegistrations.some(reg => {
+    if (!reg.tournament) return false;
+    return ['announced', 'registration_open', 'registration_closed', 'in_progress', 'scheduled', 'postponed'].includes(reg.tournament.status);
+  });
 }
 
 const router = express.Router();
@@ -87,6 +102,10 @@ const router = express.Router();
 router.get('/:id', auth, async (req, res) => {
   try {
     const teamId = req.params.id.trim();
+
+    if (!mongoose.Types.ObjectId.isValid(teamId)) {
+      return res.status(400).json({ message: 'Invalid team ID format' });
+    }
 
     // Get team details
     const team = await Team.findById(teamId)
@@ -161,10 +180,10 @@ router.get('/:id', auth, async (req, res) => {
       .filter(r => r.tournament)
       .map(r => ({
         ...r.tournament,
-        phaseStatus:      computePhaseStatus(r, r.tournament),
+        phaseStatus: computePhaseStatus(r, r.tournament),
         registrationStatus: r.status,
-        finalPosition:    r.finalPosition,
-        teamPhase:        r.phase,
+        finalPosition: r.finalPosition,
+        teamPhase: r.phase,
       }));
 
     // Separate ongoing and past tournaments
@@ -194,9 +213,9 @@ router.get('/:id', auth, async (req, res) => {
 router.get('/:id/matches', auth, async (req, res) => {
   try {
     const teamId = req.params.id.trim();
-    const page  = Math.max(1, parseInt(req.query.page,  10) || 1);
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
-    const skip  = (page - 1) * limit;
+    const skip = (page - 1) * limit;
 
     // Validate team exists (quick check, no full populate needed)
     const teamExists = await Team.exists({ _id: teamId });
@@ -220,14 +239,14 @@ router.get('/:id/matches', auth, async (req, res) => {
       return {
         _id: match._id,
         matchNumber: match.matchNumber,
-        matchType:   match.matchType,
-        map:         match.map,
-        date:        match.actualEndTime || match.scheduledStartTime,
-        tournament:  match.tournament,
-        phase:       match.tournamentPhase,
-        position:    td?.finalPosition  ?? null,
-        kills:       td?.kills?.total   ?? 0,
-        points:      td?.points?.totalPoints ?? 0,
+        matchType: match.matchType,
+        map: match.map,
+        date: match.actualEndTime || match.scheduledStartTime,
+        tournament: match.tournament,
+        phase: match.tournamentPhase,
+        position: td?.finalPosition ?? null,
+        kills: td?.kills?.total ?? 0,
+        points: td?.points?.totalPoints ?? 0,
         chickenDinner: td?.chickenDinner ?? false,
       };
     });
@@ -245,15 +264,15 @@ router.get('/:id/matches', auth, async (req, res) => {
 router.get('/:id/tournaments', auth, async (req, res) => {
   try {
     const teamId = req.params.id.trim();
-    const page  = Math.max(1, parseInt(req.query.page,  10) || 1);
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
-    const skip  = (page - 1) * limit;
+    const skip = (page - 1) * limit;
 
     const teamExists = await Team.exists({ _id: teamId });
     if (!teamExists) return res.status(404).json({ message: 'Team not found' });
 
     const filter = {
-      team:   new mongoose.Types.ObjectId(teamId),
+      team: new mongoose.Types.ObjectId(teamId),
       status: { $in: ['approved', 'checked_in', 'disqualified', 'withdrawn'] },
     };
 
@@ -275,10 +294,10 @@ router.get('/:id/tournaments', auth, async (req, res) => {
       .filter(r => r.tournament)
       .map(r => ({
         ...r.tournament,
-        phaseStatus:        computePhaseStatus(r, r.tournament),
+        phaseStatus: computePhaseStatus(r, r.tournament),
         registrationStatus: r.status,
-        finalPosition:      r.finalPosition,
-        teamPhase:          r.phase,
+        finalPosition: r.finalPosition,
+        teamPhase: r.phase,
       }));
 
     res.json({ tournaments, total, page, totalPages: Math.ceil(total / limit) });
@@ -332,23 +351,13 @@ router.get('/user/my-teams', auth, async (req, res) => {
 // POST /api/teams - Create a new team
 router.post('/', auth, async (req, res) => {
   try {
-
     const { teamName, teamTag, primaryGame, region, bio, logo } = req.body;
 
-    const existingTeamName = await Team.findOne({ teamName });
-    if (existingTeamName) {
-      return res.status(400).json({ message: 'Team name already exists' });
-    }
-
-    if (teamTag) {
-      const existingTeamTag = await Team.findOne({ teamTag: teamTag.toUpperCase() });
-      if (existingTeamTag) {
-        return res.status(400).json({ message: 'Team tag already exists' });
-      }
+    if (!teamName || !teamName.trim()) {
+      return res.status(400).json({ message: 'Team name is required' });
     }
 
     const player = await Player.findById(req.user.id);
-
     if (!player) {
       return res.status(400).json({ message: 'Player profile not found' });
     }
@@ -356,12 +365,12 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'You are already in a team' });
     }
 
-    // Generate unique 6-digit teamId
+    // Generate unique 6-character alphanumeric teamId
     const teamId = await Team.generateTeamId();
 
     const newTeam = new Team({
       teamId,
-      teamName,
+      teamName: teamName.trim(),
       teamTag: teamTag ? teamTag.toUpperCase() : undefined,
       primaryGame: primaryGame || 'BGMI',
       region: region || 'India',
@@ -381,7 +390,6 @@ router.post('/', auth, async (req, res) => {
     // Deactivate any active LFT posts for the new captain
     await deactivateLFTPost(req.user.id);
 
-
     await newTeam.populate('captain', 'username profilePicture primaryGame');
     await newTeam.populate('players', 'username profilePicture primaryGame');
 
@@ -391,8 +399,9 @@ router.post('/', auth, async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating team:', error);
+    // Only teamId has a unique index now — collision is astronomically unlikely
     if (error.code === 11000) {
-      return res.status(400).json({ message: 'Team name or tag already exists' });
+      return res.status(500).json({ message: 'ID collision — please try again' });
     }
     res.status(500).json({ message: 'Server error creating team' });
   }
@@ -558,6 +567,11 @@ router.delete('/:id/players/:playerId', auth, async (req, res) => {
       return res.status(400).json({ message: 'Player is not in this team' });
     }
 
+    const isActive = await isTeamInActiveTournament(teamId);
+    if (isActive) {
+      return res.status(400).json({ message: 'Cannot remove or leave while the team is participating in an active tournament. Withdraw first.' });
+    }
+
     const playerDoc = await Player.findById(playerId);
     if (!playerDoc) {
       return res.status(404).json({ message: 'Player not found' });
@@ -585,10 +599,69 @@ router.delete('/:id/players/:playerId', auth, async (req, res) => {
   }
 });
 
+// ============================================================================
+// DELETE / DISBAND TEAM
+// ============================================================================
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    const teamId = req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(teamId)) {
+      return res.status(400).json({ message: 'Invalid team ID format' });
+    }
+
+    const team = await Team.findById(teamId);
+    if (!team) {
+      return res.status(404).json({ message: 'Team not found' });
+    }
+
+    if (team.captain.toString() !== req.user.id.toString()) {
+      return res.status(403).json({ message: 'Only captain can delete the team' });
+    }
+
+    if (team.players.length > 1) {
+      return res.status(400).json({ message: 'Cannot delete team while other players are in it. Remove all players first.' });
+    }
+
+    const isActive = await isTeamInActiveTournament(teamId);
+    if (isActive) {
+      return res.status(400).json({ message: 'Cannot delete team while participating in an active tournament. Withdraw first.' });
+    }
+
+    // Unset player's team and preserve history
+    const playerId = req.user.id;
+    await Player.findByIdAndUpdate(playerId, {
+      $unset: { team: "" },
+      $set: { teamStatus: 'looking for a team' },
+      $push: {
+        previousTeams: {
+          team: teamId,
+          endDate: new Date(),
+          reason: 'disbanded'
+        }
+      }
+    });
+
+    // Mark as disbanded and empty players array
+    team.status = 'disbanded';
+    team.players = [];
+    await team.save();
+
+    res.json({ message: 'Team disbanded successfully' });
+  } catch (error) {
+    console.error('Error deleting team:', error);
+    res.status(500).json({ message: 'Server error deleting team' });
+  }
+});
+
 // PUT /api/teams/:id - Update team
 router.put('/:id', auth, upload.single('logo'), async (req, res) => {
   try {
     const teamId = req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(teamId)) {
+      return res.status(400).json({ message: 'Invalid team ID format' });
+    }
 
     // 1. Load team and check captain permission
     const team = await Team.findById(teamId);
@@ -625,10 +698,12 @@ router.put('/:id', auth, upload.single('logo'), async (req, res) => {
     // 3. Parse body data correctly (supports multipart + JSON)
     let bodyData = {};
 
-    // If client sends a "data" field with JSON (common pattern for multipart)
+    // If client sends a "data" field (as string from multipart or object from JSON body)
     if (req.body && req.body.data) {
       try {
-        bodyData = JSON.parse(req.body.data);
+        bodyData = typeof req.body.data === 'string' 
+          ? JSON.parse(req.body.data) 
+          : req.body.data;
       } catch (e) {
         return res.status(400).json({ message: 'Invalid JSON in data field' });
       }
@@ -649,7 +724,7 @@ router.put('/:id', auth, upload.single('logo'), async (req, res) => {
       'primaryGame',
       'region',
       'bio',
-      'status',         // if you have status (active/disbanded/etc.)
+      // 'status' intentionally excluded — must use the disband endpoint
       'socials'         // if you allow editing socials
       // add more explicitly allowed fields here as needed
     ];
@@ -685,9 +760,9 @@ router.put('/:id', auth, upload.single('logo'), async (req, res) => {
   } catch (error) {
     console.error('Error updating team:', error);
 
-    // Duplicate key error (unique teamName/teamTag)
+    // Only teamId is unique now — a 11000 here would be an internal anomaly
     if (error.code === 11000) {
-      return res.status(400).json({ message: 'Team name or tag already exists' });
+      return res.status(500).json({ message: 'Duplicate key error — please try again' });
     }
 
     if (error.message === 'Only image files are allowed') {
@@ -703,6 +778,11 @@ router.put('/:id', auth, upload.single('logo'), async (req, res) => {
 router.put('/:id/transfer-captain', auth, async (req, res) => {
   try {
     const teamId = req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(teamId)) {
+      return res.status(400).json({ message: 'Invalid team ID format' });
+    }
+
     const { newCaptainId } = req.body;
 
     if (!newCaptainId) {
@@ -833,6 +913,11 @@ router.get('/search/:query', async (req, res) => {
 router.post('/:id/invite', auth, async (req, res) => {
   try {
     const teamId = req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(teamId)) {
+      return res.status(400).json({ message: 'Invalid team ID format' });
+    }
+
     const { playerId, message } = req.body;
 
     // Basic input validation

@@ -1,21 +1,6 @@
 BGMI TOURNAMENT POINTS TABLE
 =======================================================
-1. 60S : Position Points: 10 | Kill Points: 15 | Total: 25
-2. NG : Position Points: 6 | Kill Points: 7 | Total: 13
-3. Rehfl : Position Points: 5 | Kill Points: 4 | Total: 9
-4. astok : Position Points: 0 | Kill Points: 9 | Total: 9
-5. 34 : Position Points: 4 | Kill Points: 4 | Total: 8
-6. mxe : Position Points: 3 | Kill Points: 5 | Total: 8
-7. tva : Position Points: 2 | Kill Points: 4 | Total: 6
-8. XD : Position Points: 1 | Kill Points: 4 | Total: 5
-9. TNx esports : Position Points: 0 | Kill Points: 5 | Total: 5
-10. iqoosoul : Position Points: 0 | Kill Points: 3 | Total: 3
-11. apex : Position Points: 1 | Kill Points: 1 | Total: 2
-12. TFG : Position Points: 0 | Kill Points: 2 | Total: 2
-13. tease : Position Points: 0 | Kill Points: 2 | Total: 2
-14. EGx : Position Points: 0 | Kill Points: 1 | Total: 1
-15. THE : Position Points: 0 | Kill Points: 1 | Total: 1
-16. scarred : Position Points: 0 | Kill Points: 0 | Total: 0
-17. iPhone : Position Points: 0 | Kill Points: 0 | Total: 0
-18. NC : Position Points: 0 | Kill Points: 0 | Total: 0
-19. ZICO : Position Points: 0 | Kill Points: 0 | Total: 0
+1. iPhone : Position Points: 1 | Kill Points: 18 | Total: 19
+2. EGx : Position Points: 3 | Kill Points: 13 | Total: 16
+3. XD : Position Points: 1 | Kill Points: 10 | Total: 11
+4. NC : Position Points: 0 | Kill Points: 4 | Total: 4

@@ -119,7 +119,8 @@ router.patch('/settings', auth, async (req, res) => {
 // Fetch paginated notification history for the logged-in player
 router.get('/', auth, async (req, res) => {
     try {
-        const limit = Math.max(1, parseInt(req.query.limit, 10) || 20);
+        const rawLimit = parseInt(req.query.limit, 10);
+        const limit = Math.min(Math.max(1, isNaN(rawLimit) ? 20 : rawLimit), 100);
         const page = Math.max(1, parseInt(req.query.page, 10) || 1);
         const hasOffset = req.query.offset !== undefined;
         const offset = hasOffset

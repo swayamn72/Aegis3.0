@@ -711,19 +711,18 @@ router.post('/resend-verification', authLimiter, validateResendCode, asyncHandle
 }));
 
 // Check verification status
+// Only returns boolean — no PII leakage (email/username omitted intentionally)
 router.get('/verification-status/:email', async (req, res) => {
   try {
     const { email } = req.params;
 
-    const user = await Player.findOne({ email }).select('isEmailVerified email username');
+    const user = await Player.findOne({ email }).select('isEmailVerified').lean();
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
     res.status(200).json({
-      email: user.email,
-      username: user.username,
       isVerified: user.isEmailVerified,
     });
 

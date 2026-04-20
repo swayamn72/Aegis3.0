@@ -98,10 +98,12 @@ export async function calculateAegisRatingDelta(matchDoc, tournamentDoc, cumulat
   const results = matchDoc.results || [];
   if (results.length === 0) return [];
 
-  // --- Collect all player IDs from kill breakdowns ---
+  // --- Collect all player IDs from kill breakdowns (only players who actually played) ---
   const allPlayerIds = [];
   for (const teamResult of results) {
     for (const entry of (teamResult.kills?.breakdown || [])) {
+      // Skip players who are marked as not playing this match
+      if (entry.isPlaying === false) continue;
       if (entry.player) allPlayerIds.push(entry.player);
     }
   }
@@ -134,6 +136,7 @@ export async function calculateAegisRatingDelta(matchDoc, tournamentDoc, cumulat
   for (const teamResult of results) {
     const reg = regByTeam.get((teamResult.team?._id || teamResult.team)?.toString());
     for (const entry of (teamResult.kills?.breakdown || [])) {
+      if (entry.isPlaying === false) continue; // skip non-playing roster members
       const pid = entry.player?.toString();
       if (!pid) continue;
       const player = playerMap.get(pid);
@@ -174,6 +177,8 @@ export async function calculateAegisRatingDelta(matchDoc, tournamentDoc, cumulat
     const reg = regByTeam.get((teamResult.team?._id || teamResult.team)?.toString());
 
     for (const entry of (teamResult.kills?.breakdown || [])) {
+      // Skip players marked as not playing this match
+      if (entry.isPlaying === false) continue;
       const pid = entry.player?.toString();
       if (!pid) continue;
       const player = playerMap.get(pid);

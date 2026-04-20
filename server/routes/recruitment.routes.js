@@ -475,6 +475,103 @@ router.post('/lft-posts', auth, async (req, res) => {
   }
 });
 
+// GET My active LFT post
+router.get('/lft-posts/mine', auth, async (req, res) => {
+  try {
+    const post = await LFTPost.findOne({
+      player: req.user.id,
+      status: 'active',
+    })
+      .sort({ createdAt: -1 })
+      .populate('player', 'username profilePicture aegisRating verified realName age inGameName');
+
+    res.json({ post: post || null });
+  } catch (error) {
+    console.error('Error fetching my LFT post:', error);
+    res.status(500).json({ error: 'Failed to fetch your LFT post' });
+  }
+});
+
+// PATCH LFT Post - Update own active LFT post
+router.patch('/lft-posts/:postId', auth, async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { description, roles } = req.body || {};
+
+    if (!mongoose.Types.ObjectId.isValid(postId)) {
+      return res.status(400).json({ error: 'Invalid post ID' });
+    }
+
+    const post = await LFTPost.findOne({
+      _id: postId,
+      player: req.user.id,
+      status: 'active',
+    });
+
+    if (!post) {
+      return res.status(404).json({ error: 'Active LFT post not found' });
+    }
+
+    if (description != null) {
+      const desc = String(description).trim().slice(0, MAX_DESC_LEN);
+      if (!desc) {
+        return res.status(400).json({ error: 'Description is required' });
+      }
+      post.description = desc;
+    }
+
+    if (roles != null) {
+      if (!Array.isArray(roles)) {
+        return res.status(400).json({ error: 'Roles must be an array' });
+      }
+
+      const cleanRoles = roles
+        .map(r => String(r).trim())
+        .filter(r => ALLOWED_ROLES.includes(r))
+        .slice(0, MAX_ROLES);
+
+      if (cleanRoles.length === 0) {
+        return res.status(400).json({ error: 'At least one role is required' });
+      }
+
+      post.roles = cleanRoles;
+    }
+
+    await post.save();
+    await post.populate('player', 'username profilePicture aegisRating verified realName age inGameName');
+
+    res.json({ message: 'LFT post updated successfully', post });
+  } catch (error) {
+    console.error('Error updating LFT post:', error);
+    res.status(500).json({ error: 'Failed to update LFT post' });
+  }
+});
+
+// DELETE LFT Post - Delete own LFT post
+router.delete('/lft-posts/:postId', auth, async (req, res) => {
+  try {
+    const { postId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(postId)) {
+      return res.status(400).json({ error: 'Invalid post ID' });
+    }
+
+    const post = await LFTPost.findOneAndDelete({
+      _id: postId,
+      player: req.user.id,
+    });
+
+    if (!post) {
+      return res.status(404).json({ error: 'LFT post not found' });
+    }
+
+    res.json({ message: 'LFT post deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting LFT post:', error);
+    res.status(500).json({ error: 'Failed to delete LFT post' });
+  }
+});
+
 router.post('/approach/:approachId/accept', auth, async (req, res) => {
   try {
     const { approachId } = req.params;

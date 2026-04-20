@@ -185,11 +185,18 @@ const initChat = async (server) => {
       }
     });
 
-    // Join tryout chat room
+    // Join tryout chat room (with participant authorization)
     socket.on('joinTryoutChat', async (chatId) => {
       try {
         if (isSocketTokenExpired(socket)) {
           rejectExpiredSocket(socket);
+          return;
+        }
+
+        // Verify the user is a participant of this chat
+        const chat = await TryoutChat.findById(chatId).select('participants').lean();
+        if (!chat || !chat.participants.some(p => p.toString() === socket.userId)) {
+          socket.emit('error', { message: 'Not authorized for this chat' });
           return;
         }
 
@@ -235,9 +242,14 @@ const initChat = async (server) => {
           return;
         }
 
+        const MAX_MESSAGE_LENGTH = 2000;
         const trimmedMessage = (message || '').trim();
         if (!trimmedMessage) {
           socket.emit('error', { message: 'Message cannot be empty' });
+          return;
+        }
+        if (trimmedMessage.length > MAX_MESSAGE_LENGTH) {
+          socket.emit('error', { message: `Message too long (max ${MAX_MESSAGE_LENGTH} characters)` });
           return;
         }
 
@@ -326,9 +338,14 @@ const initChat = async (server) => {
           return;
         }
 
+        const MAX_MESSAGE_LENGTH = 2000;
         const trimmedMessage = (message || '').trim();
         if (!trimmedMessage) {
           socket.emit('error', { message: 'Message cannot be empty' });
+          return;
+        }
+        if (trimmedMessage.length > MAX_MESSAGE_LENGTH) {
+          socket.emit('error', { message: `Message too long (max ${MAX_MESSAGE_LENGTH} characters)` });
           return;
         }
 

@@ -20,14 +20,16 @@ const getMutedTryoutChatIdSet = (playerDoc) => {
 };
 
 const hydrateChatWithMessages = async (chat, { previewLimit = null } = {}) => {
-  const mergedMessages = await fetchTryoutMessages(chat._id || chat.id, {
-    includeLegacy: true,
-    legacyMessages: chat.messages || [],
-  });
+  const legacyMessages = chat.messages || [];
+  const hasLegacy = legacyMessages.length > 0;
 
-  const messages = previewLimit != null
-    ? mergedMessages.slice(-previewLimit)
-    : mergedMessages;
+  // For list-view previews without legacy messages, the DB-level LIMIT is applied
+  // inside fetchTryoutMessages — no in-memory slice needed.
+  const messages = await fetchTryoutMessages(chat._id || chat.id, {
+    includeLegacy: hasLegacy,
+    legacyMessages,
+    previewLimit: previewLimit ?? null,
+  });
 
   return {
     ...chat,

@@ -10,7 +10,9 @@
     "migrate:tryout-messages": "node scripts/migrate_tryout_messages.js",
     "simulate:1020-registrations": "node scripts/simulate_1020_team_registrations.js",
     "seed:teamup-samples": "node scripts/seed_teamup_samples.js",
-    "cleanup:teamup-samples": "node scripts/cleanup_teamup_samples.js"
+    "cleanup:teamup-samples": "node scripts/cleanup_teamup_samples.js",
+    "seed:sample-ongoing-tourney": "node scripts/seed_sample_ongoing_tourney.js",
+    "seed:800-registrations": "node scripts/generateSampleRegistrations.js"
   },
   "keywords": [],
   "author": "",

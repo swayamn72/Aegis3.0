@@ -773,7 +773,7 @@ router.put('/:matchId/results', verifyOrgToken, verifyMatchOwnership, async (req
           match.results.push({
             team: result.teamId,
             points: { placementPoints: 0, killPoints: 0, totalPoints: 0 },
-            kills: { total: 0, breakdown: [] },
+            kills: { total: 0, unmatchedKills: 0, breakdown: [] },
             chickenDinner: false
           });
           teamIndex = match.results.length - 1;
@@ -783,18 +783,30 @@ router.put('/:matchId/results', verifyOrgToken, verifyMatchOwnership, async (req
 
         // Ensure nested structures exist
         if (!teamEntry.points) teamEntry.points = { placementPoints: 0, killPoints: 0, totalPoints: 0 };
-        if (!teamEntry.kills) teamEntry.kills = { total: 0, breakdown: [] };
+        if (!teamEntry.kills) teamEntry.kills = { total: 0, unmatchedKills: 0, breakdown: [] };
 
         const placementPoints = getPlacementPoints(result.position);
 
         teamEntry.finalPosition = result.position;
         teamEntry.kills.total = result.kills || 0;
+        teamEntry.kills.unmatchedKills = result.unmatchedKills || 0;
         teamEntry.points.placementPoints = placementPoints;
         teamEntry.points.killPoints = result.kills || 0;
         teamEntry.points.totalPoints = placementPoints + (result.kills || 0);
 
-        // Update player-level kills breakdown
-        if (result.playerKills && Array.isArray(result.playerKills)) {
+        // ── Player-level kills breakdown ──
+        // Priority 1: Full OCR breakdown with isPlaying flags (from processScreenshots)
+        if (result.playerBreakdown && Array.isArray(result.playerBreakdown) && result.playerBreakdown.length > 0) {
+          teamEntry.kills.breakdown = result.playerBreakdown
+            .filter(bd => bd.player) // Only entries with player IDs
+            .map(bd => ({
+              player: bd.player,
+              kills: bd.kills || 0,
+              isPlaying: bd.isPlaying !== undefined ? bd.isPlaying : true,
+            }));
+        }
+        // Priority 2: Simple playerKills array (from manual entry or legacy OCR)
+        else if (result.playerKills && Array.isArray(result.playerKills)) {
           // If breakdown is empty or missing players, try to get team members
           if (!teamEntry.kills.breakdown || teamEntry.kills.breakdown.length === 0 || teamEntry.kills.breakdown.some(b => !b.player)) {
             // Try to get from Registration roster first
@@ -817,29 +829,35 @@ router.put('/:matchId/results', verifyOrgToken, verifyMatchOwnership, async (req
             if (playersList.length > 0) {
               teamEntry.kills.breakdown = playersList.map((playerId, index) => ({
                 player: playerId,
-                kills: result.playerKills[index] || 0
+                kills: result.playerKills[index] || 0,
+                isPlaying: (result.playerKills[index] || 0) > 0 ? true : (result.isPlayingFlags?.[index] ?? true),
               }));
             } else {
               // Fallback to null players if team members not found
               teamEntry.kills.breakdown = result.playerKills.map((kills, index) => ({
                 player: (teamEntry.kills.breakdown && teamEntry.kills.breakdown[index]) ? teamEntry.kills.breakdown[index].player : null,
-                kills: kills || 0
+                kills: kills || 0,
+                isPlaying: true,
               }));
             }
           } else {
-            // Update existing breakdown
+            // Update existing breakdown — preserve isPlaying flags
             result.playerKills.forEach((kills, index) => {
               if (teamEntry.kills.breakdown[index]) {
                 teamEntry.kills.breakdown[index].kills = kills || 0;
+                // If isPlayingFlags provided, use them; otherwise preserve existing
+                if (result.isPlayingFlags && result.isPlayingFlags[index] !== undefined) {
+                  teamEntry.kills.breakdown[index].isPlaying = result.isPlayingFlags[index];
+                }
               }
             });
           }
         }
 
-        // Track overall most kills for matchStats
+        // Track overall most kills for matchStats (only from playing players)
         if (teamEntry.kills.breakdown) {
           teamEntry.kills.breakdown.forEach(b => {
-            if (b.player && b.kills > overallMostKills) {
+            if (b.player && b.kills > overallMostKills && b.isPlaying !== false) {
               overallMostKills = b.kills;
               overallBestPlayer = b.player;
             }

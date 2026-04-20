@@ -15,7 +15,10 @@ const router = express.Router();
 
 router.get('/all', async (req, res) => {
   try {
-    const { page = 1, limit = 50, game, region, status, tier, subRegion } = req.query;
+    const { page = 1, game, region, status, tier, subRegion } = req.query;
+    // Clamp limit: default 20, max 100 — prevents large scans via user-controlled input
+    const rawLimit = parseInt(req.query.limit, 10);
+    const limit = Math.min(isNaN(rawLimit) ? 20 : rawLimit, 100);
 
     // Build filter query
     const filter = {
@@ -273,7 +276,9 @@ router.get('/:id', async (req, res) => {
       endDate: tournament.endDate,
       registrationStartDate: tournament.registrationStartDate,
       registrationEndDate: tournament.registrationEndDate,
-      teams: registrations.length,
+      teams: registrations.length || tournament.participatingTeamsCount || 0,
+      participatingTeamsCount: registrations.length || tournament.participatingTeamsCount || 0,
+      participantCount: registrations.length || tournament.participatingTeamsCount || 0,
       totalSlots: tournament.slots?.total || 0,
 
       // Participating teams from Registration collection
