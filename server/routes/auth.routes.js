@@ -1133,12 +1133,66 @@ router.delete('/delete-account', auth, asyncHandler(async (req, res) => {
     org.resetPasswordExpiry = null;
 
     await org.save();
+
+    // --- Organization Specific Cleanup ---
+    // Remove organization reference from teams
+    await Team.updateMany(
+      { organization: id },
+      { $set: { organization: null } }
+    );
   } else {
+    // --- Player Specific Cleanup ---
     const player = await Player.findById(id).select('+password');
     if (!player) {
       return res.status(404).json({ message: 'Account not found' });
     }
 
+    // 1. Delete LFT Posts
+    await LFTPost.deleteMany({ player: id });
+
+    // 2. Handle Teams (Captaincy Transfer or Disbandment)
+    // First, remove the player from all teams' rosters
+    await Team.updateMany(
+      { players: id },
+      { $pull: { players: id } }
+    );
+
+    // Second, find teams where they were captain and need a new one
+    const teamsToProcess = await Team.find({ captain: id });
+    for (const team of teamsToProcess) {
+      if (team.players.length > 0) {
+        // Transfer to the next available player
+        team.captain = team.players[0];
+        await team.save();
+      } else {
+        // Sole member captain - disband
+        team.status = 'disbanded';
+        team.lookingForPlayers = false;
+        await team.save();
+        // Delete LFP posts for disbanded teams
+        await LFPPost.deleteMany({ team: team._id });
+      }
+    }
+
+    // 3. Cleanup Recruitment
+    await RecruitmentApproach.deleteMany({ 
+      $or: [{ player: id }, { 'targetTeam.captain': id }] 
+    });
+
+    // 4. Cleanup Direct Message Requests
+    await DirectMessageRequest.deleteMany({
+      $or: [{ requester: id }, { recipient: id }]
+    });
+
+    // 5. Cleanup Team Invitations/Applications
+    await TeamInvitation.deleteMany({
+      $or: [{ player: id }, { invitedBy: id }]
+    });
+    await TeamApplication.deleteMany({
+      player: id
+    });
+
+    // 6. Final Anonymization
     player.email = deletionEmail;
     player.realName = '';
     player.age = null;
@@ -1163,6 +1217,10 @@ router.delete('/delete-account', auth, asyncHandler(async (req, res) => {
 
     await player.save();
   }
+
+  // --- Common Cleanup (Both Org and Player) ---
+  // Delete notifications
+  await Notification.deleteMany({ recipient: id });
 
   res.clearCookie('token');
   res.status(200).json({

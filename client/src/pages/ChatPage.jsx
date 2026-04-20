@@ -177,21 +177,54 @@ export default function ChatPage() {
     }
   }, [userId, refetchAll]);
 
-  // Auto-select first chat
+  // Auto-select first chat or selectedUserId from state
   useEffect(() => {
-    if (connections.length > 0 && !selectedChat) {
-      if (selectedUserId) {
-        const user = connections.find(c => c._id === selectedUserId);
-        if (user) {
-          setSelectedChat(user);
-          setChatType('direct');
-          return;
-        }
-      }
+    // If we have connections but haven't selected anything yet, default to first or selectedUserId
+    if (connections.length > 0 && !selectedChat && !selectedUserId) {
       setSelectedChat(connections[0]);
       setChatType('direct');
     }
   }, [connections, selectedUserId, selectedChat]);
+
+  // Handle external selection (e.g., from Profile page)
+  useEffect(() => {
+    if (!selectedUserId || !userId) return;
+
+    // 1. Check if already selected to avoid loops
+    if (selectedChat?._id === selectedUserId) return;
+
+    // 2. Check if user is in existing connections
+    const existing = connections.find(c => c._id === selectedUserId);
+    if (existing) {
+      setSelectedChat(existing);
+      setChatType('direct');
+      setShowMobileSidebar(false);
+      return;
+    }
+
+    // 3. If not in connections, fetch the user's basic info to "stage" the chat
+    const fetchAndStageUser = async () => {
+      try {
+        const { data } = await axios.get(`/api/players/${selectedUserId}/profile`);
+        if (data.player) {
+          const stagedUser = {
+            _id: data.player._id,
+            username: data.player.username,
+            profilePicture: data.player.profilePicture,
+            aegisRating: data.player.aegisRating,
+          };
+          setSelectedChat(stagedUser);
+          setChatType('direct');
+          setShowMobileSidebar(false);
+        }
+      } catch (error) {
+        console.error('Error fetching staged user:', error);
+        toast.error('Could not find user profile');
+      }
+    };
+
+    fetchAndStageUser();
+  }, [selectedUserId, connections, userId, selectedChat?._id]);
 
   // Mark that we need an instant scroll when the selected chat changes
   useEffect(() => {
