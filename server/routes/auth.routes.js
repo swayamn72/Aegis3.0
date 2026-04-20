@@ -1,6 +1,14 @@
 import express from 'express';
 import Player from '../models/player.model.js';
 import Organization from '../models/organization.model.js';
+import Team from '../models/team.model.js';
+import LFTPost from '../models/lftPost.model.js';
+import LFPPost from '../models/lfpPost.model.js';
+import DirectMessageRequest from '../models/directMessageRequest.model.js';
+import TeamInvitation from '../models/teamInvitation.model.js';
+import TeamApplication from '../models/teamApplication.model.js';
+import RecruitmentApproach from '../models/recruitmentApproach.model.js';
+import Notification from '../models/notification.model.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
@@ -632,7 +640,7 @@ router.post('/verify-email', authLimiter, validateVerificationCode, asyncHandler
   const token = jwt.sign(
     { id: user._id, role: 'player' },
     process.env.JWT_SECRET,
-    { expiresIn: "7d" }
+    { expiresIn: AUTH_CONSTANTS.JWT_EXPIRY }
   );
 
   const cookieOptions = {
@@ -716,19 +724,18 @@ router.post('/resend-verification', authLimiter, validateResendCode, asyncHandle
 }));
 
 // Check verification status
-// Only returns boolean — no PII leakage (email/username omitted intentionally)
+// Bug #10: Returns a generic response regardless of whether the user exists
+// to prevent email enumeration attacks.
 router.get('/verification-status/:email', async (req, res) => {
   try {
     const { email } = req.params;
 
     const user = await Player.findOne({ email }).select('isEmailVerified').lean();
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
+    // Always return 200 to prevent email enumeration — if user doesn't exist,
+    // simply report unverified.
     res.status(200).json({
-      isVerified: user.isEmailVerified,
+      isVerified: user?.isEmailVerified ?? false,
     });
 
   } catch (error) {

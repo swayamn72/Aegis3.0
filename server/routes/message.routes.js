@@ -98,7 +98,7 @@ router.post('/requests/:targetUserId', auth, async (req, res) => {
     }
 
     if (await isEitherUserBlocked(req.user.id, targetUserId)) {
-      return res.status(403).json({ message: 'Cannot send message request due to block settings', blocked: true });
+      return res.status(403).json({ message: 'This user is not available for messaging', blocked: true });
     }
 
     const targetExists = await Player.exists({ _id: targetUserId });
@@ -164,7 +164,7 @@ router.patch('/requests/:requestId', auth, async (req, res) => {
     }
 
     if (await isEitherUserBlocked(request.requester, request.recipient)) {
-      return res.status(403).json({ message: 'Cannot update message request due to block settings', blocked: true });
+      return res.status(403).json({ message: 'This user is not available for messaging', blocked: true });
     }
 
     request.status = action === 'accept' ? 'accepted' : 'declined';
@@ -316,7 +316,7 @@ router.get("/:receiverId", auth, async (req, res) => {
 
     const isBlocked = await isEitherUserBlocked(senderId, receiverId);
     if (isBlocked) {
-      return res.status(403).json({ message: 'Conversation unavailable due to block settings', blocked: true });
+      return res.status(403).json({ message: 'This conversation is no longer available', blocked: true });
     }
 
     const rawLimit = parseInt(req.query.limit, 10);
@@ -372,7 +372,7 @@ router.post("/tournament-reference/:tournamentId", auth, async (req, res) => {
     }
 
     if (await isEitherUserBlocked(req.user.id, captainId)) {
-      return res.status(403).json({ message: 'Cannot send message due to block settings' });
+      return res.status(403).json({ message: 'This user is not available for messaging' });
     }
 
     // Verify tournament exists and fetch relevant fields
@@ -458,7 +458,7 @@ router.post("/tournament-reference/:tournamentId", auth, async (req, res) => {
 // Send notification message
 router.post("/send-notification", auth, async (req, res) => {
   try {
-    const { message, messageType, tournamentId, matchId, receiverId, senderId } = req.body;
+    const { message, messageType, tournamentId, matchId, receiverId } = req.body;
 
     if (!receiverId) {
       return res.status(400).json({ message: 'Receiver ID is required' });
@@ -468,39 +468,45 @@ router.post("/send-notification", auth, async (req, res) => {
       return res.status(400).json({ message: 'Cannot send messages to system' });
     }
 
-    // Allow system messages if senderId is 'system', otherwise use req.user.id
-    const actualSenderId = senderId === 'system' ? 'system' : req.user.id;
+    // Bug #8: Only server-internal routes may use 'system' as senderId.
+    // Regular authenticated users always send as themselves.
+    const actualSenderId = req.user.id;
 
-    if (actualSenderId !== 'system') {
-      const isBlocked = await isEitherUserBlocked(actualSenderId, receiverId);
-      if (isBlocked) {
-        return res.status(403).json({ message: 'Cannot send message due to block settings', blocked: true });
-      }
+    // Bug #9: Validate and trim message content
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+      return res.status(400).json({ message: 'Message content is required' });
+    }
+    const MAX_MESSAGE_LENGTH = 2000;
+    const sanitizedMessage = message.trim().slice(0, MAX_MESSAGE_LENGTH);
 
-      const relationship = await getMessageRequestRelationship(actualSenderId, receiverId);
-      if (!relationship.canMessage) {
-        const pending = await ensurePendingMessageRequest({
-          requesterId: actualSenderId,
-          recipientId: receiverId,
-          initialMessage: message,
-        });
+    const isBlocked = await isEitherUserBlocked(actualSenderId, receiverId);
+    if (isBlocked) {
+      return res.status(403).json({ message: 'This user is not available for messaging', blocked: true });
+    }
 
-        return res.status(403).json({
-          message: pending.status === 'pending_received'
-            ? 'This player already requested to message you. Accept the request first.'
-            : 'Message request required before chatting',
-          requestRequired: true,
-          requestStatus: pending.status,
-          requestId: pending.request?._id || relationship.requestId || null,
-        });
-      }
+    const relationship = await getMessageRequestRelationship(actualSenderId, receiverId);
+    if (!relationship.canMessage) {
+      const pending = await ensurePendingMessageRequest({
+        requesterId: actualSenderId,
+        recipientId: receiverId,
+        initialMessage: sanitizedMessage,
+      });
+
+      return res.status(403).json({
+        message: pending.status === 'pending_received'
+          ? 'This player already requested to message you. Accept the request first.'
+          : 'Message request required before chatting',
+        requestRequired: true,
+        requestStatus: pending.status,
+        requestId: pending.request?._id || relationship.requestId || null,
+      });
     }
 
     // Create notification message
     const notificationMessage = new ChatMessage({
       senderId: actualSenderId,
       receiverId: receiverId,
-      message: message,
+      message: sanitizedMessage,
       messageType: messageType || 'text',
       tournamentId: tournamentId,
       matchId: matchId,
@@ -509,14 +515,14 @@ router.post("/send-notification", auth, async (req, res) => {
 
     await notificationMessage.save();
 
-    // Emit to receiver
+    // Emit to receiver via socket
     const io = req.app.get('io');
     if (io) {
       io.to(receiverId).emit('receiveMessage', {
         _id: notificationMessage._id,
         senderId: actualSenderId,
         receiverId: receiverId,
-        message: message,
+        message: sanitizedMessage,
         messageType: messageType || 'text',
         tournamentId: tournamentId,
         matchId: matchId,
@@ -524,26 +530,33 @@ router.post("/send-notification", auth, async (req, res) => {
       });
     }
 
-    // Respect recipient notification settings for push delivery.
-    const senderName = senderId === 'system'
-      ? 'System'
-      : (await Player.findById(req.user.id).select('username').lean())?.username || 'New message';
+    // Bug #5: Only send push notification if receiver is NOT currently online
+    // via socket — consistent with the socket handler in chat.js.
+    let receiverIsOnline = false;
+    if (io) {
+      const receiverRoom = io.sockets.adapter.rooms.get(receiverId);
+      receiverIsOnline = receiverRoom && receiverRoom.size > 0;
+    }
 
-    notificationService
-      .sendToPlayer(
-        receiverId,
-        senderName,
-        String(message || ''),
-        {
-          type: 'chat_message',
-          directUserId: senderId === 'system' ? 'system' : req.user.id,
-          senderId: senderId === 'system' ? 'system' : req.user.id,
+    if (!receiverIsOnline) {
+      const senderName = (await Player.findById(req.user.id).select('username').lean())?.username || 'New message';
+
+      notificationService
+        .sendToPlayer(
+          receiverId,
           senderName,
-        }
-      )
-      .catch((err) => {
-        console.error('Direct message push notification error:', err);
-      });
+          String(sanitizedMessage || ''),
+          {
+            type: 'chat_message',
+            directUserId: req.user.id,
+            senderId: req.user.id,
+            senderName,
+          }
+        )
+        .catch((err) => {
+          console.error('Direct message push notification error:', err);
+        });
+    }
 
     res.json({ message: 'Notification sent successfully', chatMessage: notificationMessage });
   } catch (error) {

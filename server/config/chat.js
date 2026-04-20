@@ -246,7 +246,7 @@ const initChat = async (server) => {
 
         const isBlocked = await isEitherUserBlocked(senderId, receiverId);
         if (isBlocked) {
-          socket.emit('error', { message: 'Cannot send message due to block settings', blocked: true });
+          socket.emit('error', { message: 'This user is not available for messaging', blocked: true });
           return;
         }
 
@@ -371,7 +371,7 @@ const initChat = async (server) => {
         for (const otherId of otherParticipants) {
           // Prevent message flow in either direction if either side blocked the other.
           if (await isEitherUserBlocked(authenticatedSenderId, otherId)) {
-            socket.emit('error', { message: 'Cannot send message due to block settings', blocked: true });
+            socket.emit('error', { message: 'This user is not available for messaging', blocked: true });
             return;
           }
         }

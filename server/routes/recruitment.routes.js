@@ -277,11 +277,9 @@ router.get('/lft-posts', async (req, res) => {
     }
 
     // Aggregation: match -> lookup player (small) -> project -> facet (results + total)
+    // Use $sample to randomize the order so users don't all see the same post first.
     const agg = [
       { $match: match },
-
-      // optionally filter out extremely old/irrelevant posts here (example)
-      // { $match: { createdAt: { $gt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 90) } } },
 
       {
         $lookup: {
@@ -313,11 +311,14 @@ router.get('/lft-posts', async (req, res) => {
         }
       },
 
-      { $sort: { createdAt: -1 } },
-
       {
         $facet: {
-          paginatedResults: [{ $skip: skip }, { $limit: limit }],
+          // Randomize results so different users see different posts at the top
+          paginatedResults: [
+            { $sample: { size: limit * page } },  // random pool
+            { $skip: skip },
+            { $limit: limit },
+          ],
           totalCount: [{ $count: 'count' }]
         }
       }
@@ -819,7 +820,8 @@ const buildLfpListAggregation = ({ match, skip, limit }) => {
     },
     {
       $facet: {
-        posts: [{ $sort: { createdAt: -1 } }, { $skip: skip }, { $limit: limit }],
+        // Randomize results so different users see different posts at the top
+        posts: [{ $sample: { size: limit * 3 } }, { $skip: skip }, { $limit: limit }],
         totalCount: [{ $count: 'count' }]
       }
     }

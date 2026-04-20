@@ -1109,7 +1109,7 @@ export default function ChatPage() {
                   <p className="text-zinc-300 text-sm">
                     {directRequestGate.status === 'pending_sent' && 'Message request sent. Wait for them to accept before chatting.'}
                     {directRequestGate.status === 'pending_received' && 'This player requested to message you. Accept to start chatting.'}
-                    {directRequestGate.status === 'blocked' && 'Messaging is unavailable due to block settings.'}
+                    {directRequestGate.status === 'blocked' && 'This user is not available for messaging.'}
                     {directRequestGate.status === 'none' && 'Send a message request from Find Players to start this chat.'}
                   </p>
 
