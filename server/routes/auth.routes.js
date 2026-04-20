@@ -1167,7 +1167,7 @@ router.delete('/delete-account', auth, asyncHandler(async (req, res) => {
   res.clearCookie('token');
   res.status(200).json({
     success: true,
-    message: 'Account deleted successfully via anonymization',
+    message: 'Account deleted successfully',
   });
 }));
 

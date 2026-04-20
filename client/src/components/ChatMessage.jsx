@@ -9,6 +9,8 @@ import { blockUser, reportUser } from '../api/moderation';
 const ChatMessage = ({ msg, userId, chatType, selectedChat, index, messages }) => {
     const navigate = useNavigate();
     const [moderationBusy, setModerationBusy] = useState(false);
+    const [isHovered, setIsHovered] = useState(false);
+    const [showMenu, setShowMenu] = useState(false);
     // Helper function to format timestamp
     const formatTime = (timestamp) => {
         const date = new Date(timestamp);
@@ -147,7 +149,14 @@ const ChatMessage = ({ msg, userId, chatType, selectedChat, index, messages }) =
     };
 
     return (
-        <div className={`flex w-full ${isMine ? 'justify-end' : 'justify-start'} items-end gap-2`}>
+        <div 
+            className={`flex w-full ${isMine ? 'justify-end' : 'justify-start'} items-end gap-2 group/msg`}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => {
+                setIsHovered(false);
+                setShowMenu(false);
+            }}
+        >
             {/* Sender Avatar (Group Chats Only, Left Side) */}
             {chatType === 'tryout' && !isMine && (
                 <div className="flex-shrink-0 mb-1">
@@ -227,27 +236,37 @@ const ChatMessage = ({ msg, userId, chatType, selectedChat, index, messages }) =
                         </p>
                     )}
 
-                    {/* Moderation actions (for received user messages) */}
+                    {/* Discrete Moderation Menu Button (Hover Only) */}
                     {targetUserId && !isMine && (
-                        <div className="mt-2 flex items-center gap-2">
-                            <button
-                                onClick={handleReportMessage}
-                                disabled={moderationBusy}
-                                className="px-2 py-1 rounded-md bg-zinc-700/60 hover:bg-zinc-600/70 text-zinc-100 text-xs flex items-center gap-1 disabled:opacity-60"
-                            >
-                                <Flag className="w-3.5 h-3.5" />
-                                Report
-                            </button>
-                            <button
-                                onClick={handleBlockUser}
-                                disabled={moderationBusy}
-                                className="px-2 py-1 rounded-md bg-red-800/40 hover:bg-red-800/60 text-red-100 text-xs flex items-center gap-1 disabled:opacity-60"
-                            >
-                                <UserX className="w-3.5 h-3.5" />
-                                Block
-                            </button>
+                        <div className={`absolute top-2 right-2 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
+                            <div className="relative">
+                                <button 
+                                    onClick={() => setShowMenu(!showMenu)}
+                                    className="p-1 hover:bg-white/10 rounded-full transition-colors text-white/70"
+                                    title="Message options"
+                                >
+                                    <MoreVertical className="w-3.5 h-3.5" />
+                                </button>
+                                
+                                {showMenu && (
+                                    <div className="absolute top-full right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50 py-1 w-32 overflow-hidden">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setShowMenu(false);
+                                                handleReportMessage();
+                                            }}
+                                            className="w-full px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-zinc-800 flex items-center gap-2"
+                                        >
+                                            <Flag className="w-3 h-3" />
+                                            Report Content
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
+
 
                     {/* Tournament Button */}
                     {isTournamentReference && (

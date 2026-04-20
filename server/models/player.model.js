@@ -254,7 +254,7 @@ const playerSchema = new mongoose.Schema(
         endDate: Date,
         reason: {
           type: String,
-          enum: ['left', 'removed', 'team disbanded', 'transferred'],
+          enum: ['left', 'removed', 'team disbanded', 'disbanded', 'transferred'],
         },
       },
     ],

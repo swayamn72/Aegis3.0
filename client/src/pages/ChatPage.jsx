@@ -22,6 +22,7 @@ import {
   fetchMessageRequestRelationship,
   updateMessageRequest,
 } from '../api/messageRequests';
+import { blockUser, reportUser } from '../api/moderation';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
@@ -46,6 +47,7 @@ export default function ChatPage() {
   const [showMobileSidebar, setShowMobileSidebar] = useState(true);
   const [showCaptainMenu, setShowCaptainMenu] = useState(false);
   const [showRequestsPanel, setShowRequestsPanel] = useState(false);
+  const [showModerationMenu, setShowModerationMenu] = useState(false);
 
   const captainId = user?.team?.captain?._id || user?.team?.captain;
   const isTeamCaptain = !!(user?.team && captainId && captainId === userId);
@@ -842,9 +844,71 @@ export default function ChatPage() {
                     </>
                   )}
 
-                  <button className="p-2 hover:bg-zinc-800 rounded-lg transition-colors">
-                    <MoreVertical className="w-4 h-4 text-zinc-400" />
-                  </button>
+                  <div className="relative">
+                    <button 
+                      onClick={() => setShowModerationMenu(!showModerationMenu)}
+                      className={`p-2 hover:bg-zinc-800 rounded-lg transition-colors ${showModerationMenu ? 'bg-zinc-800' : ''}`}
+                    >
+                      <MoreVertical className="w-4 h-4 text-zinc-400" />
+                    </button>
+                    
+                    {showModerationMenu && (
+                      <div className="absolute right-0 mt-2 w-48 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl z-[100] overflow-hidden py-1">
+                        <button
+                          onClick={async () => {
+                            setShowModerationMenu(false);
+                            const targetId = chatType === 'tryout' 
+                              ? (selectedChat.applicant?._id === userId ? (selectedChat.team?.captain?._id || selectedChat.team?.captain) : selectedChat.applicant?._id)
+                              : selectedChat._id;
+                            
+                            if (window.confirm('Block this user? You will no longer be able to exchange messages.')) {
+                              try {
+                                await blockUser(targetId);
+                                toast.success('User blocked');
+                                // Optionally navigate away or refresh
+                                navigate('/chat');
+                                window.location.reload();
+                              } catch (err) {
+                                toast.error(err.message || 'Failed to block user');
+                              }
+                            }
+                          }}
+                          className="w-full px-4 py-2.5 text-left text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2 transition-colors"
+                        >
+                          <Ban className="w-4 h-4" />
+                          Block User
+                        </button>
+                        <button
+                          onClick={async () => {
+                            setShowModerationMenu(false);
+                            const targetId = chatType === 'tryout' 
+                              ? (selectedChat.applicant?._id === userId ? (selectedChat.team?.captain?._id || selectedChat.team?.captain) : selectedChat.applicant?._id)
+                              : selectedChat._id;
+
+                            const reason = window.prompt('Report reason: harassment, hate_speech, spam, sexual_content, violence, impersonation, scam_fraud, other', 'harassment');
+                            if (!reason) return;
+                            const details = window.prompt('Additional details (optional):', '') || '';
+
+                            try {
+                              await reportUser({
+                                targetUserId: targetId,
+                                reason,
+                                details,
+                                chatType: chatType === 'tryout' ? 'tryout' : 'direct',
+                              });
+                              toast.success('Report submitted');
+                            } catch (err) {
+                              toast.error(err.message || 'Failed to submit report');
+                            }
+                          }}
+                          className="w-full px-4 py-2.5 text-left text-sm text-zinc-300 hover:bg-zinc-800 flex items-center gap-2 transition-colors"
+                        >
+                          <AlertCircle className="w-4 h-4" />
+                          Report User
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
