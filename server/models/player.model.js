@@ -139,6 +139,14 @@ const playerSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    agreedToGuidelines: {
+      type: Boolean,
+      default: false,
+    },
+    guidelinesAcceptedAt: {
+      type: Date,
+      default: null,
+    },
     profilePicture: {
       type: String,
       trim: true,

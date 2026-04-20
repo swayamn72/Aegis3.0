@@ -30,6 +30,7 @@ const AegisSignup = () => {
   const [passwordStrength, setPasswordStrength] = useState(0);
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
+  const [agreedToGuidelines, setAgreedToGuidelines] = useState(false);
 
   const AegisSignupMascot = () => (
     <div className="relative">
@@ -155,6 +156,10 @@ const AegisSignup = () => {
       }
     }
 
+    if (!agreedToGuidelines) {
+      newErrors.agreedToGuidelines = 'You must agree to the Aegis Community Guidelines';
+    }
+
     return newErrors;
   };
 
@@ -173,6 +178,7 @@ const AegisSignup = () => {
           username: formData.username,
           email: formData.email,
           password: formData.password,
+          agreedToGuidelines,
         }, {
           withCredentials: true,
         });
@@ -189,6 +195,7 @@ const AegisSignup = () => {
           contactPhone: formData.contactPhone,
           website: formData.website,
           orgInstagram: formData.orgInstagram ? String(formData.orgInstagram).replace(/^@+/, '') : '',
+          agreedToGuidelines,
           ownerSocial: {
             instagram: formData.ownerInstagram ? String(formData.ownerInstagram).replace(/^@+/, '') : ''
           }
@@ -300,6 +307,14 @@ const AegisSignup = () => {
     if (provider === 'Google') {
       if (!formData.role) {
         toast.error('Please select your role (Player or Organization) before signing up with Google.');
+        return;
+      }
+      if (!agreedToGuidelines) {
+        setErrors((prev) => ({
+          ...prev,
+          agreedToGuidelines: 'You must agree to the Aegis Community Guidelines',
+        }));
+        toast.error('Please agree to the Aegis Community Guidelines to continue.');
         return;
       }
       googleSignup();
@@ -691,6 +706,29 @@ const AegisSignup = () => {
                   </p>
                 </div>
               )}
+
+              <div className="space-y-2">
+                <label className="flex items-start gap-3 text-sm text-gray-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={agreedToGuidelines}
+                    onChange={(e) => {
+                      setAgreedToGuidelines(e.target.checked);
+                      if (errors.agreedToGuidelines) {
+                        setErrors((prev) => ({ ...prev, agreedToGuidelines: '' }));
+                      }
+                    }}
+                    className="mt-1 h-4 w-4 rounded border-gray-500 bg-zinc-900 text-orange-500 focus:ring-orange-500"
+                  />
+                  <span>I agree to the Aegis Community Guidelines (No nudity, harassment, or hate speech).</span>
+                </label>
+                {errors.agreedToGuidelines && (
+                  <div className="flex items-center mt-1 text-red-400 text-sm bg-red-500/10 px-4 py-2 rounded-lg border border-red-500/20">
+                    <AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" />
+                    {errors.agreedToGuidelines}
+                  </div>
+                )}
+              </div>
 
               <button
                 onClick={handleSubmit}

@@ -6,17 +6,8 @@ import { toast } from 'react-toastify';
 import Navbar from '../components/Navbar';
 import ChatAvatar from '../components/ChatAvatar';
 import { fetchDiscoverPlayers } from '../api/players';
-import { sendMessageRequest } from '../api/messageRequests';
 
 const ROLE_OPTIONS = ['', 'IGL', 'Assaulter', 'Fragger', 'Support', 'Sniper', 'Substitute', 'Player'];
-const GAME_OPTIONS = ['', 'BGMI', 'VALO', 'CS2'];
-
-const requestBadge = (status) => {
-    if (status === 'accepted' || status === 'legacy_conversation') return 'Chat available';
-    if (status === 'pending_sent') return 'Request sent';
-    if (status === 'pending_received') return 'Requested you';
-    return 'No request';
-};
 
 export default function FindPlayersPage() {
     const navigate = useNavigate();
@@ -25,18 +16,16 @@ export default function FindPlayersPage() {
     const [searchInput, setSearchInput] = useState('');
     const [q, setQ] = useState('');
     const [role, setRole] = useState('');
-    const [primaryGame, setPrimaryGame] = useState('');
     const [sortBy, setSortBy] = useState('aegisRating');
     const [sortOrder, setSortOrder] = useState('desc');
     const [page, setPage] = useState(1);
 
     const query = useQuery({
-        queryKey: ['discoverPlayers', q, role, primaryGame, sortBy, sortOrder, page],
+        queryKey: ['discoverPlayers', q, role, sortBy, sortOrder, page],
         queryFn: () =>
             fetchDiscoverPlayers({
                 q,
                 role,
-                primaryGame,
                 sortBy,
                 sortOrder,
                 page,
@@ -60,17 +49,10 @@ export default function FindPlayersPage() {
         setQ(searchInput.trim());
     };
 
-    const handleSendRequest = async (playerId) => {
-        try {
-            const initialMessage = window.prompt('Optional intro message for your request:', '') || '';
-            const response = await sendMessageRequest(playerId, initialMessage);
-            toast.success(response?.message || 'Message request sent');
-            queryClient.invalidateQueries({ queryKey: ['discoverPlayers'] });
-            queryClient.invalidateQueries({ queryKey: ['incomingMessageRequests'] });
-        } catch (error) {
-            const message = error?.response?.data?.message || error?.message || 'Failed to send request';
-            toast.error(message);
-        }
+    const handleSendMessage = (playerId) => {
+        navigate('/chat', { state: { selectedUserId: playerId } });
+        toast.info('Open chat and send your first message. If needed, a request will be created automatically.');
+        queryClient.invalidateQueries({ queryKey: ['incomingMessageRequests'] });
     };
 
     return (
@@ -82,7 +64,7 @@ export default function FindPlayersPage() {
                         <div className="flex items-start justify-between gap-4 flex-wrap">
                             <div>
                                 <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Find Players</h1>
-                                <p className="text-zinc-400 mt-1">Search players, sort by Aegis rating or role, then send a message request before direct chat.</p>
+                                <p className="text-zinc-400 mt-1">Search players, sort by rating or role, and start chat directly.</p>
                             </div>
                             <button
                                 onClick={() => navigate('/chat')}
@@ -111,26 +93,11 @@ export default function FindPlayersPage() {
                                     setRole(e.target.value);
                                     setPage(1);
                                 }}
-                                className="md:col-span-2 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white"
+                                className="md:col-span-3 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white"
                             >
                                 {ROLE_OPTIONS.map((value) => (
                                     <option key={value || 'all-roles'} value={value}>
                                         {value || 'All roles'}
-                                    </option>
-                                ))}
-                            </select>
-
-                            <select
-                                value={primaryGame}
-                                onChange={(e) => {
-                                    setPrimaryGame(e.target.value);
-                                    setPage(1);
-                                }}
-                                className="md:col-span-2 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white"
-                            >
-                                {GAME_OPTIONS.map((value) => (
-                                    <option key={value || 'all-games'} value={value}>
-                                        {value || 'All games'}
                                     </option>
                                 ))}
                             </select>
@@ -141,7 +108,7 @@ export default function FindPlayersPage() {
                                     setSortBy(e.target.value);
                                     setPage(1);
                                 }}
-                                className="md:col-span-2 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white"
+                                className="md:col-span-3 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white"
                             >
                                 <option value="aegisRating">Sort: Rating</option>
                                 <option value="username">Sort: Username</option>
@@ -208,8 +175,7 @@ export default function FindPlayersPage() {
                                                     <Star className="w-4 h-4" />
                                                     {Math.round(player.aegisRating || 0)}
                                                 </span>
-                                                <span className="text-zinc-400">{player.primaryGame || 'Unknown game'}</span>
-                                                <span className="text-zinc-500">{requestBadge(player.requestStatus)}</span>
+                                                {player.primaryGame && <span className="text-zinc-400">{player.primaryGame}</span>}
                                             </div>
 
                                             <div className="mt-2 flex flex-wrap gap-2">
@@ -229,24 +195,13 @@ export default function FindPlayersPage() {
                                             View Profile
                                         </button>
 
-                                        {player.canMessage ? (
-                                            <button
-                                                onClick={() => navigate('/chat', { state: { selectedUserId: player._id } })}
-                                                className="px-3 py-2 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/45 border border-emerald-500/40 text-emerald-200 text-sm flex items-center justify-center gap-2"
-                                            >
-                                                <MessageCircle className="w-4 h-4" />
-                                                Message
-                                            </button>
-                                        ) : (
-                                            <button
-                                                onClick={() => handleSendRequest(player._id)}
-                                                disabled={player.requestStatus === 'pending_sent'}
-                                                className="px-3 py-2 rounded-lg bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 disabled:opacity-60 text-white text-sm flex items-center justify-center gap-2"
-                                            >
-                                                <MessageCircle className="w-4 h-4" />
-                                                {player.requestStatus === 'pending_sent' ? 'Request Pending' : 'Request Message'}
-                                            </button>
-                                        )}
+                                        <button
+                                            onClick={() => handleSendMessage(player._id)}
+                                            className="px-3 py-2 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/45 border border-emerald-500/40 text-emerald-200 text-sm flex items-center justify-center gap-2"
+                                        >
+                                            <MessageCircle className="w-4 h-4" />
+                                            Send Message
+                                        </button>
                                     </div>
                                 </article>
                             ))}

@@ -642,6 +642,14 @@ const DetailedPlayerProfile = () => {
                                 {!isOwnProfile && (
                                     <>
                                         <button
+                                            onClick={() => navigate('/chat', { state: { selectedUserId: playerData._id } })}
+                                            className="px-4 py-2.5 bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-200 rounded-lg flex items-center gap-2 transition-all font-semibold border border-emerald-700"
+                                            title="Send message"
+                                        >
+                                            <MessageCircle className="w-4 h-4" />
+                                            Send Message
+                                        </button>
+                                        <button
                                             onClick={handleReport}
                                             disabled={moderationBusy}
                                             className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg flex items-center gap-2 transition-all font-semibold border border-zinc-700 disabled:opacity-60"

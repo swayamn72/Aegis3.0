@@ -79,7 +79,7 @@ const authLimiter = rateLimit({
 //   PLAYER SIGNUP ROUTE
 // ==========================
 router.post('/signup', authLimiter, validatePlayerSignup, asyncHandler(async (req, res) => {
-  const { email, password, username } = req.body;
+  const { email, password, username, agreedToGuidelines } = req.body;
 
   const existingEmail = await Player.findOne({ email });
   if (existingEmail) {
@@ -102,6 +102,8 @@ router.post('/signup', authLimiter, validatePlayerSignup, asyncHandler(async (re
     email,
     password: hashedPassword,
     username,
+    agreedToGuidelines,
+    guidelinesAcceptedAt: new Date(),
     isEmailVerified: false,
     verificationCode: hashedCode,
     verificationCodeExpires: codeExpiry,
@@ -412,7 +414,8 @@ router.post('/organization/signup', authLimiter, validateOrgSignup, asyncHandler
     contactPhone,
     website,
     orgInstagram,
-    ownerSocial
+    ownerSocial,
+    agreedToGuidelines
   } = req.body;
 
   // Check if organization email already exists
@@ -446,6 +449,8 @@ router.post('/organization/signup', authLimiter, validateOrgSignup, asyncHandler
     description: description || '',
     contactPhone: contactPhone || '',
     ownerSocial: ownerSocial || {},
+    agreedToGuidelines,
+    guidelinesAcceptedAt: new Date(),
     orgSocial: {
       instagram: orgInstagram || '',
       website: website || ''

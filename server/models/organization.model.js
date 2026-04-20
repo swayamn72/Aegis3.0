@@ -64,6 +64,14 @@ const organizationSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    agreedToGuidelines: {
+      type: Boolean,
+      default: false,
+    },
+    guidelinesAcceptedAt: {
+      type: Date,
+      default: null,
+    },
     logo: {
       type: String,
       trim: true,

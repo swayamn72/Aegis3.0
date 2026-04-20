@@ -45,6 +45,8 @@ export const validatePlayerSignup = [
         .notEmpty().withMessage('Username is required')
         .isLength({ min: 3, max: 20 }).withMessage('Username must be between 3 and 20 characters')
         .matches(/^[a-zA-Z0-9_]+$/).withMessage('Username can only contain letters, numbers, and underscores'),
+    body('agreedToGuidelines')
+        .custom((value) => value === true).withMessage('You must agree to the Aegis Community Guidelines'),
     validate
 ];
 
@@ -70,6 +72,8 @@ export const validateOrgSignup = [
     body('country')
         .trim()
         .notEmpty().withMessage('Country is required'),
+    body('agreedToGuidelines')
+        .custom((value) => value === true).withMessage('You must agree to the Aegis Community Guidelines'),
     validate
 ];
 
