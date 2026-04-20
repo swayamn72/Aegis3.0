@@ -55,7 +55,8 @@ export default function ChatPage() {
   // Refs
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
-  const selectedChatRef = useRef(selectedChat); // ✅ ADD THIS LINE
+  const selectedChatRef = useRef(selectedChat);
+  const stateConsumedRef = useRef(false); // ✅ Track if we've processed location.state
 
   // ✅ Update ref whenever selectedChat changes
   useEffect(() => {
@@ -188,21 +189,19 @@ export default function ChatPage() {
 
   // Handle external selection (e.g., from Profile page)
   useEffect(() => {
-    if (!selectedUserId || !userId) return;
+    if (!selectedUserId || !userId || stateConsumedRef.current) return;
 
-    // 1. Check if already selected to avoid loops
-    if (selectedChat?._id === selectedUserId) return;
-
-    // 2. Check if user is in existing connections
+    // 1. Check if user is in existing connections
     const existing = connections.find(c => c._id === selectedUserId);
     if (existing) {
       setSelectedChat(existing);
       setChatType('direct');
       setShowMobileSidebar(false);
+      stateConsumedRef.current = true; // Consumed
       return;
     }
 
-    // 3. If not in connections, fetch the user's basic info to "stage" the chat
+    // 2. Fetch/Stage User
     const fetchAndStageUser = async () => {
       try {
         const { data } = await axios.get(`/api/players/${selectedUserId}/profile`);
@@ -216,10 +215,10 @@ export default function ChatPage() {
           setSelectedChat(stagedUser);
           setChatType('direct');
           setShowMobileSidebar(false);
+          stateConsumedRef.current = true; // Consumed
         }
       } catch (error) {
         console.error('Error fetching staged user:', error);
-        toast.error('Could not find user profile');
       }
     };
 
@@ -274,14 +273,23 @@ export default function ChatPage() {
     setInput(e.target.value);
   };
 
-  // Filtered connections
-  const filteredConnections = useMemo(() =>
-    connections.filter(conn =>
+  // Filtered connections (including staged user if active)
+  const filteredConnections = useMemo(() => {
+    let list = [...connections];
+    
+    // If selectedChat is a staged user (not in connections), add it to the top
+    if (selectedChat && chatType === 'direct' && selectedChat._id !== 'system') {
+      const exists = list.some(c => c._id === selectedChat._id);
+      if (!exists) {
+        list.unshift(selectedChat);
+      }
+    }
+
+    return list.filter(conn =>
       conn.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       conn.realName?.toLowerCase().includes(searchTerm.toLowerCase())
-    ),
-    [connections, searchTerm]
-  );
+    );
+  }, [connections, searchTerm, selectedChat, chatType]);
 
   // Utility functions
   const formatTime = (timestamp) => {
@@ -1096,7 +1104,7 @@ export default function ChatPage() {
 
             {/* Chat Input */}
             <div className="p-3 md:p-4 border-t border-zinc-800">
-              {chatType === 'direct' && selectedChat._id !== 'system' && directRequestGate && !directRequestGate.canMessage ? (
+              {chatType === 'direct' && selectedChat._id !== 'system' && directRequestGate && !directRequestGate.canMessage && directRequestGate.status !== 'none' ? (
                 <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-3 md:p-4 space-y-3">
                   <p className="text-zinc-300 text-sm">
                     {directRequestGate.status === 'pending_sent' && 'Message request sent. Wait for them to accept before chatting.'}
@@ -1140,7 +1148,7 @@ export default function ChatPage() {
                 <div className="flex items-center gap-2 md:gap-3">
                   <input
                     type="text"
-                    placeholder="Type your message..."
+                    placeholder={directRequestGate?.status === 'none' ? "Type a message to start conversation..." : "Type your message..."}
                     value={input}
                     onChange={handleInputChange}
                     onKeyPress={handleKeyPress}

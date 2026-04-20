@@ -267,6 +267,7 @@ export const useChatActions = ({ userId, selectedChat, chatType }) => {
                     const apiError = error?.response?.data;
                     if (apiError?.requestRequired) {
                         toast.info(apiError?.message || 'Message request is pending. Wait for acceptance to chat.');
+                        queryClient.invalidateQueries({ queryKey: chatKeys.messages(selectedChat._id) });
                         queryClient.invalidateQueries({ queryKey: ['incomingMessageRequests'] });
                         queryClient.invalidateQueries({ queryKey: ['outgoingMessageRequests'] });
                     } else {
