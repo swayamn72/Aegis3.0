@@ -288,6 +288,12 @@ const initChat = async (server) => {
           timestamp: new Date(),
         });
 
+        // Look up sender profile so the receiver can display proper username
+        // even if the sender is not in their connections list yet.
+        const senderProfile = await Player.findById(senderId)
+          .select('username profilePicture')
+          .lean();
+
         const payload = {
           _id: chatMessage._id,
           senderId,
@@ -295,6 +301,8 @@ const initChat = async (server) => {
           message: trimmedMessage,
           messageType: 'text',
           timestamp: chatMessage.timestamp,
+          senderUsername: senderProfile?.username || null,
+          senderProfilePicture: senderProfile?.profilePicture || null,
         };
 
         io.to(receiverId.toString()).emit('receiveMessage', payload);

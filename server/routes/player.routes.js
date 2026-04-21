@@ -256,7 +256,7 @@ router.get("/me", auth, async (req, res) => {
       .select(
         [
           // User fields
-          "_id", "realName", "age", "location", "bio", "languages", "profilePicture", "gameIds", "earnings", "inGameRole", "teamStatus", "availability", "discordTag", "instagram", "youtube", "twitter", "profileVisibility", "cardTheme", "username", "country", "aegisRating", "aegisRatingPeak", "aegisMatchesRated", "aegisIsProvisional", "sChampionships", "aChampionships", "sTopThree", "verified", "createdAt", "previousTeams", "team", "primaryGame", "tournamentsPlayed", "matchesPlayed", "statistics", "notificationPreferences", "mutedTryoutChats"
+          "_id", "realName", "age", "location", "bio", "languages", "profilePicture", "gameIds", "earnings", "inGameRole", "teamStatus", "availability", "discordTag", "instagram", "youtube", "twitter", "profileVisibility", "cardTheme", "username", "country", "aegisRating", "aegisRatingPeak", "aegisMatchesRated", "aegisIsProvisional", "sChampionships", "aChampionships", "sTopThree", "verified", "createdAt", "previousTeams", "team", "primaryGame", "tournamentsPlayed", "matchesPlayed", "statistics", "notificationPreferences", "mutedTryoutChats", "agreedToGuidelines"
         ].join(" ")
       )
       .populate({
@@ -282,6 +282,38 @@ router.get("/me", auth, async (req, res) => {
 });
 
 
+// ==========================
+// ACCEPT COMMUNITY GUIDELINES / TERMS
+// ==========================
+router.post("/accept-terms", auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const player = await Player.findByIdAndUpdate(
+      userId,
+      {
+        $set: {
+          agreedToGuidelines: true,
+          guidelinesAcceptedAt: new Date(),
+        },
+      },
+      { new: true }
+    ).select('agreedToGuidelines guidelinesAcceptedAt');
+
+    if (!player) {
+      return res.status(404).json({ message: 'Player not found' });
+    }
+
+    res.status(200).json({
+      success: true,
+      agreedToGuidelines: player.agreedToGuidelines,
+      guidelinesAcceptedAt: player.guidelinesAcceptedAt,
+    });
+  } catch (error) {
+    console.error('Accept terms error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
 // Check username availability
 router.get("/check-username/:username", async (req, res) => {

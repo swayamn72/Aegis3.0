@@ -26,7 +26,7 @@ Information our servers automatically collect when you access the App, such as y
 Device information, such as your mobile device ID, model, and manufacturer, and information about the location of your device, if you access the App from a mobile device.
 
 **Push Notifications**
-We may request to send you push notifications regarding your account, matches, tournaments, or messages. If you wish to opt-out from receiving these types of communications, you may turn them off in your device's settings or within the App settings.
+We use Firebase Cloud Messaging (FCM) to deliver push notifications regarding your account, matches, tournaments, or messages. FCM may collect device tokens and basic device information to deliver notifications. If you wish to opt-out from receiving these types of communications, you may turn them off in your device's settings or within the App settings.
 
 ## 2. How We Use Your Information
 
@@ -44,8 +44,28 @@ Having accurate information about you permits us to provide you with a smooth, e
 *   Resolve disputes and troubleshoot problems.
 *   Respond to product and customer service requests.
 *   Prevent fraudulent transactions, monitor against theft, and protect against criminal activity.
+*   Moderate user-generated content to enforce our Community Guidelines.
 
-## 3. Disclosure of Your Information
+## 3. User-Generated Content (UGC)
+
+Aegis Esports allows users to create and share content including but not limited to: profile information, team descriptions, chat messages, recruitment posts (LFT/LFP), and profile pictures.
+
+**Content Standards**
+All user-generated content must comply with our Community Guidelines, which prohibit:
+*   Nudity or sexually explicit content
+*   Harassment, bullying, or threats
+*   Hate speech or discrimination
+*   Cheating or match manipulation
+*   Spam or misleading content
+*   Sharing others' personal information without consent
+
+**Content Moderation**
+We reserve the right to review, moderate, and remove content that violates our Community Guidelines. Users may report content or behavior they believe violates these guidelines using the in-app report feature.
+
+**Consent**
+By creating an account, you agree to our Community Guidelines. Acceptance of these guidelines is mandatory and is recorded upon account creation or first login after guideline updates.
+
+## 4. Disclosure of Your Information
 
 We may share information we have collected about you in certain situations. Your information may be disclosed as follows:
 
@@ -58,11 +78,15 @@ If you interact with other users of the App, those users may see your name, prof
 **Online Postings**
 When you post comments, contributions, or other content to the App (like LFT or LFP posts), your posts may be viewed by all users and may be publicly distributed outside the App in perpetuity.
 
-## 4. Security of Your Information
+## 5. Security of Your Information
 
-We use administrative, technical, and physical security measures to help protect your personal information. While we have taken reasonable steps to secure the personal information you provide to us (such as hashing passwords and using HTTPS), please be aware that despite our efforts, no security measures are perfect or impenetrable, and no method of data transmission can be guaranteed against any interception or other type of misuse.
+We use administrative, technical, and physical security measures to help protect your personal information. While we have taken reasonable steps to secure the personal information you provide to us (such as hashing passwords, using HTTPS, and encrypted secure storage on devices), please be aware that despite our efforts, no security measures are perfect or impenetrable, and no method of data transmission can be guaranteed against any interception or other type of misuse.
 
-## 5. Account Deletion and Data Retention
+## 6. Children's Privacy
+
+Aegis Esports is not intended for children under the age of 13. We do not knowingly collect personally identifiable information from children under 13. If you are a parent or guardian and you are aware that your child has provided us with personal data, please contact us. If we become aware that we have collected personal data from children without verification of parental consent, we take steps to remove that information from our servers.
+
+## 7. Account Deletion and Data Retention
 
 **Right to Deletion**
 You have the right to request the deletion of your personal data. We provide an in-app "Delete Account" feature within the Settings page of the Aegis Esports mobile application and the web platform.
@@ -73,9 +97,9 @@ You have the right to request the deletion of your personal data. We provide an 
 *   Your Aegis Rating, game IDs, generic username, and historical stats may be anonymized rather than deleted entirely. This is to ensure that past tournaments, team histories, and chat logs remain structurally intact for other users involved in those events safely and securely.
 *   Once an account is deleted, it cannot be recovered.
 
-If you cannot access the app, you may also request account deletion by contacting us at [Insert Support Email/Contact].
+If you cannot access the app, you may also request account deletion by contacting us at swayamsn123@gmail.com.
 
-## 6. Options Regarding Your Information
+## 8. Options Regarding Your Information
 
 **Account Information**
 You may at any time review or change the information in your account or terminate your account by:
@@ -83,7 +107,7 @@ You may at any time review or change the information in your account or terminat
 *   Logging into your account settings and updating your account
 *   Contacting us using the contact information provided below
 
-Upon your request to terminate your account, we will deactivate or anonymize your account and information from our active databases, subject to the conditions detailed in Section 5.
+Upon your request to terminate your account, we will deactivate or anonymize your account and information from our active databases, subject to the conditions detailed in Section 7.
 
 **Emails and Communications**
 If you no longer wish to receive correspondence, emails, or other communications from us, you may opt-out by:
@@ -91,10 +115,10 @@ If you no longer wish to receive correspondence, emails, or other communications
 *   Noting your preferences at the time you register your account with the App
 *   Logging into your account settings and updating your preferences.
 
-## 7. Contact Us
+## 9. Contact Us
 
 If you have questions or comments about this Privacy Policy, please contact us at:
 
 **Aegis Esports**
-[Insert Contact Email]
-[Optional: Insert Physical Address or Website Link]
+swayamsn123@gmail.com
+https://aegis3-0.vercel.app

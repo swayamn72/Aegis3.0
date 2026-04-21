@@ -223,6 +223,7 @@ router.post('/login', authLimiter, validateLogin, asyncHandler(async (req, res) 
       instagram: user.instagram,
       youtube: user.youtube,
       twitter: user.twitter,
+      agreedToGuidelines: user.agreedToGuidelines ?? false,
     },
   });
 }));
@@ -387,6 +388,7 @@ router.post('/google', authLimiter, async (req, res) => {
         instagram: user.instagram,
         youtube: user.youtube,
         twitter: user.twitter,
+        agreedToGuidelines: user.agreedToGuidelines ?? false,
       };
     } else {
       responseData.organization = {
