@@ -541,10 +541,10 @@ export const accountDeletionEmailTemplate = (username, confirmLink) => {
 };
 
 export const accountDeletionEmailPlainText = (username, confirmLink) => {
-  return \`
+  return `
 Account Deletion Request
 
-Hi \${username},
+Hi ${username},
 
 We received a request to permanently delete your Aegis account. If you did not make this request, please safely ignore this email.
 
@@ -552,12 +552,12 @@ We received a request to permanently delete your Aegis account. If you did not m
 
 To confirm and permanently delete your account, click the link below:
 
-\${confirmLink}
+${confirmLink}
 
 ⏰ IMPORTANT: This link will expire in 15 minutes.
 
 Need help? Contact us at support@aegis.com
 
-© \${new Date().getFullYear()} Aegis. All rights reserved.
-  \`;
+© ${new Date().getFullYear()} Aegis. All rights reserved.
+  `;
 };
