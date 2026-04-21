@@ -231,7 +231,7 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
     let responsePayload = null;
     let tournamentForEmail = null;
     let registrationForEmail = null;
-    let organizerNameForEmail = 'AEGIS Esports';
+    let organizerNameForEmail = 'Aegis';
 
     await session.withTransaction(async () => {
       // Fetch tournament (minimal data needed)
@@ -344,7 +344,7 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
       const registration = registrations[0];
       tournamentForEmail = tournament;
       registrationForEmail = registration;
-      organizerNameForEmail = tournament.organizer?.orgName || 'AEGIS Esports';
+      organizerNameForEmail = tournament.organizer?.orgName || 'Aegis';
 
       responsePayload = {
         message: 'Team registered successfully',
@@ -369,7 +369,7 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
         .select('email username')
         .lean();
 
-      const organizerName = organizerNameForEmail || 'AEGIS Esports';
+      const organizerName = organizerNameForEmail || 'Aegis';
 
       for (const player of players) {
         if (player.email) {

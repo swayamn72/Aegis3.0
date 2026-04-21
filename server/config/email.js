@@ -57,7 +57,7 @@ export const sendVerificationEmail = async (email, username, code) => {
         const mailOptions = {
             from: getFromAddress(),
             to: email,
-            subject: 'Verify Your Email - Aegis Esports',
+            subject: 'Verify Your Email - Aegis',
             html: verificationEmailTemplate(username, code),
             text: verificationEmailPlainText(username, code),
         };
@@ -87,7 +87,7 @@ export const sendPasswordResetEmail = async (email, username, resetLink) => {
         const mailOptions = {
             from: getFromAddress(),
             to: email,
-            subject: 'Reset Your Password - Aegis Esports',
+            subject: 'Reset Your Password - Aegis',
             html: passwordResetEmailTemplate(username, resetLink),
             text: passwordResetEmailPlainText(username, resetLink),
         };
@@ -160,7 +160,7 @@ export const sendTournamentApprovalEmail = async (email, orgName, tournamentName
     const mailOptions = {
         from: getFromAddress(),
         to: email,
-        subject: `Tournament Approved - ${tournamentName} | Aegis Esports`,
+        subject: `Tournament Approved - ${tournamentName} | Aegis`,
         html: `
             <h2>Congratulations, ${orgName}!</h2>
             <p>Your tournament <b>${tournamentName}</b> has been <b>approved</b> by the Aegis admin team.</p>
@@ -192,19 +192,19 @@ export const sendApprovalEmail = async (email, orgName) => {
     const mailOptions = {
         from: getFromAddress(),
         to: email,
-        subject: 'Organization Application Approved - Aegis Esports',
+        subject: 'Organization Application Approved - Aegis',
         html: `
             <h2>Congratulations, ${orgName}!</h2>
             <p>Your organization application has been <b>approved</b> by the Aegis admin team.</p>
             <p>You can now access your organization dashboard and start conducting tournaments and events.</p>
             <p>If you have any questions, contact us at <a href="mailto:support@aegis.com">support@aegis.com</a>.</p>
-            <p>Welcome to Aegis Esports!</p>
+            <p>Welcome to Aegis!</p>
         `,
         text: `Congratulations, ${orgName}!
 Your organization application has been approved by the Aegis admin team.
 You can now access your organization dashboard and start participating in tournaments and events.
 If you have any questions, contact us at support@aegis.com.
-Welcome to Aegis Esports!`
+Welcome to Aegis!`
     };
 
     const info = await transporter.sendMail(mailOptions);
@@ -212,7 +212,37 @@ Welcome to Aegis Esports!`
     return { success: true, messageId: info.messageId };
 };
 
+/**
+ * Send account deletion email
+ * @param {string} email - Recipient email address
+ * @param {string} username - User's username
+ * @param {string} confirmLink - Deletion confirmation link
+ * @returns {Promise<Object>} - Email send result
+ */
+export const sendAccountDeletionEmail = async (email, username, confirmLink) => {
+    try {
+        const transporter = createTransporter();
+        const { accountDeletionEmailTemplate, accountDeletionEmailPlainText } = await import('./emailTemplates.js');
+
+        const mailOptions = {
+            from: getFromAddress(),
+            to: email,
+            subject: 'Confirm Your Account Deletion - Aegis',
+            html: accountDeletionEmailTemplate(username, confirmLink),
+            text: accountDeletionEmailPlainText(username, confirmLink),
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('✅ Account deletion email sent:', info.messageId);
+        return { success: true, messageId: info.messageId };
+    } catch (error) {
+        console.error('❌ Error sending account deletion email:', error);
+        throw new Error('Failed to send account deletion email.');
+    }
+};
+
 export default {
+    sendAccountDeletionEmail,
     sendVerificationEmail,
     sendPasswordResetEmail,
     sendTournamentRegistrationEmail,

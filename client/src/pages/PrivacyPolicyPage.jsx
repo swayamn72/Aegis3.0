@@ -18,7 +18,7 @@ const PrivacyPolicyPage = () => {
 
                     <div className="prose prose-invert prose-orange max-w-none space-y-6 text-zinc-300">
                         <p>
-                            Welcome to Aegis Esports ("we", "us", or "our"). This Privacy Policy explains how we collect, use,
+                            Welcome to Aegis ("we", "us", or "our"). This Privacy Policy explains how we collect, use,
                             disclose, and safeguard your information when you visit our mobile application (the "App") and backend
                             services. Please read this privacy policy carefully. If you do not agree with the terms of this privacy
                             policy, please do not access the application.
@@ -51,7 +51,7 @@ const PrivacyPolicyPage = () => {
                         </ul>
 
                         <h2 className="text-2xl font-semibold text-white mt-8 mb-4">3. User-Generated Content (UGC)</h2>
-                        <p>Aegis Esports allows users to create and share content including profile information, team descriptions, chat messages, recruitment posts, and profile pictures.</p>
+                        <p>Aegis allows users to create and share content including profile information, team descriptions, chat messages, recruitment posts, and profile pictures.</p>
 
                         <h3 className="text-xl font-medium text-orange-400 mt-6 mb-2">Content Standards</h3>
                         <p>All user-generated content must comply with our Community Guidelines, which prohibit:</p>
@@ -71,13 +71,13 @@ const PrivacyPolicyPage = () => {
                         <p>We use administrative, technical, and physical security measures to protect your personal information, including password hashing, HTTPS, and encrypted secure storage on devices. Despite our efforts, no security measures are perfect or impenetrable.</p>
 
                         <h2 className="text-2xl font-semibold text-white mt-8 mb-4">5. Children's Privacy</h2>
-                        <p>Aegis Esports is not intended for children under the age of 13. We do not knowingly collect personally identifiable information from children under 13. If we become aware that we have collected personal data from children without verification of parental consent, we take steps to remove that information.</p>
+                        <p>Aegis is not intended for children under the age of 13. We do not knowingly collect personally identifiable information from children under 13. If we become aware that we have collected personal data from children without verification of parental consent, we take steps to remove that information.</p>
 
                         <h2 className="text-2xl font-semibold text-white mt-8 mb-4">6. Account Deletion and Data Retention</h2>
                         <h3 className="text-xl font-medium text-orange-400 mt-6 mb-2">Right to Deletion</h3>
                         <p>
                             You have the right to request the deletion of your personal data. We provide an in-app "Delete Account"
-                            feature within the Settings page of the Aegis Esports mobile application and the web platform.
+                            feature within the Settings page of the Aegis mobile application and the web platform.
                         </p>
 
                         <h3 className="text-xl font-medium text-orange-400 mt-6 mb-2">What Happens When You Delete Your Account:</h3>

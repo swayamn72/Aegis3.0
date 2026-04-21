@@ -42,7 +42,8 @@ const AegisOrgPendingApproval = lazy(() => import("./orgs/OrgPendingApproval"));
 const OrgDashboard = lazy(() => import("./orgs/OrgDashboard"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
 const PrivacyPolicyPage = lazy(() => import("./pages/PrivacyPolicyPage"));
-
+const RequestAccountDeletion = lazy(() => import("./pages/RequestAccountDeletion"));
+const ConfirmAccountDeletion = lazy(() => import("./pages/ConfirmAccountDeletion"));
 // --- Loading fallback for lazy-loaded routes ---
 const PageLoader = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#0a0a23' }}>
@@ -74,6 +75,8 @@ function AppContent() {
             <Route path="/matches/:id" element={<DetailedMatchInfoPage />} />
             <Route path="/leaderboard" element={<AegisLeaderboard />} />
             <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+            <Route path="/delete-account" element={<PublicRoute><RequestAccountDeletion /></PublicRoute>} />
+            <Route path="/confirm-delete-account/:token" element={<PublicRoute><ConfirmAccountDeletion /></PublicRoute>} />
 
             {/* Organization Routes */}
             <Route

@@ -16,7 +16,7 @@ import auth from '../middleware/auth.js';
 import { verifyOrgToken } from '../middleware/orgAuth.js';
 import rateLimit from 'express-rate-limit';
 import { OAuth2Client } from 'google-auth-library';
-import { sendVerificationEmail, generateVerificationCode, sendPasswordResetEmail } from '../config/email.js';
+import { sendVerificationEmail, generateVerificationCode, sendPasswordResetEmail, sendAccountDeletionEmail } from '../config/email.js';
 import { regenerateVerificationCode } from '../utils/verificationHelper.js';
 import { AUTH_CONSTANTS } from '../config/constants.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
@@ -1087,24 +1087,16 @@ router.post('/complete-org-profile', verifyOrgToken, asyncHandler(async (req, re
 }));
 
 // ==========================
-// DELETE ACCOUNT (Player/Organization)
-// ==========================
-router.delete('/delete-account', auth, asyncHandler(async (req, res) => {
-  const { id, role } = req.user;
 
-  if (role !== 'organization' && role !== 'player') {
-    return res.status(403).json({ message: 'Unsupported account type' });
-  }
-
+// Helper function to process account deletion
+async function processAccountDeletion(id, role) {
   const deletionEmail = `deleted_${id}_${Date.now()}@deleted.aegis`;
   const randomSecret = crypto.randomBytes(48).toString('hex');
   const randomizedHash = await bcrypt.hash(randomSecret, AUTH_CONSTANTS.BCRYPT_SALT_ROUNDS);
 
   if (role === 'organization') {
     const org = await Organization.findById(id);
-    if (!org) {
-      return res.status(404).json({ message: 'Account not found' });
-    }
+    if (!org) return false;
 
     org.orgName = `deleted_org_${String(id).slice(-8)}_${Date.now()}`;
     org.ownerName = 'Deleted Organization';
@@ -1119,20 +1111,10 @@ router.delete('/delete-account', auth, asyncHandler(async (req, res) => {
     org.isEmailVerified = false;
     org.profileCustomized = false;
     org.orgSocial = {
-      instagram: '',
-      twitter: '',
-      facebook: '',
-      linkedin: '',
-      youtube: '',
-      website: '',
+      instagram: '', twitter: '', facebook: '', linkedin: '', youtube: '', website: ''
     };
     org.ownerSocial = {
-      instagram: '',
-      twitter: '',
-      facebook: '',
-      linkedin: '',
-      youtube: '',
-      website: '',
+      instagram: '', twitter: '', facebook: '', linkedin: '', youtube: '', website: ''
     };
     org.verificationCode = undefined;
     org.verificationCodeExpires = undefined;
@@ -1140,60 +1122,47 @@ router.delete('/delete-account', auth, asyncHandler(async (req, res) => {
     org.lastVerificationEmailSent = undefined;
     org.resetPasswordToken = null;
     org.resetPasswordExpiry = null;
+    org.deleteAccountToken = null;
+    org.deleteAccountExpiry = null;
 
     await org.save();
 
-    // --- Organization Specific Cleanup ---
-    // Remove organization reference from teams
     await Team.updateMany(
       { organization: id },
       { $set: { organization: null } }
     );
   } else {
-    // --- Player Specific Cleanup ---
     const player = await Player.findById(id).select('+password');
-    if (!player) {
-      return res.status(404).json({ message: 'Account not found' });
-    }
+    if (!player) return false;
 
-    // 1. Delete LFT Posts
     await LFTPost.deleteMany({ player: id });
 
-    // 2. Handle Teams (Captaincy Transfer or Disbandment)
-    // First, remove the player from all teams' rosters
     await Team.updateMany(
       { players: id },
       { $pull: { players: id } }
     );
 
-    // Second, find teams where they were captain and need a new one
     const teamsToProcess = await Team.find({ captain: id });
     for (const team of teamsToProcess) {
       if (team.players.length > 0) {
-        // Transfer to the next available player
         team.captain = team.players[0];
         await team.save();
       } else {
-        // Sole member captain - disband
         team.status = 'disbanded';
         team.lookingForPlayers = false;
         await team.save();
-        // Delete LFP posts for disbanded teams
         await LFPPost.deleteMany({ team: team._id });
       }
     }
 
-    // 3. Cleanup Recruitment
     await RecruitmentApproach.deleteMany({ 
       $or: [{ player: id }, { 'targetTeam.captain': id }] 
     });
 
-    // 4. Cleanup Direct Message Requests
     await DirectMessageRequest.deleteMany({
       $or: [{ requester: id }, { recipient: id }]
     });
 
-    // 5. Cleanup Team Invitations/Applications
     await TeamInvitation.deleteMany({
       $or: [{ player: id }, { invitedBy: id }]
     });
@@ -1201,7 +1170,6 @@ router.delete('/delete-account', auth, asyncHandler(async (req, res) => {
       player: id
     });
 
-    // 6. Final Anonymization
     player.email = deletionEmail;
     player.realName = '';
     player.age = null;
@@ -1223,18 +1191,140 @@ router.delete('/delete-account', auth, asyncHandler(async (req, res) => {
     player.lastVerificationEmailSent = undefined;
     player.resetPasswordToken = null;
     player.resetPasswordExpiry = null;
+    player.deleteAccountToken = null;
+    player.deleteAccountExpiry = null;
 
     await player.save();
   }
 
-  // --- Common Cleanup (Both Org and Player) ---
-  // Delete notifications
   await Notification.deleteMany({ recipient: id });
+  return true;
+}
+
+
+// DELETE ACCOUNT (Player/Organization)
+// ==========================
+router.delete('/delete-account', auth, asyncHandler(async (req, res) => {
+  const { id, role } = req.user;
+
+  if (role !== 'organization' && role !== 'player') {
+    return res.status(403).json({ message: 'Unsupported account type' });
+  }
+
+  const success = await processAccountDeletion(id, role);
+  if (!success) {
+      return res.status(404).json({ message: 'Account not found' });
+  }
 
   res.clearCookie('token');
   res.status(200).json({
     success: true,
     message: 'Account deleted successfully',
+  });
+}));
+
+// ==========================
+// REQUEST ACCOUNT DELETION (Unauthenticated via Email)
+// ==========================
+const requestDeletionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 3,
+  message: { message: 'Too many deletion requests. Please try again later.' }
+});
+
+router.post('/request-account-deletion', requestDeletionLimiter, asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+      return res.status(400).json({ success: false, message: 'Email is required' });
+  }
+
+  // Find user (Player or Organization)
+  let user = await Player.findOne({ email });
+  let role = 'player';
+  
+  if (!user) {
+      user = await Organization.findOne({ email });
+      role = 'organization';
+  }
+
+  // Always return success to prevent email enumeration
+  if (!user) {
+    return res.status(200).json({
+      success: true,
+      message: 'If an account exists, a deletion link has been sent.',
+    });
+  }
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+  user.deleteAccountToken = hashedToken;
+  user.deleteAccountExpiry = Date.now() + 15 * 60 * 1000; // 15 mins
+  await user.save({ validateBeforeSave: false });
+
+  const confirmUrl = `${process.env.CLIENT_URL || 'http://localhost:5173'}/confirm-delete-account/${token}`;
+
+  try {
+      await sendAccountDeletionEmail(email, user.username || user.orgName, confirmUrl);
+      res.status(200).json({
+          success: true,
+          message: 'If an account exists, a deletion link has been sent.',
+      });
+  } catch (error) {
+      user.deleteAccountToken = null;
+      user.deleteAccountExpiry = null;
+      await user.save({ validateBeforeSave: false });
+      
+      console.error('Failed to send account deletion email:', error);
+      return res.status(500).json({
+          success: false,
+          message: 'Failed to send account deletion email. Please try again later.',
+      });
+  }
+}));
+
+// ==========================
+// CONFIRM ACCOUNT DELETION
+// ==========================
+router.post('/confirm-account-deletion', asyncHandler(async (req, res) => {
+  const { token } = req.body;
+
+  if (!token) {
+      return res.status(400).json({ success: false, message: 'Token is required' });
+  }
+
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+  let user = await Player.findOne({
+      deleteAccountToken: hashedToken,
+      deleteAccountExpiry: { $gt: Date.now() },
+  });
+  let role = 'player';
+
+  if (!user) {
+      user = await Organization.findOne({
+          deleteAccountToken: hashedToken,
+          deleteAccountExpiry: { $gt: Date.now() },
+      });
+      role = 'organization';
+  }
+
+  if (!user) {
+      return res.status(400).json({
+          success: false,
+          message: 'Invalid or expired deletion token.',
+      });
+  }
+
+  const success = await processAccountDeletion(user._id, role);
+  if (!success) {
+      return res.status(500).json({ success: false, message: 'Failed to process deletion' });
+  }
+
+  res.status(200).json({
+      success: true,
+      message: 'Your account has been permanently deleted.',
   });
 }));
 

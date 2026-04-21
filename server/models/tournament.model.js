@@ -84,7 +84,7 @@ const tournamentSchema = new mongoose.Schema(
         type: String,
         required: true,
         trim: true,
-        default: 'Aegis Esports',
+        default: 'Aegis',
       },
       website: String,
       contactEmail: String,

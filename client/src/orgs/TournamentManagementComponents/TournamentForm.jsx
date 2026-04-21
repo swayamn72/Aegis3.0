@@ -36,7 +36,7 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
       screenshots: []
     },
     organizer: {
-      name: 'Aegis Esports',
+      name: 'Aegis',
       organizationRef: null,
       contactEmail: ''
     },
@@ -107,7 +107,7 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
           screenshots: []
         },
         organizer: tournament.organizer || {
-          name: 'Aegis Esports',
+          name: 'Aegis',
           organizationRef: null,
           contactEmail: ''
         },
@@ -161,7 +161,7 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
           screenshots: []
         },
         organizer: {
-          name: 'Aegis Esports',
+          name: 'Aegis',
           organizationRef: null,
           contactEmail: ''
         },

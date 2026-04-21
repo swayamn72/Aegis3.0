@@ -157,6 +157,14 @@ const organizationSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    deleteAccountToken: {
+      type: String,
+      default: null,
+    },
+    deleteAccountExpiry: {
+      type: Date,
+      default: null,
+    },
     loginAttempts: {
       type: Number,
       default: 0,

@@ -37,7 +37,7 @@ import notificationRoutes from './routes/notification.routes.js';
 import organizationAuthRoutes from './routes/organizationAuth.routes.js';
 import supportRoutes from './routes/support.routes.js';
 import moderationRoutes from './routes/moderation.routes.js';
-import communityGuidelinesRoutes from './routes/community_guidelines.routes.js';
+
 import { errorHandler } from './middleware/errorHandler.js';
 import { responseHelpers } from './middleware/responseHelpers.js';
 
@@ -154,7 +154,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/organization-auth', organizationAuthRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/moderation', moderationRoutes);
-app.use('/api/community-guidelines', communityGuidelinesRoutes);
+
 
 // TEST ROUTE
 app.get("/", (req, res) => {

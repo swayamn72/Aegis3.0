@@ -23,7 +23,7 @@ export const verificationEmailTemplate = (username, code) => {
           <tr>
             <td style="background: linear-gradient(135deg, #FF4500 0%, #FF6B35 100%); padding: 40px 30px; text-align: center;">
               <h1 style="margin: 0; color: #ffffff; font-size: 32px; font-weight: bold; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);">
-                🎮 Aegis Esports
+                🎮 Aegis
               </h1>
             </td>
           </tr>
@@ -36,7 +36,7 @@ export const verificationEmailTemplate = (username, code) => {
               </h2>
               
               <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6; color: #b0b0b0;">
-                Welcome to <strong style="color: #FF4500;">Aegis Esports</strong>! We're excited to have you join our community of competitive esports players.
+                Welcome to <strong style="color: #FF4500;">Aegis</strong>! We're excited to have you join our community of competitive esports players.
               </p>
 
               <p style="margin: 0 0 30px; font-size: 16px; line-height: 1.6; color: #b0b0b0;">
@@ -97,7 +97,7 @@ export const verificationEmailTemplate = (username, code) => {
                 Need help? Contact us at <a href="mailto:support@aegis.com" style="color: #FF4500; text-decoration: none;">support@aegis.com</a>
               </p>
               <p style="margin: 0; font-size: 12px; color: #555;">
-                © ${new Date().getFullYear()} Aegis Esports. All rights reserved.
+                © ${new Date().getFullYear()} Aegis. All rights reserved.
               </p>
               <div style="margin-top: 20px;">
                 <a href="#" style="display: inline-block; margin: 0 10px; color: #666; text-decoration: none; font-size: 12px;">Privacy Policy</a>
@@ -125,7 +125,7 @@ export const verificationEmailPlainText = (username, code) => {
   return `
 Hi ${username}!
 
-Welcome to Aegis Esports! We're excited to have you join our community.
+Welcome to Aegis! We're excited to have you join our community.
 
 To complete your registration, please verify your email address using the code below:
 
@@ -141,7 +141,7 @@ If you didn't create an account with Aegis, you can safely ignore this email.
 
 Need help? Contact us at support@aegis.com
 
-© ${new Date().getFullYear()} Aegis Esports. All rights reserved.
+© ${new Date().getFullYear()} Aegis. All rights reserved.
   `;
 };
 
@@ -174,7 +174,7 @@ export const welcomeEmailTemplate = (username) => {
                 Your email has been verified successfully! 🎮
               </p>
               <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6; color: #b0b0b0;">
-                You're now part of the Aegis Esports community. Here's what you can do next:
+                You're now part of the Aegis community. Here's what you can do next:
               </p>
               <ul style="color: #b0b0b0; line-height: 1.8;">
                 <li>Complete your profile setup</li>
@@ -192,7 +192,7 @@ export const welcomeEmailTemplate = (username) => {
           <tr>
             <td style="background-color: #0f0f0f; padding: 30px; text-align: center;">
               <p style="margin: 0; font-size: 12px; color: #555;">
-                © ${new Date().getFullYear()} Aegis Esports
+                © ${new Date().getFullYear()} Aegis
               </p>
             </td>
           </tr>
@@ -230,7 +230,7 @@ export const passwordResetEmailTemplate = (username, resetLink) => {
           <tr>
             <td style="background: linear-gradient(135deg, #FF4500 0%, #FF6B35 100%); padding: 40px 30px; text-align: center;">
               <h1 style="margin: 0; color: #ffffff; font-size: 32px; font-weight: bold; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);">
-                🔐 Aegis Esports
+                🔐 Aegis
               </h1>
             </td>
           </tr>
@@ -247,7 +247,7 @@ export const passwordResetEmailTemplate = (username, resetLink) => {
               </p>
 
               <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6; color: #b0b0b0;">
-                We received a request to reset your password for your Aegis Esports account. If you didn't make this request, you can safely ignore this email.
+                We received a request to reset your password for your Aegis account. If you didn't make this request, you can safely ignore this email.
               </p>
 
               <p style="margin: 0 0 30px; font-size: 16px; line-height: 1.6; color: #b0b0b0;">
@@ -309,7 +309,7 @@ export const passwordResetEmailTemplate = (username, resetLink) => {
                 Need help? Contact us at <a href="mailto:support@aegis.com" style="color: #FF4500; text-decoration: none;">support@aegis.com</a>
               </p>
               <p style="margin: 0; font-size: 12px; color: #555;">
-                © ${new Date().getFullYear()} Aegis Esports. All rights reserved.
+                © ${new Date().getFullYear()} Aegis. All rights reserved.
               </p>
               <div style="margin-top: 20px;">
                 <a href="#" style="display: inline-block; margin: 0 10px; color: #666; text-decoration: none; font-size: 12px;">Privacy Policy</a>
@@ -339,7 +339,7 @@ Password Reset Request
 
 Hi ${username},
 
-We received a request to reset your password for your Aegis Esports account. If you didn't make this request, you can safely ignore this email.
+We received a request to reset your password for your Aegis account. If you didn't make this request, you can safely ignore this email.
 
 To reset your password, click the link below:
 
@@ -356,7 +356,7 @@ If the link doesn't work, copy and paste it into your browser.
 
 Need help? Contact us at support@aegis.com
 
-© ${new Date().getFullYear()} Aegis Esports. All rights reserved.
+© ${new Date().getFullYear()} Aegis. All rights reserved.
   `;
 };
 
@@ -403,7 +403,7 @@ export const tournamentRegistrationEmailTemplate = (username, teamName, tourname
           <!-- Footer -->
           <tr>
             <td style="background-color: #0f0f0f; padding: 30px; text-align: center;">
-              <p style="margin: 0; font-size: 12px; color: #555;">© ${new Date().getFullYear()} Aegis Esports</p>
+              <p style="margin: 0; font-size: 12px; color: #555;">© ${new Date().getFullYear()} Aegis</p>
             </td>
           </tr>
         </table>
@@ -426,7 +426,138 @@ Your team ${teamName} has been successfully registered for the tournament:
 
 Get ready and gather your team! Good luck!
 
-© ${new Date().getFullYear()} Aegis Esports
+© ${new Date().getFullYear()} Aegis
   `;
 };
 
+/**
+ * HTML Email Template for Account Deletion Request
+ * @param {string} username - User's username
+ * @param {string} confirmLink - Deletion confirmation link
+ * @returns {string} - HTML email content
+ */
+export const accountDeletionEmailTemplate = (username, confirmLink) => {
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Delete Your Account</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0a0a0a; font-family: 'Arial', sans-serif;">
+  <table role="presentation" style="width: 100%; border-collapse: collapse;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+        <table role="presentation" style="max-width: 600px; width: 100%; background-color: #1a1a1a; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);">
+          
+          <!-- Header with gradient -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #FF0000 0%, #aa0000 100%); padding: 40px 30px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 32px; font-weight: bold; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);">
+                ⚠️ Aegis
+              </h1>
+            </td>
+          </tr>
+
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 40px 30px; color: #e0e0e0;">
+              <h2 style="margin: 0 0 20px; color: #ffffff; font-size: 24px; font-weight: 600;">
+                Account Deletion Request
+              </h2>
+              
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6; color: #b0b0b0;">
+                Hi <strong style="color: #FF4500;">${username}</strong>,
+              </p>
+
+              <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6; color: #b0b0b0;">
+                We received a request to permanently delete your Aegis account. If you did not make this request, please safely ignore this email and your account will remain secure.
+              </p>
+
+              <!-- Warning -->
+              <table role="presentation" style="width: 100%; margin: 20px 0; background-color: #2a0000; border-left: 4px solid #ff0000; border-radius: 8px;">
+                <tr>
+                  <td style="padding: 15px 20px;">
+                    <p style="margin: 0; font-size: 14px; color: #ff5555;">
+                      🛑 <strong>Warning:</strong> Deleting your account is irreversible. All of your personal data, teams, and statistics will be permanently removed or anonymized.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin: 0 0 30px; font-size: 16px; line-height: 1.6; color: #b0b0b0;">
+                If you are sure you want to proceed and delete your account, click the button below:
+              </p>
+
+              <!-- Confirm Button -->
+              <table role="presentation" style="width: 100%; margin: 30px 0;">
+                <tr>
+                  <td align="center">
+                    <a href="${confirmLink}" style="display: inline-block; padding: 18px 50px; background: linear-gradient(135deg, #ff0000 0%, #cc0000 100%); color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; box-shadow: 0 4px 15px rgba(255, 0, 0, 0.4); transition: all 0.3s;">
+                      Permanently Delete Account
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin: 20px 0; font-size: 14px; line-height: 1.6; color: #888;">
+                Or copy and paste this link into your browser:
+              </p>
+              <p style="margin: 0 0 30px; font-size: 13px; word-break: break-all; padding: 15px; background-color: #2a2a2a; border-radius: 6px; border-left: 3px solid #ff0000;">
+                <a href="${confirmLink}" style="color: #ff5555; text-decoration: none;">${confirmLink}</a>
+              </p>
+
+              <table role="presentation" style="width: 100%; margin: 20px 0; background-color: #2a2a2a; border-left: 4px solid #FFA500; border-radius: 8px;">
+                <tr>
+                  <td style="padding: 15px 20px;">
+                    <p style="margin: 0; font-size: 14px; color: #FFA500;">
+                      ⏰ <strong>Important:</strong> This link will expire in <strong>15 minutes</strong> for your security.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #0f0f0f; padding: 30px; text-align: center; border-top: 1px solid #2a2a2a;">
+              <p style="margin: 0 0 10px; font-size: 14px; color: #666;">
+                Need help? Contact us at <a href="mailto:support@aegis.com" style="color: #FF4500; text-decoration: none;">support@aegis.com</a>
+              </p>
+              <p style="margin: 0; font-size: 12px; color: #555;">
+                © ${new Date().getFullYear()} Aegis. All rights reserved.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `;
+};
+
+export const accountDeletionEmailPlainText = (username, confirmLink) => {
+  return \`
+Account Deletion Request
+
+Hi \${username},
+
+We received a request to permanently delete your Aegis account. If you did not make this request, please safely ignore this email.
+
+🛑 WARNING: Deleting your account is irreversible.
+
+To confirm and permanently delete your account, click the link below:
+
+\${confirmLink}
+
+⏰ IMPORTANT: This link will expire in 15 minutes.
+
+Need help? Contact us at support@aegis.com
+
+© \${new Date().getFullYear()} Aegis. All rights reserved.
+  \`;
+};

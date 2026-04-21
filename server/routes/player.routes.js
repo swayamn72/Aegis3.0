@@ -107,7 +107,7 @@ router.get('/discover', auth, async (req, res) => {
     const sortBy = (req.query.sortBy || 'aegisRating').toString();
     const sortOrderRaw = (req.query.sortOrder || 'desc').toString().toLowerCase();
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 50);
     const skip = (page - 1) * limit;
 
     const sortOrder = sortOrderRaw === 'asc' ? 1 : -1;
@@ -123,6 +123,8 @@ router.get('/discover', auth, async (req, res) => {
         ...(blockedIds.length > 0 ? { $nin: blockedIds } : {}),
       },
       profileVisibility: 'public',
+      // Exclude soft-deleted accounts (email set to deleted_*@deleted.aegis)
+      email: { $not: /@deleted\.aegis$/ },
     };
 
     if (q) {

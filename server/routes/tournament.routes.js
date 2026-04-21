@@ -309,7 +309,7 @@ router.get('/:id', async (req, res) => {
       },
 
       organizer: {
-        name: tournament.organizer?.name || 'AEGIS Esports',
+        name: tournament.organizer?.name || 'Aegis',
         website: tournament.organizer?.website || null,
         contactEmail: tournament.organizer?.contactEmail || null
       },

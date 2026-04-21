@@ -1,8 +1,8 @@
-# Privacy Policy for Aegis Esports
+# Privacy Policy for Aegis
 
 **Last Updated:** April 2026
 
-Welcome to Aegis Esports ("we", "us", or "our"). This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our mobile application (the "App") and backend services. Please read this privacy policy carefully. If you do not agree with the terms of this privacy policy, please do not access the application.
+Welcome to Aegis ("we", "us", or "our"). This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our mobile application (the "App") and backend services. Please read this privacy policy carefully. If you do not agree with the terms of this privacy policy, please do not access the application.
 
 We reserve the right to make changes to this Privacy Policy at any time and for any reason. We will alert you about any changes by updating the "Last Updated" date of this Privacy Policy. You are encouraged to periodically review this Privacy Policy to stay informed of updates.
 
@@ -48,7 +48,7 @@ Having accurate information about you permits us to provide you with a smooth, e
 
 ## 3. User-Generated Content (UGC)
 
-Aegis Esports allows users to create and share content including but not limited to: profile information, team descriptions, chat messages, recruitment posts (LFT/LFP), and profile pictures.
+Aegis allows users to create and share content including but not limited to: profile information, team descriptions, chat messages, recruitment posts (LFT/LFP), and profile pictures.
 
 **Content Standards**
 All user-generated content must comply with our Community Guidelines, which prohibit:
@@ -73,7 +73,7 @@ We may share information we have collected about you in certain situations. Your
 If we believe the release of information about you is necessary to respond to legal process, to investigate or remedy potential violations of our policies, or to protect the rights, property, and safety of others, we may share your information as permitted or required by any applicable law, rule, or regulation.
 
 **Interactions with Other Users**
-If you interact with other users of the App, those users may see your name, profile photo, and descriptions of your activity, including sending invitations to other users, chatting with other users, liking posts, following blogs. Your gaming stats and public profile information are visible to others to enable the core teaming functionality of Aegis Esports.
+If you interact with other users of the App, those users may see your name, profile photo, and descriptions of your activity, including sending invitations to other users, chatting with other users, liking posts, following blogs. Your gaming stats and public profile information are visible to others to enable the core teaming functionality of Aegis.
 
 **Online Postings**
 When you post comments, contributions, or other content to the App (like LFT or LFP posts), your posts may be viewed by all users and may be publicly distributed outside the App in perpetuity.
@@ -84,12 +84,12 @@ We use administrative, technical, and physical security measures to help protect
 
 ## 6. Children's Privacy
 
-Aegis Esports is not intended for children under the age of 13. We do not knowingly collect personally identifiable information from children under 13. If you are a parent or guardian and you are aware that your child has provided us with personal data, please contact us. If we become aware that we have collected personal data from children without verification of parental consent, we take steps to remove that information from our servers.
+Aegis is not intended for children under the age of 13. We do not knowingly collect personally identifiable information from children under 13. If you are a parent or guardian and you are aware that your child has provided us with personal data, please contact us. If we become aware that we have collected personal data from children without verification of parental consent, we take steps to remove that information from our servers.
 
 ## 7. Account Deletion and Data Retention
 
 **Right to Deletion**
-You have the right to request the deletion of your personal data. We provide an in-app "Delete Account" feature within the Settings page of the Aegis Esports mobile application and the web platform.
+You have the right to request the deletion of your personal data. We provide an in-app "Delete Account" feature within the Settings page of the Aegis mobile application and the web platform.
 
 **What Happens When You Delete Your Account:**
 *   To comply with data privacy laws and App Store/Play Store regulations, initiating the account deletion process permanently removes your Personally Identifiable Information (PII) from our active systems.
@@ -119,6 +119,6 @@ If you no longer wish to receive correspondence, emails, or other communications
 
 If you have questions or comments about this Privacy Policy, please contact us at:
 
-**Aegis Esports**
+**Aegis**
 swayamsn123@gmail.com
 https://aegis3-0.vercel.app

@@ -529,7 +529,7 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
     ctx.fillStyle = 'rgba(255,255,255,0.3)';
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('Powered by Aegis Esports  ·  aegis.gg', W / 2, footY + 58);
+    ctx.fillText('Powered by Aegis  ·  aegis.gg', W / 2, footY + 58);
 
     // ── 13. Download ──
     const link = document.createElement('a');
