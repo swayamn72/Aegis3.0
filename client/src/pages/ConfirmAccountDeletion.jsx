@@ -96,7 +96,7 @@ const ConfirmAccountDeletion = () => {
                 <button
                   onClick={handleConfirmDeletion}
                   disabled={isDeleting}
-                  className={\`px-6 py-3.5 rounded-xl bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold transition-all w-full sm:w-auto flex items-center justify-center gap-2 flex-1 \${isDeleting ? 'opacity-70 cursor-not-allowed' : ''}\`}
+                  className={`px-6 py-3.5 rounded-xl bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold transition-all w-full sm:w-auto flex items-center justify-center gap-2 flex-1 ${isDeleting ? 'opacity-70 cursor-not-allowed' : ''}`}
                 >
                   {isDeleting ? (
                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
