@@ -335,7 +335,7 @@ const EmptyState = ({ icon: Icon, title, subtitle, cta, onCta }) => (
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const AegisMyProfile = () => {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   const [showShareModal, setShowShareModal] = useState(false);
@@ -344,14 +344,14 @@ const AegisMyProfile = () => {
   const [teamLogoError, setTeamLogoError] = useState(false);
   const [syncingValo, setSyncingValo] = useState(false);
   // 'bgmi' | 'valorant'
-  const [gameView, setGameView] = useState('bgmi');
+  const [gameView, setGameView] = useState('valorant');
 
   const handleSyncValorant = async () => {
     setSyncingValo(true);
     try {
       const res = await axiosInstance.post('/api/players/sync-valorant-stats');
       toast.success(res.data.message);
-      setTimeout(() => window.location.reload(), 1000);
+      await refreshUser();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to sync stats');
     } finally {
@@ -419,10 +419,11 @@ const AegisMyProfile = () => {
     [user?.gameIds]
   );
 
-  // Default gameView to primaryGame once user loads
+  // Default gameView: prefer valorant if linked, else bgmi
   useEffect(() => {
-    if (user?.primaryGame) setGameView(user.primaryGame === 'VALORANT' ? 'valorant' : 'bgmi');
-  }, [user?.primaryGame]);
+    if (hasValorantId) setGameView('valorant');
+    else if (hasBgmiId) setGameView('bgmi');
+  }, [hasValorantId, hasBgmiId]);
 
   // Live Valorant rank + last 5 matches via the new public endpoint
   const {
@@ -584,18 +585,6 @@ const AegisMyProfile = () => {
                 <div className="mb-2 w-full md:w-auto">
                   <div className="flex flex-col md:flex-row items-center gap-2 md:gap-3 mb-2 md:mb-1">
                     <h1 className="text-2xl md:text-3xl font-bold text-white break-words">{userData.username}</h1>
-                    {(() => {
-                      const badge = getRatingBadge(userData.aegisRating);
-                      return (
-                        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border ${badge.bg} ${badge.border}`}>
-                          <img src={badge.badge} alt={badge.tier} className="w-5 h-5" />
-                          <span className={`text-sm font-bold ${badge.textClass}`}>{userData.aegisRating}</span>
-                        </div>
-                      );
-                    })()}
-                    {user.aegisIsProvisional && (
-                      <span className="text-xs text-zinc-500 flex items-center gap-1">⏳ Provisional</span>
-                    )}
                   </div>
                   <p className="text-zinc-400 text-sm md:text-base">{userData.realName}</p>
                   {userData.primaryGameId && (
@@ -682,15 +671,12 @@ const AegisMyProfile = () => {
           <StatBox icon={Sword} label="Total Kills" value={userData.statistics.totalKills || 0} color="red" />
           <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4 transition-all hover:bg-zinc-900">
             <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 bg-[#FF4500]/10 rounded-lg">
-                {(() => { const b = getRatingBadge(userData.aegisRating); return <img src={b.badge} alt={b.tier} className="w-5 h-5" />; })()}
+              <div className="p-2 bg-zinc-700/30 rounded-lg">
+                <Gamepad2 className="w-5 h-5 text-zinc-400" />
               </div>
-              <span className="text-zinc-400 text-sm">Aegis Rating</span>
+              <span className="text-zinc-400 text-sm">Matches</span>
             </div>
-            <div className="flex items-baseline gap-2">
-              <div className="text-2xl font-bold" style={{ color: getRatingBadge(userData.aegisRating).color }}>{userData.aegisRating || 1000}</div>
-              <span className="text-xs text-zinc-500">{getRatingBadge(userData.aegisRating).tier}</span>
-            </div>
+            <div className="text-2xl font-bold text-white">{userData.statistics?.matchesPlayed || 0}</div>
           </div>
         </div>
 

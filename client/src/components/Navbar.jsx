@@ -1,17 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, X, MessageCircle, User, Users, Settings, LogOut, Trophy, Star, Bell, Gamepad2 } from 'lucide-react';
-import logo from '../assets/newlogo.png';
+import logo from '../assets/logo.png';
 import { useAuth } from '../context/AuthContext';
 import ProfileDropdown from './ProfileDropdown';
 import axios from "axios";
 
-const Navbar = () => {
+const Navbar = ({ isLandingPage = false }) => {
   const [isOpen, setIsOpen] = React.useState(false);
+  const [scrolled, setScrolled] = React.useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { isAuthenticated, user, logout } = useAuth();
   const coins = user?.coins || 0;
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 400); // Hero section height approx
+    };
+    if (isLandingPage) {
+      window.addEventListener('scroll', handleScroll);
+      return () => window.removeEventListener('scroll', handleScroll);
+    }
+  }, [isLandingPage]);
+
+  const showAuthButtons = !isLandingPage || scrolled;
 
   const navLinks = [
     { to: "/", text: "Dashboard" },
@@ -69,7 +82,7 @@ const Navbar = () => {
 
         {/* Nav Links - Desktop */}
         <nav className="hidden md:flex items-center gap-2">
-          {navLinks.map(link => <CustomNavLink key={link.text} {...link} />)}
+          {isAuthenticated && navLinks.map(link => <CustomNavLink key={link.text} {...link} />)}
         </nav>
 
         {/* Right Section - Desktop */}
@@ -91,20 +104,22 @@ const Navbar = () => {
 
           {/* Auth Buttons or Profile */}
           {!isAuthenticated ? (
-            <div className="flex items-center gap-3">
-              <NavLink
-                to="/login"
-                className="font-semibold text-white text-sm px-5 py-2 rounded-lg border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900/50 transition-all duration-300"
-              >
-                Login
-              </NavLink>
-              <NavLink
-                to="/signup"
-                className="font-semibold text-white text-sm px-5 py-2 rounded-lg bg-[#FF4500] hover:bg-[#FF4500]/90 transition-all duration-300 shadow-lg shadow-[#FF4500]/20"
-              >
-                Sign Up
-              </NavLink>
-            </div>
+            showAuthButtons && (
+              <div className={`flex items-center gap-3 transition-opacity duration-300`}>
+                <NavLink
+                  to="/login"
+                  className="font-semibold text-white text-sm px-5 py-2 rounded-lg border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900/50 transition-all duration-300"
+                >
+                  Login
+                </NavLink>
+                <NavLink
+                  to="/signup"
+                  className="font-semibold text-white text-sm px-5 py-2 rounded-lg bg-[#FF4500] hover:bg-[#FF4500]/90 transition-all duration-300 shadow-lg shadow-[#FF4500]/20"
+                >
+                  Sign Up
+                </NavLink>
+              </div>
+            )
           ) : (
             <ProfileDropdown user={user} logout={logout} />
           )}
@@ -125,7 +140,7 @@ const Navbar = () => {
       {isOpen && (
         <div className="md:hidden bg-black/98 backdrop-blur-xl absolute top-20 left-0 w-full border-t border-zinc-900 shadow-2xl">
           <nav className="flex flex-col items-stretch gap-2 py-6 px-4">
-            {navLinks.map(link => <MobileNavLink key={link.text} {...link} />)}
+            {isAuthenticated && navLinks.map(link => <MobileNavLink key={link.text} {...link} />)}
 
             <div className="flex flex-col items-stretch gap-3 mt-6 pt-6 border-t border-zinc-900">
               {!isAuthenticated ? (

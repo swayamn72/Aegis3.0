@@ -208,7 +208,8 @@ const LoggedInHomepage = () => {
 
         {/* Global Hub Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-12">
-          <StatCard label="Aegis Rating" value={player?.aegisRating || 1200} icon={TrendingUp} />
+          {isBGMI && <StatCard label="Aegis Rating" value={player?.aegisRating || 1200} icon={TrendingUp} />}
+          {!isBGMI && <StatCard label="Total Matches" value={matches.length || 0} icon={Activity} />}
           <StatCard label={`${selectedGame} Team`} value={playerTeams[0]?.teamTag || 'No Team'} icon={Users} />
           <StatCard label="Active Circuits" value={tournaments.length} icon={Trophy} />
           <StatCard label="Recent Win Rate" value={`${dynamicWinRate}%`} icon={Flame} />
@@ -217,7 +218,8 @@ const LoggedInHomepage = () => {
         {/* Main Dashboard Interaction */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
 
-          {/* LEFT: Rating & Performance (4 Cols) */}
+          {/* LEFT: Rating & Performance (4 Cols) — BGMI only */}
+          {isBGMI && (
           <div className="lg:col-span-4 space-y-8">
 
             {/* Aegis Rating Card - THE HERO PIECE */}
@@ -235,9 +237,6 @@ const LoggedInHomepage = () => {
                   <div className="absolute bottom-4 right-4 w-12 h-2 bg-zinc-600 z-10"></div>
                   <div className="absolute inset-0 bg-[url('/diagonal-stripes.svg')] opacity-5 z-0 mix-blend-overlay"></div>
                 </>
-              )}
-              {!isBGMI && (
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#00FFFF] to-transparent z-10"></div>
               )}
 
               <div className="relative z-10 pt-4">
@@ -260,7 +259,7 @@ const LoggedInHomepage = () => {
                   <div className={`h-2.5 w-full bg-black/60 overflow-hidden ${isBGMI ? 'rounded-none border border-zinc-800' : 'rounded-full'}`}>
                     <div
                       className={`h-full ${theme.accentBg} transition-all duration-1000 ${isBGMI ? 'shadow-[0_0_10px_#FF4500]' : ''}`}
-                      style={{ width: `${Math.min(((player?.aegisRating || 0) % 500) / 5, 100)}%` }}
+                      style={{ width: `${Math.min(((player?.aegisRating || 0) % 500) / 7, 100)}%` }}
                     ></div>
                   </div>
                 </div>
@@ -281,6 +280,7 @@ const LoggedInHomepage = () => {
             </div>
 
           </div>
+          )}
 
           {/* MIDDLE: Global Events & Live Streams (8 Cols) */}
           <div className="lg:col-span-8 space-y-8">

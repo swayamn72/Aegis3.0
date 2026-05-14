@@ -418,7 +418,7 @@ const DetailedPlayerProfile = () => {
     const [relationship, setRelationship] = useState({ iBlocked: false, blockedMe: false, isBlocked: false });
     const [moderationBusy, setModerationBusy] = useState(false);
     // 'bgmi' | 'valorant' — which game's live stats to show
-    const [gameView, setGameView] = useState('bgmi');
+    const [gameView, setGameView] = useState('valorant');
 
     const isOwnProfile = user?._id && id ? user._id === id : false;
 
@@ -643,18 +643,6 @@ const DetailedPlayerProfile = () => {
                                         <h1 className="text-2xl md:text-3xl font-bold text-white">
                                             {playerData.username}
                                         </h1>
-                                        {(() => {
-                                            const badge = getRatingBadge(playerData.aegisRating);
-                                            return (
-                                                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border ${badge.bg} ${badge.border} scale-90 md:scale-100`}>
-                                                    <img src={badge.badge} alt={badge.tier} className="w-5 h-5" />
-                                                    <span className={`text-sm font-bold ${badge.textClass}`}>{playerData.aegisRating || 1000}</span>
-                                                </div>
-                                            );
-                                        })()}
-                                        {playerData.aegisIsProvisional && (
-                                            <span className="text-[10px] md:text-xs text-zinc-500 flex items-center gap-1">⏳ Provisional</span>
-                                        )}
                                     </div>
                                     <p className="text-zinc-400 text-sm md:text-base">{playerData.realName}</p>
                                     {playerData.gameIds?.find(g => g.isPrimary) && (
@@ -670,7 +658,7 @@ const DetailedPlayerProfile = () => {
                                     <Share2 className="w-4 h-4" />
                                     {showCopyMessage ? 'Copied!' : 'Share Profile'}
                                 </button>
-                                {!isOwnProfile && (
+                                {(user && !isOwnProfile) && (
                                     <>
                                         <button
                                             onClick={() => navigate('/chat', { state: { selectedUserId: playerData._id } })}
@@ -748,42 +736,15 @@ const DetailedPlayerProfile = () => {
                             ))}
                         </div>
 
-                        {/* Game View Switcher — only visible when player has multiple game IDs */}
-                        {hasValorantId && (
-                            <div className="mt-4 flex items-center gap-2">
-                                <span className="text-zinc-500 text-xs font-semibold uppercase tracking-wider">View stats for:</span>
-                                <div className="flex items-center bg-zinc-800/80 border border-zinc-700/50 rounded-xl p-1 gap-1">
-                                    {hasBgmiId && (
-                                        <button
-                                            onClick={() => setGameView('bgmi')}
-                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${
-                                                gameView === 'bgmi'
-                                                    ? 'bg-yellow-500 text-zinc-900 shadow-lg shadow-yellow-500/30'
-                                                    : 'text-zinc-400 hover:text-yellow-400 hover:bg-zinc-700/50'
-                                            }`}
-                                        >
-                                            <span className="text-[10px]">🔫</span>
-                                            BGMI
-                                        </button>
-                                    )}
-                                    <button
-                                        onClick={() => setGameView('valorant')}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${
-                                            gameView === 'valorant'
-                                                ? 'bg-red-500 text-white shadow-lg shadow-red-500/30'
-                                                : 'text-zinc-400 hover:text-red-400 hover:bg-zinc-700/50'
-                                        }`}
-                                    >
-                                        <span className="text-[10px]">◆</span>
-                                        VALORANT
-                                        {valoLoading && <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />}
-                                    </button>
-                                </div>
-                                {gameView === 'valorant' && valoProfile?.riotId && (
-                                    <span className="text-zinc-600 text-[10px] font-mono">{valoProfile.riotId}</span>
-                                )}
-                            </div>
-                        )}
+                        {/* Game View Switcher — always visible when player has any game IDs */}
+                        <GameViewSwitcher
+                            gameView={gameView}
+                            setGameView={setGameView}
+                            hasBgmiId={hasBgmiId}
+                            hasValorantId={hasValorantId}
+                            valoLoading={valoLoading}
+                            riotId={valoProfile?.riotId || playerData.gameIds?.find(g => g.game === 'VALORANT')?.inGameName}
+                        />
                     </div>
                 </div>
 
@@ -818,17 +779,12 @@ const DetailedPlayerProfile = () => {
                     </div>
                     <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
                         <div className="flex items-center gap-3 mb-2">
-                            <div className="p-2 bg-[#FF4500]/10 rounded-lg">
-                                {(() => { const b = getRatingBadge(playerData.aegisRating); return <img src={b.badge} alt={b.tier} className="w-5 h-5" />; })()}
+                            <div className="p-2 bg-zinc-700/30 rounded-lg">
+                                <Activity className="w-5 h-5 text-zinc-400" />
                             </div>
-                            <span className="text-zinc-400 text-sm">Aegis Rating</span>
+                            <span className="text-zinc-400 text-sm">Matches</span>
                         </div>
-                        <div className="flex items-baseline gap-2">
-                            <div className="text-2xl font-bold" style={{ color: getRatingBadge(playerData.aegisRating).color }}>
-                                {playerData.aegisRating || 1000}
-                            </div>
-                            <span className="text-xs text-zinc-500">{getRatingBadge(playerData.aegisRating).tier}</span>
-                        </div>
+                        <div className="text-2xl font-bold text-white">{totalMatches || playerData.statistics?.matchesPlayed || 0}</div>
                     </div>
                 </div>
 

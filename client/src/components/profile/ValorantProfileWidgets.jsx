@@ -229,33 +229,53 @@ export const ValorantMatchRow = ({ match }) => {
 
 // ─── GameViewSwitcher ─────────────────────────────────────────────────────────
 export const GameViewSwitcher = ({ gameView, setGameView, hasBgmiId, hasValorantId, valoLoading, riotId }) => {
-    if (!hasValorantId) return null;
+    const hasMultiple = hasBgmiId && hasValorantId;
+    // Only show if player has at least one game ID
+    if (!hasBgmiId && !hasValorantId) return null;
+    // If only one game, no need to switch — but still show label
     return (
-        <div className="mt-4 flex items-center gap-2 flex-wrap">
-            <span className="text-zinc-500 text-xs font-semibold uppercase tracking-wider">View stats for:</span>
-            <div className="flex items-center bg-zinc-800/80 border border-zinc-700/50 rounded-xl p-1 gap-1">
-                {hasBgmiId && (
-                    <button onClick={() => setGameView('bgmi')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${
-                            gameView === 'bgmi'
-                                ? 'bg-yellow-500 text-zinc-900 shadow-lg shadow-yellow-500/30'
-                                : 'text-zinc-400 hover:text-yellow-400 hover:bg-zinc-700/50'
-                        }`}>
-                        <span className="text-[10px]">🔫</span> BGMI
-                    </button>
-                )}
-                <button onClick={() => setGameView('valorant')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${
+        <div className="mt-5 flex items-center gap-3 flex-wrap">
+            {/* Capsule toggle */}
+            <div className="inline-flex items-center p-1 bg-zinc-900 border border-zinc-700/60 rounded-full shadow-inner gap-0.5">
+                {/* BGMI option */}
+                <button
+                    onClick={() => hasBgmiId && setGameView('bgmi')}
+                    disabled={!hasBgmiId}
+                    title={!hasBgmiId ? 'No BGMI ID linked' : 'Switch to BGMI stats'}
+                    className={`relative px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-2 ${
+                        gameView === 'bgmi'
+                            ? 'bg-yellow-500 text-zinc-900 shadow-lg shadow-yellow-500/40'
+                            : hasBgmiId
+                                ? 'text-zinc-400 hover:text-yellow-400 hover:bg-zinc-800/80'
+                                : 'text-zinc-700 cursor-not-allowed'
+                    }`}
+                >
+                    <span className="text-[10px]">🔫</span>
+                    BGMI
+                </button>
+
+                {/* VALORANT option */}
+                <button
+                    onClick={() => hasValorantId && setGameView('valorant')}
+                    disabled={!hasValorantId}
+                    title={!hasValorantId ? 'No Valorant ID linked' : 'Switch to Valorant stats'}
+                    className={`relative px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-2 ${
                         gameView === 'valorant'
-                            ? 'bg-red-500 text-white shadow-lg shadow-red-500/30'
-                            : 'text-zinc-400 hover:text-red-400 hover:bg-zinc-700/50'
-                    }`}>
-                    <span className="text-[10px]">◆</span> VALORANT
+                            ? 'bg-red-500 text-white shadow-lg shadow-red-500/40'
+                            : hasValorantId
+                                ? 'text-zinc-400 hover:text-red-400 hover:bg-zinc-800/80'
+                                : 'text-zinc-700 cursor-not-allowed'
+                    }`}
+                >
+                    <span className="text-[10px]">◆</span>
+                    VALORANT
                     {valoLoading && <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />}
                 </button>
             </div>
+
+            {/* Riot ID label */}
             {gameView === 'valorant' && riotId && (
-                <span className="text-zinc-600 text-[10px] font-mono">{riotId}</span>
+                <span className="text-zinc-600 text-[10px] font-mono tracking-wide">{riotId}</span>
             )}
         </div>
     );

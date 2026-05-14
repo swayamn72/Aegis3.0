@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./config/queryClient";
 import "./App.css";
@@ -24,6 +24,7 @@ const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage"));
 const EmailVerification = lazy(() => import("./pages/EmailVerification"));
 const UsernameSetup = lazy(() => import("./pages/UsernameSetup"));
 const OrgProfileSetup = lazy(() => import("./pages/OrgProfileSetup"));
+const LandingPage = lazy(() => import("./components/LandingPage"));
 const HomePage = lazy(() => import("./pages/HomePage"));
 const MyTeamsPage = lazy(() => import("./pages/MyTeamsPage"));
 const DetailedTeamInfoPage = lazy(() => import("./pages/DetailedTeamInfoPage"));
@@ -38,7 +39,6 @@ const DetailedTournamentInfoPage = lazy(() => import('./pages/DetailedTournament
 const DetailedMatchInfoPage = lazy(() => import('./pages/DetailedMatchInfoPage'));
 const TournamentManagementPageOrg = lazy(() => import("./orgs/TournamentManagementPageOrg"));
 const DetailedPlayerProfilePage = lazy(() => import("./pages/DetailedPlayerProfilePage"));
-const AegisLeaderboard = lazy(() => import("./components/AegisLeaderboard"));
 const AegisOrgPendingApproval = lazy(() => import("./orgs/OrgPendingApproval"));
 const OrgDashboard = lazy(() => import("./orgs/OrgDashboard"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
@@ -51,6 +51,8 @@ const FantasySquadBuilder = lazy(() => import("./pages/FantasySquadBuilder"));
 const FantasyLeaderboard = lazy(() => import("./pages/FantasyLeaderboard"));
 const ActiveMatchesPage = lazy(() => import("./pages/ActiveMatchesPage"));
 const MatchRoomPage = lazy(() => import("./pages/MatchRoomPage"));
+const TermsOfServicePage = lazy(() => import("./pages/TermsOfServicePage"));
+const SupportPage = lazy(() => import("./pages/SupportPage"));
 // --- Loading fallback for lazy-loaded routes ---
 const PageLoader = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#0a0a23' }}>
@@ -58,6 +60,22 @@ const PageLoader = () => (
     <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
   </div>
 );
+
+// Custom Root Route to serve Landing Page for unauthenticated users,
+// OrgDashboard for orgs, and HomePage for players.
+const RootRoute = () => {
+  const { isAuthenticated, loading, userRole } = useAuth();
+  
+  if (loading) return <PageLoader />;
+  if (!isAuthenticated) return <LandingPage />;
+  if (userRole === 'organization') return <Navigate to="/org/dashboard" replace />;
+  
+  return (
+    <ProtectedRoute requireRole="player">
+      <HomePage />
+    </ProtectedRoute>
+  );
+};
 
 // Wrapper component to access auth context
 function AppContent() {
@@ -81,11 +99,12 @@ function AppContent() {
             <Route path="/org-profile-setup" element={<OrgProfileSetup />} />
             <Route path="/detailed/:id" element={<DetailedPlayerProfilePage />} />
             <Route path="/matches/:id" element={<DetailedMatchInfoPage />} />
-            <Route path="/leaderboard" element={<AegisLeaderboard />} />
             <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
             <Route path="/delete-account" element={<PublicRoute><RequestAccountDeletion /></PublicRoute>} />
             <Route path="/confirm-delete-account/:token" element={<PublicRoute><ConfirmAccountDeletion /></PublicRoute>} />
             <Route path="/child-safety" element={<ChildSafetyPolicyPage />} />
+            <Route path="/terms" element={<TermsOfServicePage />} />
+            <Route path="/support" element={<SupportPage />} />
 
             {/* Organization Routes */}
             <Route
@@ -108,11 +127,7 @@ function AppContent() {
             {/* Player-Only Protected Routes */}
             <Route
               path="/"
-              element={
-                <ProtectedRoute requireRole="player">
-                  <HomePage />
-                </ProtectedRoute>
-              }
+              element={<RootRoute />}
             />
             <Route
               path="/my-teams"

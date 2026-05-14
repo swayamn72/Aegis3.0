@@ -205,7 +205,10 @@ router.post('/sync-valorant-stats', auth, async (req, res) => {
   } catch (error) {
     console.error('Valorant API Error:', error.response?.data || error.message);
     const msg = error.response?.data?.message || 'Failed to sync Valorant stats.';
-    return res.status(error.response?.status || 500).json({ message: msg });
+    // Prevent forwarding 401/403 to avoid triggering client-side auth logout
+    const apiStatus = error.response?.status;
+    const outStatus = (apiStatus === 401 || apiStatus === 403) ? 502 : (apiStatus || 500);
+    return res.status(outStatus).json({ message: msg });
   }
 });
 
@@ -240,7 +243,9 @@ router.get('/valorant-matches', auth, async (req, res) => {
     return res.json({ matches: matchesRes.data?.data || [] });
   } catch (error) {
     console.error('Valorant Match Fetch Error:', error.response?.data || error.message);
-    return res.status(error.response?.status || 500).json({ message: 'Failed to fetch matches' });
+    const apiStatus = error.response?.status;
+    const outStatus = (apiStatus === 401 || apiStatus === 403) ? 502 : (apiStatus || 500);
+    return res.status(outStatus).json({ message: 'Failed to fetch matches' });
   }
 });
 
@@ -1146,7 +1151,9 @@ router.get('/:id/valorant-profile', async (req, res) => {
     return res.json(payload);
   } catch (error) {
     console.error('Valorant profile fetch error:', error.response?.data || error.message);
-    return res.status(error.response?.status || 500).json({ message: 'Failed to fetch Valorant profile' });
+    const apiStatus = error.response?.status;
+    const outStatus = (apiStatus === 401 || apiStatus === 403) ? 502 : (apiStatus || 500);
+    return res.status(outStatus).json({ message: 'Failed to fetch Valorant profile' });
   }
 });
 
