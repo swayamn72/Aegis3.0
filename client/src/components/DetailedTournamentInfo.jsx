@@ -708,14 +708,10 @@ const DetailedTournamentInfo = () => {
                   </div>
                 )}
               </div>
-
-
-            </div>
-
+              
               {/* Sidebar */}
-          <div className="space-y-5">
-
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-5">
+              <div className="space-y-5">
+                <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-5">
               <h3 className="text-lg font-bold text-white mb-4">Quick Actions</h3>
               <div className="space-y-2.5">
                 {user ? (
