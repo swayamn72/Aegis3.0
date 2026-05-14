@@ -187,6 +187,28 @@ const initChat = async (server) => {
       }
     });
 
+    // --- Live Match Subscription (public match data) ---
+    socket.on('joinMatch', (matchId) => {
+      if (matchId && typeof matchId === 'string') {
+        socket.join(`match:${matchId}`);
+        socket.emit('matchJoined', { matchId });
+      }
+    });
+    socket.on('leaveMatch', (matchId) => {
+      if (matchId) socket.leave(`match:${matchId}`);
+    });
+
+    // --- Fantasy Contest Subscription ---
+    socket.on('joinFantasyContest', (contestId) => {
+      if (contestId && typeof contestId === 'string') {
+        socket.join(`fantasy:${contestId}`);
+        socket.emit('fantasyContestJoined', { contestId });
+      }
+    });
+    socket.on('leaveFantasyContest', (contestId) => {
+      if (contestId) socket.leave(`fantasy:${contestId}`);
+    });
+
     // Join tryout chat room (with participant authorization)
     socket.on('joinTryoutChat', async (chatId) => {
       try {
@@ -460,6 +482,198 @@ const initChat = async (server) => {
         socket.emit('error', { message: 'Failed to send message' });
       }
     });
+
+    // --- Match Room Chat ---
+    socket.on('joinMatchRoom', async (matchId) => {
+      try {
+        if (isSocketTokenExpired(socket)) {
+          rejectExpiredSocket(socket);
+          return;
+        }
+        if (matchId && typeof matchId === 'string') {
+          const roomName = `matchRoom:${matchId}`;
+          socket.join(roomName);
+          socket.emit('matchRoomJoined', { matchId, roomName });
+          logger.info('socket_match_room_joined', { socketId: socket.id, userId: socket.userId, matchId });
+        }
+      } catch (error) {
+        logger.error('socket_join_match_room_error', {
+          socketId: socket.id,
+          userId: socket.userId,
+          matchId,
+          error: error.message,
+        });
+      }
+    });
+
+    socket.on('leaveMatchRoom', (matchId) => {
+      if (matchId) socket.leave(`matchRoom:${matchId}`);
+    });
+
+    socket.on('sendMatchRoomMessage', async ({ matchId, message }) => {
+      try {
+        if (isSocketTokenExpired(socket)) {
+          rejectExpiredSocket(socket);
+          return;
+        }
+
+        const senderId = socket.userId;
+        const trimmedMessage = (message || '').trim();
+        if (!trimmedMessage || trimmedMessage.length > 500) {
+          socket.emit('error', { message: 'Invalid message (empty or > 500 chars)' });
+          return;
+        }
+
+        // Lazy-import to avoid circular dependency
+        const { default: MatchRoomMessage } = await import('../models/matchRoomMessage.model.js');
+        const { default: PlayerModel } = await import('../models/player.model.js');
+
+        const msg = await MatchRoomMessage.create({
+          match: matchId,
+          sender: senderId,
+          senderModel: 'Player',
+          message: trimmedMessage,
+          messageType: 'text',
+        });
+
+        const senderProfile = await PlayerModel.findById(senderId)
+          .select('username profilePicture inGameName')
+          .lean();
+
+        const payload = {
+          _id: msg._id,
+          match: matchId,
+          sender: senderProfile || { _id: senderId, username: 'Unknown' },
+          message: trimmedMessage,
+          messageType: 'text',
+          createdAt: msg.createdAt,
+        };
+
+        io.to(`matchRoom:${matchId}`).emit('matchRoom:message', payload);
+      } catch (error) {
+        logger.error('socket_match_room_send_error', {
+          socketId: socket.id,
+          userId: socket.userId,
+          error: error.message,
+        });
+        socket.emit('error', { message: 'Failed to send message' });
+      }
+    });
+
+    // --- Map Veto WebSocket ---
+
+    // Player joins the veto room — signals their team is present
+    socket.on('mapVeto:ready', async ({ matchId }) => {
+      try {
+        if (isSocketTokenExpired(socket)) { rejectExpiredSocket(socket); return; }
+
+        const { default: mapVetoService } = await import('../services/mapVeto.service.js');
+        const { default: RegistrationModel } = await import('../models/registration.model.js');
+        const { default: MatchModel } = await import('../models/match.model.js');
+
+        const match = await MatchModel.findById(matchId).select('tournament vsResults gameTitle').lean();
+        if (!match) { socket.emit('error', { message: 'Match not found' }); return; }
+
+        // Only Valorant matches use map veto
+        if (match.gameTitle !== 'VALORANT') {
+          socket.emit('mapVeto:error', { error: 'Map veto is only available for Valorant matches' });
+          return;
+        }
+
+        const reg = await RegistrationModel.findOne({
+          tournament: match.tournament,
+          'roster.player': socket.userId,
+        }).select('team').lean();
+
+        if (!reg) { socket.emit('error', { message: 'Not authorized for this match' }); return; }
+
+        const teamId = reg.team.toString();
+
+        // Join the match socket room so they receive all veto broadcasts
+        socket.join(`match:${matchId}`);
+
+        const result = mapVetoService.teamMemberJoined(matchId, teamId, socket.userId, io);
+        if (result.error) {
+          socket.emit('mapVeto:error', { error: result.error });
+          return;
+        }
+
+        // Confirm to this player
+        socket.emit('mapVeto:ready_ack', { matchId, teamId, status: result.status });
+
+      } catch (error) {
+        logger.error('socket_map_veto_ready_error', { socketId: socket.id, userId: socket.userId, error: error.message });
+        socket.emit('error', { message: 'Failed to ready up for veto' });
+      }
+    });
+
+    // Player leaves the veto room
+    socket.on('mapVeto:left', async ({ matchId }) => {
+      try {
+        const { default: mapVetoService } = await import('../services/mapVeto.service.js');
+        const { default: RegistrationModel } = await import('../models/registration.model.js');
+        const { default: MatchModel } = await import('../models/match.model.js');
+
+        const match = await MatchModel.findById(matchId).select('tournament').lean();
+        if (!match) return;
+
+        const reg = await RegistrationModel.findOne({
+          tournament: match.tournament,
+          'roster.player': socket.userId,
+        }).select('team').lean();
+
+        if (reg) {
+          mapVetoService.teamMemberLeft(matchId, reg.team.toString(), socket.userId);
+        }
+        socket.leave(`match:${matchId}`);
+      } catch (error) {
+        logger.error('socket_map_veto_left_error', { socketId: socket.id, error: error.message });
+      }
+    });
+
+    // Ban/pick action
+    socket.on('mapVeto:action', async ({ matchId, map }) => {
+      try {
+        if (isSocketTokenExpired(socket)) { rejectExpiredSocket(socket); return; }
+
+        const { default: mapVetoService } = await import('../services/mapVeto.service.js');
+        const { default: RegistrationModel } = await import('../models/registration.model.js');
+        const { default: MatchModel } = await import('../models/match.model.js');
+
+        const match = await MatchModel.findById(matchId).select('tournament vsResults').lean();
+        if (!match) { socket.emit('error', { message: 'Match not found' }); return; }
+
+        const reg = await RegistrationModel.findOne({
+          tournament: match.tournament,
+          'roster.player': socket.userId,
+        }).select('team').lean();
+
+        if (!reg) { socket.emit('error', { message: 'Not authorized for this match' }); return; }
+
+        const teamId = reg.team.toString();
+        // Security: verify this team is actually a participant in this specific match
+        const matchTeamA = match.vsResults?.teamA?.toString();
+        const matchTeamB = match.vsResults?.teamB?.toString();
+        if (teamId !== matchTeamA && teamId !== matchTeamB) {
+          socket.emit('error', { message: 'Your team is not part of this match' });
+          return;
+        }
+
+        const result = mapVetoService.processAction(matchId, teamId, map, io);
+
+        if (!result.success) { socket.emit('mapVeto:error', { error: result.error }); return; }
+
+        io.to(`match:${matchId}`).emit('mapVeto:updated', result.state);
+
+        if (result.state.status === 'completed') {
+          io.to(`match:${matchId}`).emit('mapVeto:completed', result.state);
+        }
+      } catch (error) {
+        logger.error('socket_map_veto_action_error', { socketId: socket.id, userId: socket.userId, error: error.message });
+        socket.emit('error', { message: 'Veto action failed' });
+      }
+    });
+
 
     socket.on('disconnect', () => {
       logger.info('socket_disconnected', {

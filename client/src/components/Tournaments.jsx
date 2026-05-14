@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Search, ChevronDown, MapPin, Gamepad2, Trophy, Calendar, Users, Clock, Star } from 'lucide-react';
 import { getTournaments } from '../api/tournaments';
+import BGMILogo from '../assets/gameLogos/BGMI_LOGO.png';
+import ValorantLogo from '../assets/gameLogos/valorant2.png';
 
 const FilterDropdown = ({ options, selected, onSelect, placeholder, icon: Icon }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -160,7 +162,13 @@ const TournamentCard = ({ tournament, onClick }) => {
 
             <div className="flex items-center gap-2 text-sm text-zinc-400 mb-3">
               <span className="flex items-center gap-1">
-                <Gamepad2 className="w-4 h-4" />
+                {tournament.gameTitle === 'VALORANT' ? (
+                  <img src={ValorantLogo} alt="Valorant" className="w-4 h-4 object-contain opacity-80" />
+                ) : tournament.gameTitle === 'BGMI' ? (
+                  <img src={BGMILogo} alt="BGMI" className="w-4 h-4 object-contain opacity-80" />
+                ) : (
+                  <Gamepad2 className="w-4 h-4" />
+                )}
                 {tournament.gameTitle || 'Unknown Game'}
               </span>
               <span>•</span>
@@ -415,7 +423,13 @@ const Tournaments = () => {
 
               <div className="flex flex-wrap justify-center md:justify-start gap-x-6 gap-y-2 text-zinc-300">
                 <span className="flex items-center gap-2">
-                  <Gamepad2 className="w-5 h-5 text-orange-400" />
+                  {featuredTournament.gameTitle === 'VALORANT' ? (
+                    <img src={ValorantLogo} alt="Valorant" className="w-5 h-5 object-contain opacity-80" />
+                  ) : featuredTournament.gameTitle === 'BGMI' ? (
+                    <img src={BGMILogo} alt="BGMI" className="w-5 h-5 object-contain opacity-80" />
+                  ) : (
+                    <Gamepad2 className="w-5 h-5 text-orange-400" />
+                  )}
                   {featuredTournament.gameTitle}
                 </span>
                 <span className="flex items-center gap-2">

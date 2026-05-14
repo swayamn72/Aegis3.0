@@ -111,11 +111,11 @@ router.get('/:id', auth, async (req, res) => {
     const team = await Team.findById(teamId)
       .populate({
         path: 'captain',
-        select: 'username profilePicture primaryGame realName age country aegisRating statistics inGameRole discordTag instagram youtube twitter verified tournamentsPlayed matchesPlayed'
+        select: 'username profilePicture primaryGame realName age country aegisRating valRating statistics valorantStats inGameRole discordTag instagram youtube twitter verified tournamentsPlayed matchesPlayed'
       })
       .populate({
         path: 'players',
-        select: 'username profilePicture primaryGame realName age country aegisRating statistics inGameRole discordTag verified tournamentsPlayed matchesPlayed'
+        select: 'username profilePicture primaryGame realName age country aegisRating valRating statistics valorantStats inGameRole discordTag verified tournamentsPlayed matchesPlayed'
       })
       .populate('organization', 'orgName logo description website establishedDate')
       .select('-__v');
@@ -458,8 +458,9 @@ router.post('/invitations/:id/accept', auth, async (req, res) => {
       return res.status(400).json({ message: 'Team no longer exists' });
     }
 
-    if (team.players.length >= 5) {
-      return res.status(400).json({ message: 'Team is already full' });
+    const maxPlayers = team.primaryGame === 'VALORANT' ? 6 : 5;
+    if (team.players.length >= maxPlayers) {
+      return res.status(400).json({ message: `Team is already full (max ${maxPlayers} players)` });
     }
 
     // Add player to team
@@ -869,7 +870,7 @@ router.get('/search/:query', async (req, res) => {
         .sort({ aegisRating: -1 })
         .limit(limit)
         .select(
-          'teamName teamTag logo primaryGame region aegisRating captain players establishedDate'
+          'teamName teamTag logo primaryGame region aegisRating valRating captain players establishedDate'
         )
         .lean();
     }
@@ -893,7 +894,7 @@ router.get('/search/:query', async (req, res) => {
         .sort({ aegisRating: -1 })
         .limit(limit)
         .select(
-          'username realName profilePicture primaryGame aegisRating teamStatus team'
+          'username realName profilePicture primaryGame aegisRating valRating teamStatus team'
         )
         .lean();
     }
@@ -961,8 +962,9 @@ router.post('/:id/invite', auth, async (req, res) => {
     }
 
     // Hard cap on size
-    if (team.players.length >= 5) {
-      return res.status(400).json({ message: 'Team is already full (max 5 players)' });
+    const maxPlayers = team.primaryGame === 'VALORANT' ? 6 : 5;
+    if (team.players.length >= maxPlayers) {
+      return res.status(400).json({ message: `Team is already full (max ${maxPlayers} players)` });
     }
 
     // Check for existing pending invitation from this team to this player

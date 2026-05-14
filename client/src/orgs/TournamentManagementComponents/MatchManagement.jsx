@@ -30,6 +30,66 @@ const MatchManagement = ({ tournament, onUpdate }) => {
     const [ocrProcessing, setOcrProcessing] = useState(false);
     const [applyingOcr, setApplyingOcr] = useState(false);
     const MATCHES_PER_PAGE = 10;
+    const isValorant = tournament?.gameTitle === 'VALORANT';
+
+    // Valorant result entry state (per matchId)
+    const [valorantForms, setValForms] = useState({});
+    const [savingValorant, setSavingValorant] = useState(null);
+
+    const getValForm = (match) => {
+        const key = match._id;
+        if (valorantForms[key]) return valorantForms[key];
+        const bestOf = match.metadata?.bestOf || 1;
+        const mapResults = Array.from({ length: bestOf }, (_, i) => ({
+            map: match.pickedMaps?.[i] || '',
+            scoreA: match.vsResults?.mapResults?.[i]?.scoreA ?? '',
+            scoreB: match.vsResults?.mapResults?.[i]?.scoreB ?? '',
+        }));
+        return {
+            scoreA: match.vsResults?.scoreA ?? '',
+            scoreB: match.vsResults?.scoreB ?? '',
+            bestOf,
+            mapResults,
+        };
+    };
+
+    const updateValForm = (matchId, updates) => {
+        setValForms(prev => ({
+            ...prev,
+            [matchId]: { ...(prev[matchId] || {}), ...updates },
+        }));
+    };
+
+    const handleSaveValorantResults = async (match) => {
+        const form = valorantForms[match._id] || getValForm(match);
+        setSavingValorant(match._id);
+        try {
+            const teamA = match.vsResults?.teamA?._id || match.vsResults?.teamA;
+            const teamB = match.vsResults?.teamB?._id || match.vsResults?.teamB;
+            if (!teamA || !teamB) { toast.error('Teams not set on this match'); return; }
+            const payload = {
+                vsResults: {
+                    teamA,
+                    teamB,
+                    scoreA: Number(form.scoreA) || 0,
+                    scoreB: Number(form.scoreB) || 0,
+                    mapResults: (form.mapResults || []).map(m => ({
+                        map: m.map,
+                        scoreA: Number(m.scoreA) || 0,
+                        scoreB: Number(m.scoreB) || 0,
+                    })),
+                },
+            };
+            const { data } = await axios.put(`/api/matches/${match._id}/valorant-results`, payload);
+            setMatches(prev => prev.map(m => m._id === match._id ? data : m));
+            toast.success('Valorant result saved!');
+            if (onUpdate) onUpdate();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Failed to save Valorant result');
+        } finally {
+            setSavingValorant(null);
+        }
+    };
 
     // Helper to resolve group names from IDs
     const getGroupName = (groupId) => {
@@ -433,7 +493,9 @@ const MatchManagement = ({ tournament, onUpdate }) => {
             <div className="flex items-center justify-between mb-6">
                 <div>
                     <h3 className="text-xl font-semibold text-white">Match Results</h3>
-                    <p className="text-gray-400 text-sm mt-1">Enter kills and positions for each team</p>
+                    <p className="text-gray-400 text-sm mt-1">
+                        {isValorant ? 'Enter round scores for each map' : 'Enter kills and positions for each team'}
+                    </p>
                 </div>
                 <div className="flex items-center gap-2">
                     <select
@@ -543,6 +605,8 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                                         }`}>
                                         {(match.status || 'unknown').replace('_', ' ')}
                                     </span>
+                                    {/* OCR screenshot upload — BGMI only (slot-list based OCR) */}
+                                    {!isValorant && (
                                     <button
                                         onClick={() => openUploadModal(match)}
                                         disabled={tournament.status === 'completed'}
@@ -551,6 +615,7 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                                     >
                                         <Upload className="w-4 h-4" />
                                     </button>
+                                    )}
                                     <button
                                         onClick={() => {
                                             setSelectedMatch(match);
@@ -611,7 +676,124 @@ const MatchManagement = ({ tournament, onUpdate }) => {
                             {expandedMatches.has(match._id) && (
                                 <div className="border-t border-gray-700 p-4">
                                     <div className="space-y-3">
-                                        {(() => {
+                                        {isValorant ? (() => {
+                                            const valForm = getValForm(match);
+                                            const teamA = match.vsResults?.teamA;
+                                            const teamB = match.vsResults?.teamB;
+                                            if (!teamA || !teamB) {
+                                                return (
+                                                    <div className="text-center py-8">
+                                                        <Users className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+                                                        <p className="text-gray-400 text-sm">Teams not assigned yet</p>
+                                                    </div>
+                                                );
+                                            }
+                                            const teamAName = teamA.teamName || teamA.name || 'Team A';
+                                            const teamBName = teamB.teamName || teamB.name || 'Team B';
+                                            
+                                            return (
+                                                <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+                                                    <div className="flex items-center justify-between gap-8 mb-6">
+                                                        <div className="flex-1 text-right">
+                                                            <div className="text-xl font-bold text-white mb-2">{teamAName}</div>
+                                                            <input
+                                                                type="number" min="0" max="99"
+                                                                value={valForm.scoreA}
+                                                                onChange={e => updateValForm(match._id, { scoreA: e.target.value })}
+                                                                className="w-20 text-center text-3xl font-black bg-gray-900 border-2 border-gray-700 rounded-lg py-2 text-white focus:border-orange-500 focus:outline-none"
+                                                                disabled={tournament.status === 'completed'}
+                                                            />
+                                                        </div>
+                                                        <div className="text-gray-500 font-black text-2xl">VS</div>
+                                                        <div className="flex-1 text-left">
+                                                            <div className="text-xl font-bold text-white mb-2">{teamBName}</div>
+                                                            <input
+                                                                type="number" min="0" max="99"
+                                                                value={valForm.scoreB}
+                                                                onChange={e => updateValForm(match._id, { scoreB: e.target.value })}
+                                                                className="w-20 text-center text-3xl font-black bg-gray-900 border-2 border-gray-700 rounded-lg py-2 text-white focus:border-orange-500 focus:outline-none"
+                                                                disabled={tournament.status === 'completed'}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    {valForm.bestOf > 1 && (
+                                                        <div className="space-y-3 mb-6">
+                                                            <div className="text-sm text-gray-400 font-medium">Map Breakdown (Best of {valForm.bestOf})</div>
+                                                            {valForm.mapResults.map((m, idx) => (
+                                                                <div key={idx} className="flex items-center gap-4 bg-gray-900/50 p-3 rounded-lg border border-gray-700/50">
+                                                                    <div className="w-8 text-center text-xs font-bold text-gray-500">M{idx+1}</div>
+                                                                    <div className="flex-1 text-right">
+                                                                        <input
+                                                                            type="number" min="0" max="99"
+                                                                            value={m.scoreA}
+                                                                            onChange={e => {
+                                                                                const newMapResults = [...valForm.mapResults];
+                                                                                newMapResults[idx].scoreA = e.target.value;
+                                                                                updateValForm(match._id, { mapResults: newMapResults });
+                                                                            }}
+                                                                            className="w-12 text-center text-sm font-bold bg-gray-800 border border-gray-600 rounded py-1 text-white focus:outline-none focus:border-orange-500"
+                                                                            disabled={tournament.status === 'completed'}
+                                                                        />
+                                                                    </div>
+                                                                    <div className="w-32 text-center">
+                                                                        <select 
+                                                                            value={m.map} 
+                                                                            onChange={e => {
+                                                                                const newMapResults = [...valForm.mapResults];
+                                                                                newMapResults[idx].map = e.target.value;
+                                                                                updateValForm(match._id, { mapResults: newMapResults });
+                                                                            }}
+                                                                            className="w-full text-xs bg-gray-800 border border-gray-600 rounded py-1 px-2 text-white focus:outline-none focus:border-orange-500"
+                                                                            disabled={tournament.status === 'completed'}
+                                                                        >
+                                                                            <option value="">Select Map</option>
+                                                                            <option value="Ascent">Ascent</option>
+                                                                            <option value="Bind">Bind</option>
+                                                                            <option value="Breeze">Breeze</option>
+                                                                            <option value="Fracture">Fracture</option>
+                                                                            <option value="Haven">Haven</option>
+                                                                            <option value="Icebox">Icebox</option>
+                                                                            <option value="Lotus">Lotus</option>
+                                                                            <option value="Pearl">Pearl</option>
+                                                                            <option value="Split">Split</option>
+                                                                            <option value="Sunset">Sunset</option>
+                                                                        </select>
+                                                                    </div>
+                                                                    <div className="flex-1 text-left">
+                                                                        <input
+                                                                            type="number" min="0" max="99"
+                                                                            value={m.scoreB}
+                                                                            onChange={e => {
+                                                                                const newMapResults = [...valForm.mapResults];
+                                                                                newMapResults[idx].scoreB = e.target.value;
+                                                                                updateValForm(match._id, { mapResults: newMapResults });
+                                                                            }}
+                                                                            className="w-12 text-center text-sm font-bold bg-gray-800 border border-gray-600 rounded py-1 text-white focus:outline-none focus:border-orange-500"
+                                                                            disabled={tournament.status === 'completed'}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    
+                                                    <div className="flex justify-end">
+                                                        <button 
+                                                            onClick={() => handleSaveValorantResults(match)}
+                                                            disabled={savingValorant === match._id || tournament.status === 'completed'}
+                                                            className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded-lg font-medium flex items-center gap-2 disabled:opacity-50"
+                                                        >
+                                                            {savingValorant === match._id ? (
+                                                                <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving...</>
+                                                            ) : (
+                                                                <><Save className="w-4 h-4" /> Save Result</>
+                                                            )}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })() : (() => {
                                             // Use results if available, otherwise use teams array
                                             const matchTeams = match.results && match.results.length > 0
                                                 ? match.results

@@ -7,6 +7,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js",
+    "dev": "node index.js",
+    "dev:test": "npx -y dotenv-cli -e .env.test -- node index.js",
     "migrate:tryout-messages": "node scripts/migrate_tryout_messages.js",
     "simulate:1020-registrations": "node scripts/simulate_1020_team_registrations.js",
     "seed:teamup-samples": "node scripts/seed_teamup_samples.js",
@@ -18,8 +20,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@socket.io/redis-adapter": "^8.3.0",
     "@aws-sdk/client-rekognition": "^3.1002.0",
+    "@socket.io/redis-adapter": "^8.3.0",
+    "axios": "^1.16.0",
     "bcrypt": "^6.0.0",
     "cloudinary": "^2.8.0",
     "compression": "^1.8.1",
@@ -38,11 +41,12 @@
     "node-cron": "^4.2.1",
     "node-fetch": "^3.3.2",
     "nodemailer": "^8.0.0",
+    "redis": "^5.11.0",
     "sanitize-html": "^2.17.0",
     "serverless-http": "^4.0.0",
     "sharp": "^0.34.5",
     "slugify": "^1.6.6",
-    "redis": "^5.11.0",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "tesseract.js": "^7.0.0"
   }
 }

@@ -43,6 +43,10 @@ const SettingsComponent = () => {
   // FAQ state
   const [openFaq, setOpenFaq] = useState(null);
 
+  // Delete account modal state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const faqData = [
     {
       question: "How do I join a tournament?",
@@ -279,6 +283,55 @@ const SettingsComponent = () => {
 
   return (
     <div className="bg-gradient-to-br from-zinc-950 via-stone-950 to-neutral-950 min-h-screen text-white font-sans pt-24">
+      {/* Delete Account Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-red-500/30 rounded-2xl p-6 max-w-md w-full shadow-2xl shadow-red-900/20">
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-6 h-6 text-red-500" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-white">Delete Account?</h3>
+                <p className="text-sm text-zinc-400">This action cannot be undone.</p>
+              </div>
+            </div>
+            <p className="text-zinc-300 mb-6">
+              Are you incredibly sure you want to delete your account? All your personal data, teams, and tournament history will be permanently removed.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                disabled={isDeleting}
+                className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white font-medium py-2.5 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  setIsDeleting(true);
+                  try {
+                    await axiosInstance.delete('/api/auth/delete-account');
+                    toast.success("Account deleted successfully");
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                    localStorage.removeItem('userRole');
+                    window.location.href = '/login';
+                  } catch (e) {
+                    toast.error(e.response?.data?.message || 'Failed to delete account');
+                    setIsDeleting(false);
+                  }
+                }}
+                disabled={isDeleting}
+                className={`flex-1 bg-red-500 hover:bg-red-600 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 ${isDeleting ? 'opacity-75 cursor-not-allowed' : ''}`}
+              >
+                {isDeleting ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="container mx-auto px-6 py-8">
 
         {/* Incomplete Profile Banner */}
@@ -797,20 +850,7 @@ const SettingsComponent = () => {
                         Once you delete your account, there is no going back. Please be certain.
                       </p>
                       <button
-                        onClick={async () => {
-                          if (window.confirm("Are you incredibly sure you want to delete your account? All your personal data will be permanently removed.")) {
-                            try {
-                              await axiosInstance.delete('/api/auth/delete-account');
-                              toast.success("Account deleted successfully");
-                              localStorage.removeItem('token');
-                              localStorage.removeItem('user');
-                              localStorage.removeItem('userRole');
-                              window.location.href = '/login';
-                            } catch (e) {
-                              toast.error(e.response?.data?.message || 'Failed to delete account');
-                            }
-                          }
-                        }}
+                        onClick={() => setShowDeleteModal(true)}
                         className="bg-red-500/10 border border-red-500/50 text-red-500 hover:bg-red-500 hover:text-white font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
                       >
                         <Trash2 className="w-4 h-4" />

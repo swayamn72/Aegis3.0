@@ -116,6 +116,9 @@ const MatchTable = ({ matches, onEdit, onDelete, onView }) => {
                 Tournament
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-zinc-400 uppercase tracking-wider">
+                Game
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-zinc-400 uppercase tracking-wider">
                 Status
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-zinc-400 uppercase tracking-wider">
@@ -162,6 +165,11 @@ const MatchTable = ({ matches, onEdit, onDelete, onView }) => {
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm text-white">{match.tournament?.tournamentName || 'N/A'}</div>
                   <div className="text-sm text-zinc-400">{match.tournamentPhase}</div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${match.gameTitle === 'VALORANT' ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                    {match.gameTitle || 'BGMI'}
+                  </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full border ${getStatusColor(match.status)}`}>
@@ -220,6 +228,7 @@ const AdminMatches = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [gameFilter, setGameFilter] = useState('');
   const [tournamentFilter, setTournamentFilter] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
 
@@ -232,6 +241,7 @@ const AdminMatches = () => {
         const params = {};
         if (searchTerm) params.search = searchTerm;
         if (statusFilter) params.status = statusFilter;
+        if (gameFilter) params.gameTitle = gameFilter;
         if (tournamentFilter) params.tournament = tournamentFilter;
 
         const data = await fetchMatches(params);
@@ -245,7 +255,7 @@ const AdminMatches = () => {
     };
 
     loadMatches();
-  }, [searchTerm, statusFilter, tournamentFilter]);
+  }, [searchTerm, statusFilter, gameFilter, tournamentFilter]);
 
   const handleEdit = (match) => {
     console.log('Edit match:', match);
@@ -336,13 +346,13 @@ const AdminMatches = () => {
                 <option value="cancelled">Cancelled</option>
               </select>
               <select
-                value={tournamentFilter}
-                onChange={(e) => setTournamentFilter(e.target.value)}
+                value={gameFilter}
+                onChange={(e) => setGameFilter(e.target.value)}
                 className="bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
               >
-                <option value="">All Tournaments</option>
-                <option value="bgmi-championship">BGMI Championship</option>
-                <option value="valorant-champions">Valorant Champions League</option>
+                <option value="">All Games</option>
+                <option value="BGMI">BGMI</option>
+                <option value="VALORANT">VALORANT</option>
               </select>
             </div>
           </div>

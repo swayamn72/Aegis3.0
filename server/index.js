@@ -37,6 +37,13 @@ import notificationRoutes from './routes/notification.routes.js';
 import organizationAuthRoutes from './routes/organizationAuth.routes.js';
 import supportRoutes from './routes/support.routes.js';
 import moderationRoutes from './routes/moderation.routes.js';
+import adminDataRoutes from './routes/adminData.routes.js';
+import fantasyRoutes from './routes/fantasy.routes.js';
+import riotRoutes from './routes/riot.routes.js';
+import valorantRoutes from './routes/valorant.routes.js';
+import mapVetoRoutes from './routes/mapVeto.routes.js';
+import matchRoomRoutes from './routes/matchRoom.routes.js';
+import resultSubmissionRoutes from './routes/resultSubmission.routes.js';
 
 import { errorHandler } from './middleware/errorHandler.js';
 import { responseHelpers } from './middleware/responseHelpers.js';
@@ -154,6 +161,13 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/organization-auth', organizationAuthRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/moderation', moderationRoutes);
+app.use('/api/admin', adminDataRoutes);
+app.use('/api/fantasy', fantasyRoutes);
+app.use('/api/riot', riotRoutes);
+app.use('/api/valorant', valorantRoutes);
+app.use('/api/map-veto', mapVetoRoutes);
+app.use('/api/match-rooms', matchRoomRoutes);
+app.use('/api/result-submissions', resultSubmissionRoutes);
 
 
 // TEST ROUTE
@@ -181,11 +195,13 @@ const PORT = process.env.PORT || 5000;
 
 if (!process.env.AWS_EXECUTION_ENV) {
   const { startDecayCron } = await import('./cron/aegisDecay.js');
+  const { startVetoWindowScheduler } = await import('./services/vetoWindowScheduler.js');
 
   httpServer.listen(PORT, () => {
     logger.info('server_started', { port: PORT });
     logger.info('socket_server_ready');
     startDecayCron();
+    startVetoWindowScheduler(io);
   });
 
   // =========================================================================

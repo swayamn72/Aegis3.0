@@ -84,7 +84,7 @@ const organizationSchema = new mongoose.Schema(
     activeGames: [
       {
         type: String,
-        enum: ['BGMI', 'VALO', 'CS2'],
+        enum: ['BGMI', 'VALORANT'],
       },
     ],
     teams: [

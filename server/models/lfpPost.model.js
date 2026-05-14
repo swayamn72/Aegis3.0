@@ -15,11 +15,14 @@ const lfpPostSchema = new mongoose.Schema({
     game: {
         type: String,
         required: true,
-        enum: ['VALO', 'CS2', 'BGMI'],
+        enum: ['BGMI', 'VALORANT'],
     },
     openRoles: [{
         type: String,
-        enum: ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger'],
+        enum: [
+            'IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger',
+            'Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex',
+        ],
         required: true,
     }],
     region: {

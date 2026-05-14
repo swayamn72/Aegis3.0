@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { SUPPORTED_GAMES } from '../config/gameRegistry.js';
 
 const teamSchema = new mongoose.Schema(
   {
@@ -41,7 +42,7 @@ const teamSchema = new mongoose.Schema(
     ],
     primaryGame: {
       type: String,
-      enum: ['BGMI', 'VALO', 'CS2'],
+      enum: SUPPORTED_GAMES,
       required: true,
       default: 'BGMI',
     },
@@ -99,6 +100,26 @@ const teamSchema = new mongoose.Schema(
       }
     ],
 
+    // Valorant-specific team stats
+    valorantStats: {
+      tournamentsPlayed: { type: Number, default: 0 },
+      matchesPlayed: { type: Number, default: 0 },
+      matchesWon: { type: Number, default: 0 },
+      totalKills: { type: Number, default: 0 },
+      totalDeaths: { type: Number, default: 0 },
+      totalAssists: { type: Number, default: 0 },
+      roundsPlayed: { type: Number, default: 0 },
+      roundsWon: { type: Number, default: 0 },
+      winRate: { type: Number, default: 0 },
+    },
+
+    // Valorant team rating
+    valRating: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     qualifiedEvents: [
       {
         tournament: {
@@ -145,7 +166,12 @@ const teamSchema = new mongoose.Schema(
     openRoles: [
       {
         type: String,
-        enum: ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger'],
+        enum: [
+          // BGMI
+          'IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger',
+          // Valorant
+          'Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex',
+        ],
       },
     ],
   },
@@ -176,6 +202,7 @@ teamSchema.index({ totalEarnings: -1 });
 teamSchema.index({ aegisRating: -1 });
 teamSchema.index({ status: 1, lookingForPlayers: 1 });
 teamSchema.index({ players: 1 });
+teamSchema.index({ valRating: -1 });
 
 
 // Static method to find teams by game and region

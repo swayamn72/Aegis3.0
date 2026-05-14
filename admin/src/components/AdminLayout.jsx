@@ -9,7 +9,11 @@ import {
   LogOut,
   Menu,
   Shield,
-  ShieldAlert
+  ShieldAlert,
+  Users,
+  Radio,
+  PlusCircle,
+  Gamepad2
 } from 'lucide-react';
 
 const AdminLayout = ({ children }) => {
@@ -27,7 +31,11 @@ const AdminLayout = ({ children }) => {
     { name: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard },
     { name: 'Organizations', href: '/admin/organizations', icon: Building2 },
     { name: 'Tournaments', href: '/admin/tournaments', icon: Trophy },
+    { name: 'Create Tournament', href: '/admin/tournaments/create', icon: PlusCircle },
     { name: 'Matches', href: '/admin/matches', icon: Calendar },
+    { name: 'Pro Players', href: '/admin/players', icon: Users },
+    { name: 'Live Scoring', href: '/admin/live-scoring', icon: Radio },
+    { name: 'Fantasy', href: '/admin/fantasy', icon: Gamepad2 },
     { name: 'Reports', href: '/admin/reports', icon: ShieldAlert },
   ];
 

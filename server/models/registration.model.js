@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { SUPPORTED_GAMES } from '../config/gameRegistry.js';
 
 /**
  * Registration Schema
@@ -18,6 +19,14 @@ const registrationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Team',
       required: true,
+      index: true,
+    },
+
+    // --- Game Identification (denormalized from tournament for queries) ---
+    gameTitle: {
+      type: String,
+      enum: SUPPORTED_GAMES,
+      default: 'BGMI',
       index: true,
     },
 
@@ -80,6 +89,19 @@ const registrationSchema = new mongoose.Schema(
       default: 0,
     },
     matchesPlayed: {
+      type: Number,
+      default: 0,
+    },
+    // Valorant-specific aggregate stats
+    totalDeaths: {
+      type: Number,
+      default: 0,
+    },
+    totalAssists: {
+      type: Number,
+      default: 0,
+    },
+    totalRoundsWon: {
       type: Number,
       default: 0,
     },

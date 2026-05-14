@@ -28,7 +28,8 @@ import {
     getTournamentAPI,
     approveTournamentAPI,
     rejectTournamentAPI,
-    updateTournamentStatusAPI
+    updateTournamentStatusAPI,
+    updateMapPoolAPI
 } from '../api/adminApi';
 
 const AdminTournaments = () => {
@@ -41,6 +42,11 @@ const AdminTournaments = () => {
     const [showApproveModal, setShowApproveModal] = useState(false);
     const [rejectionReason, setRejectionReason] = useState('');
     const [actionLoading, setActionLoading] = useState(false);
+    const [mapPoolEdit, setMapPoolEdit] = useState(null); // null = not editing
+    const [mapPoolSaving, setMapPoolSaving] = useState(false);
+
+    // All Valorant maps (full pool for admin to choose from)
+    const ALL_VALORANT_MAPS = ['Ascent', 'Bind', 'Breeze', 'Fracture', 'Haven', 'Icebox', 'Lotus', 'Pearl', 'Split', 'Sunset', 'Abyss'];
 
     // Filters state
     const [filters, setFilters] = useState({
@@ -209,6 +215,37 @@ const AdminTournaments = () => {
         } finally {
             setActionLoading(false);
         }
+    };
+
+    // Save edited map pool
+    const handleSaveMapPool = async () => {
+        if (!selectedTournament?._id || !mapPoolEdit) return;
+        if (mapPoolEdit.length !== 7) {
+            toast.error('Valorant map pool must have exactly 7 maps.');
+            return;
+        }
+        setMapPoolSaving(true);
+        try {
+            await updateMapPoolAPI(selectedTournament._id, mapPoolEdit);
+            toast.success('Map pool updated successfully!');
+            const data = await getTournamentAPI(selectedTournament._id);
+            setSelectedTournament({ ...data.tournament, registrationStats: data.registrationStats });
+            setMapPoolEdit(null);
+        } catch (error) {
+            toast.error(error.error || 'Failed to update map pool');
+        } finally {
+            setMapPoolSaving(false);
+        }
+    };
+
+    // Toggle map in pool editor
+    const handleMapPoolToggle = (mapName) => {
+        setMapPoolEdit(prev => {
+            if (!prev) return prev;
+            if (prev.includes(mapName)) return prev.filter(m => m !== mapName);
+            if (prev.length >= 7) { toast.warn('Maximum 7 maps. Deselect one first.'); return prev; }
+            return [...prev, mapName];
+        });
     };
 
     // Get status badge styling
@@ -396,7 +433,7 @@ const AdminTournaments = () => {
                             >
                                 <option value="">All Games</option>
                                 <option value="BGMI">BGMI</option>
-                                <option value="Multi-Game">Multi-Game</option>
+                                <option value="VALORANT">VALORANT</option>
                             </select>
                         </div>
                     </div>
@@ -788,6 +825,61 @@ const AdminTournaments = () => {
                                         )}
                                     </div>
                                 </div>
+
+                                {/* Valorant Map Pool Editor */}
+                                {selectedTournament.gameTitle === 'VALORANT' && (
+                                    <div className="bg-zinc-800 rounded-lg p-4">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <h3 className="text-sm font-semibold text-white">Map Pool (Veto)</h3>
+                                            <div className="flex items-center gap-2">
+                                                {mapPoolEdit ? (
+                                                    <>
+                                                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${mapPoolEdit.length === 7 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                                            {mapPoolEdit.length}/7
+                                                        </span>
+                                                        <button onClick={handleSaveMapPool} disabled={mapPoolSaving || mapPoolEdit.length !== 7}
+                                                            className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 transition-colors">
+                                                            {mapPoolSaving ? 'Saving...' : 'Save'}
+                                                        </button>
+                                                        <button onClick={() => setMapPoolEdit(null)}
+                                                            className="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors">
+                                                            Cancel
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <button onClick={() => setMapPoolEdit([...(selectedTournament.gameSettings?.maps || [])])}
+                                                        className="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors">
+                                                        Edit Map Pool
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                        {mapPoolEdit ? (
+                                            <>
+                                                <p className="text-xs text-zinc-500 mb-2">Select exactly 7 maps (6 bans + 1 decider for veto)</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {ALL_VALORANT_MAPS.map(mapName => {
+                                                        const sel = mapPoolEdit.includes(mapName);
+                                                        const atLimit = !sel && mapPoolEdit.length >= 7;
+                                                        return (
+                                                            <button key={mapName} onClick={() => handleMapPoolToggle(mapName)} disabled={atLimit}
+                                                                className={`px-3 py-1.5 text-xs rounded-full font-medium transition-colors border ${sel ? 'bg-blue-500/20 border-blue-500/60 text-blue-300' : atLimit ? 'bg-zinc-900 border-zinc-700 text-zinc-600 cursor-not-allowed' : 'bg-zinc-700 border-zinc-600 text-zinc-300 hover:border-blue-500/40'}`}>
+                                                                {sel ? '✓ ' : ''}{mapName}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div className="flex flex-wrap gap-2">
+                                                {(selectedTournament.gameSettings?.maps || []).map(m => (
+                                                    <span key={m} className="px-3 py-1.5 text-xs rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-300 font-medium">{m}</span>
+                                                ))}
+                                                {!selectedTournament.gameSettings?.maps?.length && <span className="text-xs text-zinc-500 italic">No map pool set — click Edit to add maps</span>}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 {/* Action Buttons */}
                                 <div className="flex items-center justify-end space-x-3 pt-4 border-t border-zinc-800">

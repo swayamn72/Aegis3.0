@@ -14,12 +14,16 @@ const lftPostSchema = new mongoose.Schema({
     },
     game: {
         type: String,
-        enum: ['VALO', 'CS2', 'BGMI'],
+        enum: ['BGMI', 'VALORANT'],
         default: 'BGMI',
     },
     roles: [{
         type: String,
-        enum: ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger'],
+        enum: [
+            'IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger',
+            'Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex',
+
+        ],
         required: true,
     }],
     region: {

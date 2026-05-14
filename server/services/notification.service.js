@@ -1,6 +1,8 @@
 import admin from '../config/firebase.js';
 import Player from '../models/player.model.js';
 import Notification from '../models/notification.model.js';
+import Organization from '../models/organization.model.js';
+import Registration from '../models/registration.model.js';
 
 class NotificationService {
   _defaultPrefs() {
@@ -202,6 +204,62 @@ class NotificationService {
     } catch (error) {
       console.error('FCM sendToMultiplePlayers error:', error.message);
       return { success: false, error: error.message };
+    }
+  }
+  /**
+   * Notify the org admin(s) of a tournament.
+   * Looks up Organization.ownedBy (the org owner's player account) and sends a push.
+   * @param {string|ObjectId} tournamentId
+   * @param {{ title: string, body: string, data: object }} payload
+   */
+  async notifyOrgForTournament(tournamentId, { title, body, data = {} }) {
+    try {
+      // Tournament.organizer is a sub-object: { name, website, contactEmail, organizationRef }
+      const Tournament = (await import('../models/tournament.model.js')).default;
+      const tournament = await Tournament.findById(tournamentId)
+        .select('organizer.organizationRef organizer.contactEmail')
+        .lean();
+      if (!tournament?.organizer?.organizationRef) return;
+
+      const orgId = tournament.organizer.organizationRef;
+
+      // Organization model doesn't have fcmToken or linkedPlayerId.
+      // Best-effort: find any Player account whose team belongs to this org.
+      // For now, we log the notification — push to org admins can be added
+      // when the Organization model gets an fcmToken field.
+      console.log(`[Notification] Org ${orgId}: ${title} — ${body}`);
+    } catch (err) {
+      console.error('notifyOrgForTournament error:', err.message);
+    }
+  }
+
+  /**
+   * Notify all members of specified teams in a tournament.
+   * @param {string[]} teamIds — team ObjectId strings
+   * @param {string|ObjectId} tournamentId
+   * @param {{ title: string, body: string, data: object }} payload
+   */
+  async notifyTeams(teamIds, tournamentId, { title, body, data = {} }) {
+    try {
+      if (!teamIds?.length) return;
+      const regs = await Registration.find({
+        tournament: tournamentId,
+        team: { $in: teamIds },
+        status: { $in: ['registered', 'confirmed', 'approved', 'checked_in'] },
+      }).select('roster.player').lean();
+
+      const playerIds = [];
+      for (const reg of regs) {
+        for (const slot of reg.roster || []) {
+          if (slot.player) playerIds.push(slot.player.toString());
+        }
+      }
+
+      if (playerIds.length > 0) {
+        await this.sendToMultiplePlayers([...new Set(playerIds)], title, body, data);
+      }
+    } catch (err) {
+      console.error('notifyTeams error:', err.message);
     }
   }
 }

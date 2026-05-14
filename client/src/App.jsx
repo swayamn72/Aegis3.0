@@ -16,6 +16,7 @@ import { useAuth } from "./context/AuthContext";
 // --- Auth pages (small, loaded eagerly for fast first paint) ---
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignUpPage";
+import OnboardingPage from "./pages/OnboardingPage";
 
 // --- Heavy pages (lazy loaded — only fetched when navigated to) ---
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
@@ -45,6 +46,11 @@ const PrivacyPolicyPage = lazy(() => import("./pages/PrivacyPolicyPage"));
 const RequestAccountDeletion = lazy(() => import("./pages/RequestAccountDeletion"));
 const ConfirmAccountDeletion = lazy(() => import("./pages/ConfirmAccountDeletion"));
 const ChildSafetyPolicyPage = lazy(() => import("./pages/ChildSafetyPolicyPage"));
+const FantasyPage = lazy(() => import("./pages/FantasyPage"));
+const FantasySquadBuilder = lazy(() => import("./pages/FantasySquadBuilder"));
+const FantasyLeaderboard = lazy(() => import("./pages/FantasyLeaderboard"));
+const ActiveMatchesPage = lazy(() => import("./pages/ActiveMatchesPage"));
+const MatchRoomPage = lazy(() => import("./pages/MatchRoomPage"));
 // --- Loading fallback for lazy-loaded routes ---
 const PageLoader = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#0a0a23' }}>
@@ -66,6 +72,7 @@ function AppContent() {
             {/* Public Routes */}
             <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
             <Route path="/signup" element={<PublicRoute><SignupPage /></PublicRoute>} />
+            <Route path="/onboarding" element={<ProtectedRoute><OnboardingPage /></ProtectedRoute>} />
             <Route path="/forgot-password" element={<PublicRoute><ForgotPasswordPage /></PublicRoute>} />
             <Route path="/reset-password/:token" element={<PublicRoute><ResetPasswordPage /></PublicRoute>} />
             <Route path="/organization/reset-password/:token" element={<PublicRoute><ResetPasswordPage /></PublicRoute>} />
@@ -188,6 +195,15 @@ function AppContent() {
               }
             />
             <Route path="/org/tournament/:id" element={<ProtectedRoute requireRole="organization"><TournamentManagementPageOrg /></ProtectedRoute>} />
+
+            {/* Fantasy Routes */}
+            <Route path="/fantasy" element={<ProtectedRoute requireRole="player"><FantasyPage /></ProtectedRoute>} />
+            <Route path="/fantasy/:contestId" element={<ProtectedRoute requireRole="player"><FantasySquadBuilder /></ProtectedRoute>} />
+            <Route path="/fantasy/:contestId/leaderboard" element={<ProtectedRoute requireRole="player"><FantasyLeaderboard /></ProtectedRoute>} />
+
+            {/* Match Room Routes */}
+            <Route path="/my-matches" element={<ProtectedRoute requireRole="player"><ActiveMatchesPage /></ProtectedRoute>} />
+            <Route path="/match-room/:matchId" element={<ProtectedRoute requireRole="player"><MatchRoomPage /></ProtectedRoute>} />
 
             {/* 404 Catch-all Route */}
             <Route path="*" element={<NotFoundPage />} />

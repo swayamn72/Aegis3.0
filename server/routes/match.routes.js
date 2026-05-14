@@ -11,6 +11,7 @@ import mongoose from 'mongoose';
 import upload from '../config/multer.js';
 import { processScreenshots } from '../services/bgmiOcr.service.js';
 import notificationService from '../services/notification.service.js';
+import { getGameConfig, isValidMap, isHeadToHead, supportsOcr } from '../config/gameRegistry.js';
 
 const router = express.Router();
 
@@ -342,13 +343,15 @@ router.post('/schedule', verifyOrgToken, verifyTournamentOwnership, async (req, 
 
     // Create the match with scheduled status and persist participatingGroups
     // Teams will be fetched dynamically from participatingGroups when needed
+    const gameTitle = tournament.gameTitle || 'BGMI';
     const scheduledMatch = new Match({
       ...matchData,
+      gameTitle,
       participatingGroups: selectedGroupIds,
       matchNumber: nextMatchNumber,
       status: 'scheduled',
       matchType: 'scheduled',
-      results: [] // Empty results initially
+      results: [] // Empty results initially (BR); vsResults empty by default (Valorant)
     });
 
     await scheduledMatch.save();
@@ -1428,5 +1431,161 @@ router.post(
     }
   }
 );
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Valorant 5v5 Results Entry
+// ═══════════════════════════════════════════════════════════════════════════════
+router.put('/:matchId/valorant-results', verifyOrgToken, verifyMatchOwnership, async (req, res) => {
+  try {
+    const { matchId } = req.params;
+    const { vsResults } = req.body;
+
+    if (!vsResults || !vsResults.teamA || !vsResults.teamB) {
+      return res.status(400).json({ error: 'vsResults with teamA and teamB are required' });
+    }
+
+    const match = await Match.findById(matchId).populate('tournament', 'status gameTitle');
+    if (!match) return res.status(404).json({ error: 'Match not found' });
+
+    if (match.tournament.status === 'completed') {
+      return res.status(400).json({ error: 'Tournament is concluded. Results are locked.' });
+    }
+
+    if (match.gameTitle !== 'VALORANT') {
+      return res.status(400).json({ error: 'This endpoint is for Valorant matches only. Use the standard results endpoint for BR games.' });
+    }
+
+    // Validate teams exist
+    const [teamA, teamB] = await Promise.all([
+      Team.findById(vsResults.teamA).select('teamName').lean(),
+      Team.findById(vsResults.teamB).select('teamName').lean(),
+    ]);
+    if (!teamA || !teamB) {
+      return res.status(400).json({ error: 'One or both teams not found' });
+    }
+
+    // Determine winner
+    const scoreA = vsResults.scoreA || 0;
+    const scoreB = vsResults.scoreB || 0;
+    const winner = scoreA > scoreB ? vsResults.teamA : scoreB > scoreA ? vsResults.teamB : null;
+
+    // Build update
+    const updateData = {
+      'vsResults.teamA': vsResults.teamA,
+      'vsResults.teamB': vsResults.teamB,
+      'vsResults.scoreA': scoreA,
+      'vsResults.scoreB': scoreB,
+      'vsResults.winner': winner,
+      'vsResults.totalRounds': scoreA + scoreB,
+      'vsResults.isOvertime': (scoreA + scoreB) > 24,
+      status: 'completed',
+      'metadata.manuallyEntered': true,
+    };
+
+    // Map results (for Bo3/Bo5)
+    if (vsResults.mapResults && Array.isArray(vsResults.mapResults)) {
+      updateData['vsResults.mapResults'] = vsResults.mapResults.map(mr => ({
+        map: mr.map,
+        scoreA: mr.scoreA || 0,
+        scoreB: mr.scoreB || 0,
+        winner: (mr.scoreA || 0) > (mr.scoreB || 0) ? vsResults.teamA : vsResults.teamB,
+        halfScores: mr.halfScores || {},
+      }));
+    }
+
+    // Player stats
+    if (vsResults.playerStats && Array.isArray(vsResults.playerStats)) {
+      updateData['vsResults.playerStats'] = vsResults.playerStats.map(ps => ({
+        player: ps.player,
+        team: ps.team,
+        kills: ps.kills || 0,
+        deaths: ps.deaths || 0,
+        assists: ps.assists || 0,
+        agent: ps.agent || '',
+        acs: ps.acs || 0,
+        adr: ps.adr || 0,
+        firstKills: ps.firstKills || 0,
+        firstDeaths: ps.firstDeaths || 0,
+        clutches: ps.clutches || 0,
+        plants: ps.plants || 0,
+        defuses: ps.defuses || 0,
+        multiKills: ps.multiKills || 0,
+      }));
+    }
+
+    await Match.findByIdAndUpdate(matchId, { $set: updateData });
+
+    // Update player stats
+    if (vsResults.playerStats?.length > 0) {
+      const playerOps = [];
+      for (const ps of vsResults.playerStats) {
+        if (!ps.player) continue;
+        const isWinner = (ps.team?.toString() || ps.team) === winner?.toString();
+        playerOps.push({
+          updateOne: {
+            filter: { _id: ps.player },
+            update: {
+              $inc: {
+                'valorantStats.matchesPlayed': 1,
+                'valorantStats.matchesWon': isWinner ? 1 : 0,
+                'valorantStats.totalKills': ps.kills || 0,
+                'valorantStats.totalDeaths': ps.deaths || 0,
+                'valorantStats.totalAssists': ps.assists || 0,
+                'valorantStats.totalFirstKills': ps.firstKills || 0,
+                'valorantStats.totalClutches': ps.clutches || 0,
+              },
+            },
+          },
+        });
+      }
+      if (playerOps.length > 0) await Player.bulkWrite(playerOps);
+    }
+
+    // Update registration stats
+    for (const teamId of [vsResults.teamA, vsResults.teamB]) {
+      const isWinner = teamId?.toString() === winner?.toString();
+      const teamPlayerStats = (vsResults.playerStats || []).filter(
+        ps => (ps.team?.toString() || ps.team) === teamId?.toString()
+      );
+      const teamKills = teamPlayerStats.reduce((sum, ps) => sum + (ps.kills || 0), 0);
+      const teamDeaths = teamPlayerStats.reduce((sum, ps) => sum + (ps.deaths || 0), 0);
+      const teamAssists = teamPlayerStats.reduce((sum, ps) => sum + (ps.assists || 0), 0);
+
+      await Registration.updateOne(
+        {
+          tournament: match.tournament._id || match.tournament,
+          team: teamId,
+          phase: match.tournamentPhase,
+        },
+        {
+          $inc: {
+            matchesPlayed: 1,
+            totalKills: teamKills,
+            totalDeaths: teamDeaths,
+            totalAssists: teamAssists,
+            totalRoundsWon: teamId?.toString() === vsResults.teamA?.toString() ? scoreA : scoreB,
+            totalChickenDinners: isWinner ? 1 : 0,  // reuse as totalWins for Valorant
+          },
+        }
+      );
+    }
+
+    // Fetch updated match for response
+    const updatedMatch = await Match.findById(matchId)
+      .populate('tournament', 'tournamentName gameTitle')
+      .populate('vsResults.teamA', 'teamName teamTag logo')
+      .populate('vsResults.teamB', 'teamName teamTag logo')
+      .populate('vsResults.winner', 'teamName teamTag logo')
+      .populate('vsResults.playerStats.player', 'username gameIds inGameName profilePicture')
+      .lean();
+
+    console.log(`✅ Valorant match ${matchId} results saved: ${teamA.teamName} ${scoreA}-${scoreB} ${teamB.teamName}`);
+
+    res.json(updatedMatch);
+  } catch (error) {
+    console.error('Error saving Valorant results:', error);
+    res.status(500).json({ error: 'Failed to save Valorant results', details: error.message });
+  }
+});
 
 export default router;

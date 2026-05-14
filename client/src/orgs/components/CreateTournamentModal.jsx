@@ -5,6 +5,56 @@ import { toast } from 'react-toastify';
 import axiosInstance from '../../utils/axiosConfig';
 import PhaseStructureSuggester from './PhaseStructureSuggester';
 
+// ─── Game-specific configuration (mirrors server gameRegistry) ───
+const GAME_CONFIG = {
+    BGMI: {
+        displayName: 'BGMI',
+        maps: ['Erangel', 'Miramar', 'Sanhok', 'Vikendi', 'Rondo'],
+        formats: ['Battle Royale Points System', 'Elimination Format', 'Custom'],
+        gameModes: ['TPP Squad', 'FPP Squad', 'Custom'],
+        teamSize: 4,
+        maxTeamsPerMatch: 25,
+        defaultGameSettings: {
+            serverRegion: 'India',
+            gameMode: 'TPP Squad',
+            maps: ['Erangel', 'Miramar'],
+            pointsSystem: {
+                killPoints: 1,
+                placementPoints: { 1: 10, 2: 6, 3: 5, 4: 4, 5: 3, 6: 2, 7: 1, 8: 1 }
+            }
+        },
+        phaseTypes: ['qualifiers', 'final_stage'],
+        defaultFormat: 'Battle Royale Points System',
+        minSlots: 16,
+    },
+    VALORANT: {
+        displayName: 'Valorant',
+        // Full pool (all maps in game)
+        maps: ['Ascent', 'Bind', 'Breeze', 'Fracture', 'Haven', 'Icebox', 'Lotus', 'Pearl', 'Split', 'Sunset', 'Abyss'],
+        // Current active competitive rotation — Season 26 Act 3 (updated April 29, 2026)
+        // Ascent returned, Bind removed. Source: Liquipedia / Riot
+        activeRotation: ['Ascent', 'Breeze', 'Fracture', 'Haven', 'Lotus', 'Pearl', 'Split'],
+        // Map veto REQUIRES exactly 7 maps (ban×6 + 1 decider)
+        requiredMapCount: 7,
+        formats: ['Best of 1', 'Best of 3', 'Best of 5', 'Round Robin', 'Swiss', 'Double Elimination', 'Custom'],
+        gameModes: ['Standard', 'Custom'],
+        teamSize: 5,
+        maxTeamsPerMatch: 2,
+        // Max 256 teams — above this, bracket logistics become unmanageable for Valorant
+        maxSlots: 256,
+        defaultGameSettings: {
+            serverRegion: 'India',
+            gameMode: 'Standard',
+            // Default to the active rotation so veto works out of the box
+            maps: ['Ascent', 'Breeze', 'Fracture', 'Haven', 'Lotus', 'Pearl', 'Split'],
+            matchFormat: '1v1',
+        },
+        phaseTypes: ['qualifiers', 'group_stage', 'playoffs', 'final_stage'],
+        defaultFormat: 'Best of 3',
+        minSlots: 4,
+    },
+};
+
 const PHASE_INVITE_MODES = ['decide_later', 'none', 'fixed_count'];
 const normalizePhaseDirectInvites = (directInvites) => {
     const mode = PHASE_INVITE_MODES.includes(directInvites?.mode)
@@ -41,16 +91,27 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
         slots: { total: 16, invited: 0, fromQualifiers: 0, openRegistrations: 16 },
         prizePool: { total: 0, currency: 'INR', distribution: [] },
         phases: [],
-        gameSettings: {
-            serverRegion: 'India',
-            gameMode: 'TPP Squad',
-            maps: ['Erangel', 'Miramar'],
-            pointsSystem: {
-                killPoints: 1,
-                placementPoints: { 1: 10, 2: 6, 3: 5, 4: 4, 5: 3, 6: 2, 7: 1, 8: 1 }
-            }
-        }
+        gameSettings: { ...GAME_CONFIG.BGMI.defaultGameSettings }
     });
+
+    // Derived: current game config
+    const gameConfig = GAME_CONFIG[formData.gameTitle] || GAME_CONFIG.BGMI;
+
+    const handleGameChange = (newGame) => {
+        const config = GAME_CONFIG[newGame];
+        if (!config) return;
+        setFormData(prev => ({
+            ...prev,
+            gameTitle: newGame,
+            format: config.defaultFormat,
+            gameSettings: { ...config.defaultGameSettings },
+            slots: {
+                ...prev.slots,
+                total: Math.max(prev.slots.total, config.minSlots),
+            },
+            phases: [], // reset phases when game changes
+        }));
+    };
     const [files, setFiles] = useState({ logo: null, banner: null, coverImage: null });
     const queryClient = useQueryClient();
 
@@ -102,17 +163,24 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
 
     const handleMapToggle = (mapName) => {
         setFormData(prev => {
+            const config = GAME_CONFIG[prev.gameTitle];
+            const requiredCount = config?.requiredMapCount || null;
             const currentMaps = prev.gameSettings.maps || [];
-            const newMaps = currentMaps.includes(mapName)
+            const isSelected = currentMaps.includes(mapName);
+
+            // For games with a fixed required count, block adding beyond the limit
+            if (!isSelected && requiredCount && currentMaps.length >= requiredCount) {
+                toast.warn(`Valorant map veto requires exactly ${requiredCount} maps. Deselect one first.`);
+                return prev;
+            }
+
+            const newMaps = isSelected
                 ? currentMaps.filter(m => m !== mapName)
                 : [...currentMaps, mapName];
 
             return {
                 ...prev,
-                gameSettings: {
-                    ...prev.gameSettings,
-                    maps: newMaps
-                }
+                gameSettings: { ...prev.gameSettings, maps: newMaps }
             };
         });
     };
@@ -232,7 +300,14 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                 toast.error('At least one phase must be set as "Final Stage" before submitting.');
                 return;
             }
-            if (!formData.gameSettings?.maps || formData.gameSettings.maps.length === 0) {
+            const selectedMaps = formData.gameSettings?.maps || [];
+            const requiredMapCount = GAME_CONFIG[formData.gameTitle]?.requiredMapCount;
+            if (requiredMapCount) {
+                if (selectedMaps.length !== requiredMapCount) {
+                    toast.error(`Valorant map veto requires exactly ${requiredMapCount} maps. You have selected ${selectedMaps.length}.`);
+                    return;
+                }
+            } else if (selectedMaps.length === 0) {
                 toast.error('Please select at least one map.');
                 return;
             }
@@ -261,7 +336,6 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                 ...formData,
                 phases: normalizedPhases,
             };
-            console.log('Sending tournament data:', normalizedPayload);
             formDataToSend.append('tournamentData', JSON.stringify(normalizedPayload));
 
 
@@ -312,7 +386,7 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                                         value={formData.tournamentName}
                                         onChange={(e) => handleInputChange('tournamentName', e.target.value)}
                                         className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
-                                        placeholder="BGMI Winter Championship 2024"
+                                        placeholder={`${gameConfig.displayName} Championship 2025`}
                                     />
                                 </div>
                                 <div>
@@ -328,12 +402,15 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
 
                                 <div>
                                     <label className="block text-sm font-medium mb-2">Game *</label>
-                                    <input
-                                        type="text"
-                                        value="BGMI"
-                                        disabled
-                                        className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white opacity-70 cursor-not-allowed"
-                                    />
+                                    <select
+                                        value={formData.gameTitle}
+                                        onChange={(e) => handleGameChange(e.target.value)}
+                                        className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
+                                    >
+                                        {Object.entries(GAME_CONFIG).map(([key, cfg]) => (
+                                            <option key={key} value={key}>{cfg.displayName}</option>
+                                        ))}
+                                    </select>
                                 </div>
 
                                 <div>
@@ -362,17 +439,35 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium mb-2">Total Slots * <span className="text-gray-400 font-normal text-xs">(min 16, e.g. 64, 128, 4096)</span></label>
+                                    <label className="block text-sm font-medium mb-2">
+                                        Total Slots *{' '}
+                                        <span className="text-gray-400 font-normal text-xs">
+                                            (min {gameConfig.minSlots}
+                                            {gameConfig.maxSlots ? `, max ${gameConfig.maxSlots}` : ''}
+                                            )
+                                        </span>
+                                    </label>
                                     <input
                                         type="number"
                                         value={formData.slots.total}
-                                        onChange={(e) => handleNestedChange('slots', 'total', parseInt(e.target.value) || 16)}
-                                        className={`w-full bg-gray-700 border rounded px-3 py-2 text-white ${formData.slots.total < 16 ? 'border-red-500' : 'border-gray-600'
-                                            }`}
-                                        min="16"
+                                        onChange={(e) => {
+                                            const val = parseInt(e.target.value) || gameConfig.minSlots;
+                                            const clamped = gameConfig.maxSlots ? Math.min(val, gameConfig.maxSlots) : val;
+                                            handleNestedChange('slots', 'total', clamped);
+                                        }}
+                                        className={`w-full bg-gray-700 border rounded px-3 py-2 text-white ${
+                                            formData.slots.total < gameConfig.minSlots || (gameConfig.maxSlots && formData.slots.total > gameConfig.maxSlots)
+                                                ? 'border-red-500'
+                                                : 'border-gray-600'
+                                        }`}
+                                        min={gameConfig.minSlots}
+                                        max={gameConfig.maxSlots || undefined}
                                     />
-                                    {formData.slots.total < 16 && (
-                                        <p className="text-red-400 text-xs mt-1">Minimum 16 teams required.</p>
+                                    {formData.slots.total < gameConfig.minSlots && (
+                                        <p className="text-red-400 text-xs mt-1">Minimum {gameConfig.minSlots} teams required.</p>
+                                    )}
+                                    {gameConfig.maxSlots && formData.slots.total > gameConfig.maxSlots && (
+                                        <p className="text-red-400 text-xs mt-1">Maximum {gameConfig.maxSlots} teams allowed for {gameConfig.displayName}.</p>
                                     )}
                                 </div>
 
@@ -397,29 +492,91 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                                 </div>
                             </div>
 
-                            {/* Map Selection */}
+                            {/* Map Selection — dynamic per game */}
                             <div>
-                                <label className="block text-sm font-medium mb-3">Maps *</label>
+                                <div className="flex items-center justify-between mb-3">
+                                    <label className="block text-sm font-medium">
+                                        Maps *
+                                        {gameConfig.requiredMapCount && (
+                                            <span className={`ml-2 text-xs font-normal px-2 py-0.5 rounded-full ${
+                                                (formData.gameSettings.maps?.length || 0) === gameConfig.requiredMapCount
+                                                    ? 'bg-green-500/20 text-green-400'
+                                                    : 'bg-red-500/20 text-red-400'
+                                            }`}>
+                                                {formData.gameSettings.maps?.length || 0}/{gameConfig.requiredMapCount} selected
+                                            </span>
+                                        )}
+                                    </label>
+                                    {gameConfig.activeRotation && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setFormData(prev => ({
+                                                ...prev,
+                                                gameSettings: { ...prev.gameSettings, maps: [...gameConfig.activeRotation] }
+                                            }))}
+                                            className="text-xs px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/40 hover:bg-blue-500/30 transition-colors"
+                                        >
+                                            ⚡ Use Current Rotation
+                                        </button>
+                                    )}
+                                </div>
+
+                                {gameConfig.requiredMapCount && (
+                                    <p className="text-xs text-gray-400 mb-3">
+                                        Map veto requires exactly {gameConfig.requiredMapCount} maps (6 bans + 1 decider).
+                                        Active rotation is pre-selected.
+                                    </p>
+                                )}
+
                                 <div className="flex flex-wrap gap-3">
-                                    {['Erangel', 'Miramar', 'Sanhok', 'Vikendi', 'Rondo'].map((mapName) => {
+                                    {gameConfig.maps.map((mapName) => {
                                         const isSelected = formData.gameSettings.maps?.includes(mapName);
+                                        const isInRotation = gameConfig.activeRotation?.includes(mapName);
+                                        const isAtLimit = gameConfig.requiredMapCount &&
+                                            (formData.gameSettings.maps?.length || 0) >= gameConfig.requiredMapCount &&
+                                            !isSelected;
                                         return (
                                             <button
                                                 key={mapName}
                                                 type="button"
                                                 onClick={() => handleMapToggle(mapName)}
-                                                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${isSelected
+                                                disabled={isAtLimit}
+                                                title={!isInRotation && gameConfig.activeRotation ? `${mapName} (not in current rotation)` : mapName}
+                                                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors relative ${
+                                                    isSelected
                                                         ? 'bg-orange-500 text-white border border-orange-500'
-                                                        : 'bg-gray-700 text-gray-300 border border-gray-600 hover:border-gray-500'
-                                                    }`}
+                                                        : isAtLimit
+                                                            ? 'bg-gray-800 text-gray-600 border border-gray-700 cursor-not-allowed'
+                                                            : isInRotation
+                                                                ? 'bg-gray-700 text-gray-200 border border-blue-600/40 hover:border-blue-500'
+                                                                : 'bg-gray-700 text-gray-400 border border-gray-600 hover:border-gray-500 opacity-60'
+                                                }`}
                                             >
                                                 {mapName}
+                                                {isInRotation && !isSelected && (
+                                                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-blue-400" title="In current rotation" />
+                                                )}
                                             </button>
                                         );
                                     })}
                                 </div>
-                                {(!formData.gameSettings.maps || formData.gameSettings.maps.length === 0) && (
-                                    <p className="text-red-400 text-xs mt-2">Please select at least one map.</p>
+
+                                {gameConfig.activeRotation && (
+                                    <p className="text-xs text-gray-500 mt-2">
+                                        <span className="inline-block w-2 h-2 rounded-full bg-blue-400 mr-1" />
+                                        Blue dot = in current competitive rotation
+                                    </p>
+                                )}
+
+                                {gameConfig.requiredMapCount && (
+                                    (formData.gameSettings.maps?.length || 0) === gameConfig.requiredMapCount
+                                        ? <p className="text-green-400 text-xs mt-2">✓ Map pool complete — veto system ready.</p>
+                                        : <p className="text-red-400 text-xs mt-2">
+                                            Select exactly {gameConfig.requiredMapCount} maps.
+                                            {(formData.gameSettings.maps?.length || 0) > 0 &&
+                                                ` (${gameConfig.requiredMapCount - (formData.gameSettings.maps?.length || 0)} more needed)`
+                                            }
+                                          </p>
                                 )}
                             </div>
 
@@ -518,6 +675,7 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                             {/* ── Phase Structure Suggester ── */}
                             <PhaseStructureSuggester
                                 totalTeams={formData.slots.total}
+                                gameTitle={formData.gameTitle}
                                 onApply={(phases) => setFormData(prev => ({ ...prev, phases }))}
                             />
 
@@ -565,8 +723,11 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                                                         onChange={(e) => updatePhase(index, 'type', e.target.value)}
                                                         className="w-full bg-gray-600 border border-gray-500 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-orange-500"
                                                     >
-                                                        <option value="qualifiers">Qualifiers</option>
-                                                        <option value="final_stage">Final Stage</option>
+                                                        {gameConfig.phaseTypes.map(pt => (
+                                                            <option key={pt} value={pt}>
+                                                                {pt.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                                                            </option>
+                                                        ))}
                                                     </select>
                                                 </div>
 
@@ -808,8 +969,14 @@ const CreateTournamentModal = ({ organization, onClose, onSuccess }) => {
                                             toast.error('Tournament Name is required.');
                                             return;
                                         }
-                                        if (!formData.slots.total || formData.slots.total < 16) {
-                                            toast.error('Total Slots must be at least 16.');
+                                        const minS = gameConfig.minSlots;
+                                        const maxS = gameConfig.maxSlots;
+                                        if (!formData.slots.total || formData.slots.total < minS) {
+                                            toast.error(`Total Slots must be at least ${minS}.`);
+                                            return;
+                                        }
+                                        if (maxS && formData.slots.total > maxS) {
+                                            toast.error(`${gameConfig.displayName} tournaments are limited to ${maxS} teams.`);
                                             return;
                                         }
                                     }

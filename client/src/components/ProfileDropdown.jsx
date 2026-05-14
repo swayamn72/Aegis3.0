@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Users, Settings, LogOut, Trophy, Star, Bell, ChevronDown, Gamepad2 } from 'lucide-react';
+import { User, Users, Settings, LogOut, Trophy, Star, Bell, ChevronDown, Gamepad2, Swords } from 'lucide-react';
 
 const ProfileDropdown = ({ user, logout }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -30,6 +30,7 @@ const ProfileDropdown = ({ user, logout }) => {
     { icon: User, label: 'My Profile', href: '/my-profile' },
     { icon: Gamepad2, label: 'My Game IDs', href: '/my-game-ids' },
     { icon: Users, label: 'My Teams', href: '/my-teams' },
+    { icon: Swords, label: 'My Active Matches', href: '/my-matches', highlight: true },
     { icon: Bell, label: 'Notifications', href: '/notifications' },
     { icon: Settings, label: 'Settings', href: '/settings' },
     { icon: LogOut, label: 'Logout', href: '#', isLogout: true }
@@ -111,9 +112,11 @@ const ProfileDropdown = ({ user, logout }) => {
                       navigate(item.href);
                     }
                   }}
-                  className={`flex items-center space-x-3 px-4 py-3 text-gray-300 hover:bg-gray-800 transition-all duration-200 ${item.isLogout
-                    ? 'hover:text-red-400 border-t border-gray-700 mt-2'
-                    : 'hover:text-orange-400'
+                  className={`flex items-center space-x-3 px-4 py-3 transition-all duration-200 ${item.isLogout
+                    ? 'text-gray-300 hover:bg-gray-800 hover:text-red-400 border-t border-gray-700 mt-2'
+                    : item.highlight
+                    ? 'text-red-400 hover:bg-red-950/40 font-semibold'
+                    : 'text-gray-300 hover:bg-gray-800 hover:text-orange-400'
                     }`}
                 >
                   <Icon size={18} />

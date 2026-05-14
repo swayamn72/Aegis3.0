@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, ChevronDown, MapPin, Gamepad2, Trophy, Award, Eye, Check, Target, Briefcase, UserPlus, User, Send, MessageCircle, Users, X, Crown } from 'lucide-react';
+import BGMILogo from '../assets/gameLogos/BGMI_LOGO.png';
+import ValorantLogo from '../assets/gameLogos/valorant2.png';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import {
@@ -42,10 +44,13 @@ const LFTPostForm = React.memo(({ onSubmit, onClose }) => {
     const { user } = useAuth();
     const [formData, setFormData] = useState({
         description: '',
-        roles: []
+        roles: [],
+        game: user?.primaryGame || 'BGMI'
     });
 
-    const roles = ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger'];
+    const availableRoles = formData.game === 'VALORANT'
+        ? ['Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex']
+        : ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger'];
 
     const handleRoleToggle = (role) => {
         setFormData(prev => ({
@@ -53,6 +58,14 @@ const LFTPostForm = React.memo(({ onSubmit, onClose }) => {
             roles: prev.roles.includes(role)
                 ? prev.roles.filter(r => r !== role)
                 : [...prev.roles, role]
+        }));
+    };
+
+    const handleGameChange = (e) => {
+        setFormData(prev => ({
+            ...prev,
+            game: e.target.value,
+            roles: [] // Clear roles when game changes
         }));
     };
 
@@ -66,7 +79,6 @@ const LFTPostForm = React.memo(({ onSubmit, onClose }) => {
         // Include game and region from user profile
         const postData = {
             ...formData,
-            game: user?.primaryGame || '',
             region: user?.country || 'India'
         };
 
@@ -85,9 +97,21 @@ const LFTPostForm = React.memo(({ onSubmit, onClose }) => {
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
+                        <label className="block text-zinc-300 mb-2 font-medium">Game *</label>
+                        <select
+                            value={formData.game}
+                            onChange={handleGameChange}
+                            className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-orange-500 mb-4"
+                        >
+                            <option value="BGMI">BGMI</option>
+                            <option value="VALORANT">VALORANT</option>
+                        </select>
+                    </div>
+
+                    <div>
                         <label className="block text-zinc-300 mb-2 font-medium">Roles *</label>
                         <div className="flex flex-wrap gap-2">
-                            {roles.map(role => (
+                            {availableRoles.map(role => (
                                 <button
                                     key={role}
                                     type="button"
@@ -140,12 +164,16 @@ LFTPostForm.displayName = 'LFTPostForm';
 
 // LFP Post Form Component (For Team Captains)
 const LFPPostForm = React.memo(({ onSubmit, onClose, userTeam }) => {
+    const { user } = useAuth();
     const [formData, setFormData] = useState({
         description: '',
-        openRoles: []
+        openRoles: [],
+        game: userTeam?.primaryGame || user?.primaryGame || 'BGMI'
     });
 
-    const roles = ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger'];
+    const availableRoles = formData.game === 'VALORANT'
+        ? ['Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex']
+        : ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger'];
 
     const handleRoleToggle = (role) => {
         setFormData(prev => ({
@@ -153,6 +181,14 @@ const LFPPostForm = React.memo(({ onSubmit, onClose, userTeam }) => {
             openRoles: prev.openRoles.includes(role)
                 ? prev.openRoles.filter(r => r !== role)
                 : [...prev.openRoles, role]
+        }));
+    };
+
+    const handleGameChange = (e) => {
+        setFormData(prev => ({
+            ...prev,
+            game: e.target.value,
+            openRoles: [] // Clear roles when game changes
         }));
     };
 
@@ -165,7 +201,6 @@ const LFPPostForm = React.memo(({ onSubmit, onClose, userTeam }) => {
 
         const postData = {
             ...formData,
-            game: userTeam?.primaryGame || '',
             region: userTeam?.region || 'India'
         };
 
@@ -190,9 +225,21 @@ const LFPPostForm = React.memo(({ onSubmit, onClose, userTeam }) => {
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
+                        <label className="block text-zinc-300 mb-2 font-medium">Game *</label>
+                        <select
+                            value={formData.game}
+                            onChange={handleGameChange}
+                            className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500 mb-4"
+                        >
+                            <option value="BGMI">BGMI</option>
+                            <option value="VALORANT">VALORANT</option>
+                        </select>
+                    </div>
+
+                    <div>
                         <label className="block text-zinc-300 mb-2 font-medium">Open Roles *</label>
                         <div className="flex flex-wrap gap-2">
-                            {roles.map(role => (
+                            {availableRoles.map(role => (
                                 <button
                                     key={role}
                                     type="button"
@@ -255,8 +302,7 @@ const LFTPostCard = React.memo(({ post, onApproach }) => {
 
     const getGameColor = () => {
         switch (post.game) {
-            case 'VALO': return 'text-red-400';
-            case 'CS2': return 'text-blue-400';
+            case 'VALORANT': return 'text-red-400';
             case 'BGMI': return 'text-yellow-400';
             default: return 'text-zinc-400';
         }
@@ -270,13 +316,7 @@ const LFTPostCard = React.memo(({ post, onApproach }) => {
                     LFT
                 </div>
 
-                {/* Verified Badge - Top Left */}
-                {post.player.verified && (
-                    <div className="absolute top-3 left-3 flex items-center gap-1 bg-[#FF4500]/10 border border-[#FF4500]/30 rounded-md px-2 py-1">
-                        <Check className="w-3 h-3 text-[#FF4500]" />
-                        <span className="text-[#FF4500] text-xs font-semibold">Verified</span>
-                    </div>
-                )}
+
 
                 {/* Player Header */}
                 <div className="flex items-center gap-3 mb-3 mt-8">
@@ -307,7 +347,7 @@ const LFTPostCard = React.memo(({ post, onApproach }) => {
 
                 {/* Roles Section */}
                 <div className="mb-3">
-                    <p className="text-zinc-500 text-xs mb-1.5">Looking for roles:</p>
+                    <p className="text-zinc-500 text-xs mb-1.5">Preferred roles:</p>
                     <div className="flex flex-wrap gap-1.5">
                         {post.roles && post.roles.map(role => (
                             <span key={role} className="px-2.5 py-0.5 bg-cyan-500/20 border border-cyan-400/30 rounded-full text-cyan-400 text-xs font-medium">
@@ -415,7 +455,13 @@ const LFPPostCard = React.memo(({ post, onApproach, isApplying }) => {
 
                 <div className="grid grid-cols-2 gap-3 mb-4">
                     <div className="flex items-center gap-2 text-sm">
-                        <Gamepad2 className="w-4 h-4 text-orange-400" />
+                        {post.game === 'VALORANT' ? (
+                            <img src={ValorantLogo} alt="Valorant" className="w-5 h-5 object-contain opacity-80" />
+                        ) : post.game === 'BGMI' ? (
+                            <img src={BGMILogo} alt="BGMI" className="w-5 h-5 object-contain opacity-80" />
+                        ) : (
+                            <Gamepad2 className="w-4 h-4 text-orange-400" />
+                        )}
                         <span className="text-zinc-400">{post.game}</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm">
@@ -494,7 +540,7 @@ const OrganizationCard = React.memo(({ org, onApproach }) => {
                     </div>
                     <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-3 text-center">
                         <p className="text-zinc-400 text-xs">Team Size</p>
-                        <p className="text-white font-semibold">{org.players?.length || 0}/5</p>
+                        <p className="text-white font-semibold">{org.players?.length || 0}/{org.primaryGame === 'VALORANT' ? 6 : 5}</p>
                     </div>
                     <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-3 text-center">
                         <p className="text-zinc-400 text-xs">Earnings</p>
@@ -739,8 +785,8 @@ const RecruitmentPage = () => {
                                         className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg pl-12 pr-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
                                     />
                                 </div>
-                                <FilterDropdown options={['VALO', 'CS2', 'BGMI']} selected={playerFilters.game} onSelect={(v) => handlePlayerFilterChange('game', v)} placeholder="All Games" icon={Gamepad2} />
-                                <FilterDropdown options={['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger']} selected={playerFilters.role} onSelect={(v) => handlePlayerFilterChange('role', v)} placeholder="All Roles" icon={User} />
+                                <FilterDropdown options={['BGMI', 'VALORANT']} selected={playerFilters.game} onSelect={(v) => handlePlayerFilterChange('game', v)} placeholder="All Games" icon={Gamepad2} />
+                                <FilterDropdown options={['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger', 'Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex']} selected={playerFilters.role} onSelect={(v) => handlePlayerFilterChange('role', v)} placeholder="All Roles" icon={User} />
                             </div>
                         </div>
 
@@ -822,8 +868,8 @@ const RecruitmentPage = () => {
                                         className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg pl-12 pr-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
                                     />
                                 </div>
-                                <FilterDropdown options={['VALO', 'CS2', 'BGMI']} selected={orgFilters.game} onSelect={(v) => handleOrgFilterChange('game', v)} placeholder="All Games" icon={Gamepad2} />
-                                <FilterDropdown options={['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger']} selected={orgFilters.role} onSelect={(v) => handleOrgFilterChange('role', v)} placeholder="All Roles" icon={Target} />
+                                <FilterDropdown options={['BGMI', 'VALORANT']} selected={orgFilters.game} onSelect={(v) => handleOrgFilterChange('game', v)} placeholder="All Games" icon={Gamepad2} />
+                                <FilterDropdown options={['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger', 'Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex']} selected={orgFilters.role} onSelect={(v) => handleOrgFilterChange('role', v)} placeholder="All Roles" icon={Target} />
                             </div>
                         </div>
 

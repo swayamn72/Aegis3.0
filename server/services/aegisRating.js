@@ -3,6 +3,8 @@ import Match from '../models/match.model.js';
 import Team from '../models/team.model.js';
 import Registration from '../models/registration.model.js';
 import RatingEvent from '../models/ratingEvent.model.js';
+import { isHeadToHead } from '../config/gameRegistry.js';
+import { calculateValorantRatingDelta } from './ratingAdapters/valorantRating.adapter.js';
 
 // ============================================================================
 // CONSTANTS
@@ -331,6 +333,9 @@ export async function calculateAegisRatingDelta(matchDoc, tournamentDoc, cumulat
 export async function processPhaseCompletion(tournamentDoc, phaseName) {
   console.log(`📊 Processing phase "${phaseName}" for tournament ${tournamentDoc._id}`);
 
+  const gameTitle = tournamentDoc.gameTitle || 'BGMI';
+  const isVs = isHeadToHead(gameTitle);
+
   // Find all completed matches in this phase, chronologically
   const matches = await Match.find({
     tournament: tournamentDoc._id,
@@ -354,33 +359,43 @@ export async function processPhaseCompletion(tournamentDoc, phaseName) {
     return;
   }
 
-  console.log(`🎯 Processing ${unprocessed.length}/${matches.length} unprocessed matches`);
+  console.log(`🎯 Processing ${unprocessed.length}/${matches.length} unprocessed matches (${gameTitle})`);
 
   // Shared cumulative delta tracker for per-tournament caps
   const cumulativeDeltas = new Map();
 
   for (const match of unprocessed) {
-    await calculateAegisRatingDelta(match, tournamentDoc, cumulativeDeltas);
+    if (isVs) {
+      // Valorant / 5v5: use Valorant adapter
+      await calculateValorantRatingDelta(match, tournamentDoc, cumulativeDeltas, getPhaseMultiplier);
+    } else {
+      // BGMI / BR: use existing BGMI rating logic
+      await calculateAegisRatingDelta(match, tournamentDoc, cumulativeDeltas);
+    }
   }
 
   // --- Recalculate team ratings (roster mean) ---
-  const allTeamIds = [...new Set(
-    matches.flatMap(m => (m.results || []).map(r => (r.team?._id || r.team)?.toString()))
-  )].filter(Boolean);
+  if (!isVs) {
+    // BR: team IDs from results array
+    const allTeamIds = [...new Set(
+      matches.flatMap(m => (m.results || []).map(r => (r.team?._id || r.team)?.toString()))
+    )].filter(Boolean);
 
-  for (const teamId of allTeamIds) {
-    try {
-      const team = await Team.findById(teamId).populate('players', 'aegisRating');
-      if (team?.players?.length) {
-        team.aegisRating = Math.round(
-          team.players.reduce((sum, p) => sum + (p.aegisRating || 1000), 0) / team.players.length
-        );
-        await team.save();
+    for (const teamId of allTeamIds) {
+      try {
+        const team = await Team.findById(teamId).populate('players', 'aegisRating');
+        if (team?.players?.length) {
+          team.aegisRating = Math.round(
+            team.players.reduce((sum, p) => sum + (p.aegisRating || 1000), 0) / team.players.length
+          );
+          await team.save();
+        }
+      } catch (err) {
+        console.warn(`⚠️ Failed to update team ${teamId} aegisRating:`, err.message);
       }
-    } catch (err) {
-      console.warn(`⚠️ Failed to update team ${teamId} aegisRating:`, err.message);
     }
   }
+  // Note: Valorant team ratings are updated inside the adapter itself
 
   // --- Three-way prestige trigger ---
   const phase = tournamentDoc.phases?.find(p => p.name === phaseName);
@@ -399,7 +414,7 @@ export async function processPhaseCompletion(tournamentDoc, phaseName) {
     await updatePrestigeCounters(tournamentDoc);
   }
 
-  console.log(`✅ Phase "${phaseName}" processing complete`);
+  console.log(`✅ Phase "${phaseName}" processing complete (${gameTitle})`);
 }
 
 // ============================================================================

@@ -92,6 +92,105 @@ const sortResults = (results) =>
         return posA - posB;
     });
 
+// ── Valorant Head-to-Head Scorecard ─────────────────────────────────────────
+const ValorantScorecard = ({ match }) => {
+    const vs = match.vsResults;
+    if (!vs) return null;
+
+    const teamA = vs.teamA;
+    const teamB = vs.teamB;
+    const winnerId = vs.winner?.toString();
+    const teamAId = (teamA?._id || teamA)?.toString();
+    const teamBId = (teamB?._id || teamB)?.toString();
+    const teamAWon = winnerId === teamAId;
+    const teamBWon = winnerId === teamBId;
+
+    const playerStats = vs.playerStats || [];
+    const teamAPlayers = playerStats.filter(ps => (ps.team?._id || ps.team)?.toString() === teamAId);
+    const teamBPlayers = playerStats.filter(ps => (ps.team?._id || ps.team)?.toString() === teamBId);
+
+    const TeamSide = ({ team, score, won, players, align = 'left' }) => (
+        <div className={`flex-1 ${align === 'right' ? 'text-right' : ''}`}>
+            <div className={`flex items-center gap-3 mb-4 ${align === 'right' ? 'flex-row-reverse' : ''}`}>
+                <TeamLogo src={team?.logo} alt={team?.teamName} tag={team?.teamTag} className="w-12 h-12 rounded-xl" />
+                <div>
+                    <div className="text-white font-bold text-lg">{team?.teamName || 'TBD'}</div>
+                    <div className="text-zinc-500 text-xs">{team?.teamTag || ''}</div>
+                </div>
+            </div>
+            {players.length > 0 && (
+                <div className="space-y-1">
+                    {players.sort((a, b) => (b.acs || 0) - (a.acs || 0)).map((ps, i) => {
+                        const p = ps.player;
+                        const name = typeof p === 'object' ? (p?.username || p?.inGameName || 'Player') : 'Player';
+                        return (
+                            <div key={i} className={`flex items-center gap-2 p-2 rounded-lg bg-zinc-800/50 text-sm ${align === 'right' ? 'flex-row-reverse' : ''}`}>
+                                <span className="text-zinc-300 font-medium w-28 truncate">{name}</span>
+                                {ps.agent && <span className="text-xs text-zinc-500">{ps.agent}</span>}
+                                <span className="text-green-400 font-mono">{ps.kills || 0}</span>
+                                <span className="text-zinc-600">/</span>
+                                <span className="text-red-400 font-mono">{ps.deaths || 0}</span>
+                                <span className="text-zinc-600">/</span>
+                                <span className="text-blue-400 font-mono">{ps.assists || 0}</span>
+                                <span className="ml-auto text-orange-400 font-bold">{ps.acs || 0} ACS</span>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+
+    return (
+        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden">
+            {/* Score Header */}
+            <div className="flex items-center justify-center gap-6 py-8 px-6 bg-gradient-to-r from-zinc-900 via-zinc-800/50 to-zinc-900">
+                <div className="flex items-center gap-4 flex-1 justify-end">
+                    <div className="text-right">
+                        <div className={`text-xl font-bold ${teamAWon ? 'text-green-400' : 'text-white'}`}>{teamA?.teamName || 'Team A'}</div>
+                        <div className="text-zinc-500 text-xs">{teamAWon ? 'WINNER' : ''}</div>
+                    </div>
+                    <TeamLogo src={teamA?.logo} alt={teamA?.teamName} tag={teamA?.teamTag} className="w-14 h-14 rounded-xl" />
+                </div>
+
+                <div className="flex items-center gap-3 px-6">
+                    <span className={`text-4xl font-black ${teamAWon ? 'text-green-400' : 'text-zinc-400'}`}>{vs.scoreA ?? 0}</span>
+                    <span className="text-zinc-600 text-2xl font-bold">:</span>
+                    <span className={`text-4xl font-black ${teamBWon ? 'text-green-400' : 'text-zinc-400'}`}>{vs.scoreB ?? 0}</span>
+                </div>
+
+                <div className="flex items-center gap-4 flex-1">
+                    <TeamLogo src={teamB?.logo} alt={teamB?.teamName} tag={teamB?.teamTag} className="w-14 h-14 rounded-xl" />
+                    <div>
+                        <div className={`text-xl font-bold ${teamBWon ? 'text-green-400' : 'text-white'}`}>{teamB?.teamName || 'Team B'}</div>
+                        <div className="text-zinc-500 text-xs">{teamBWon ? 'WINNER' : ''}</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Map & Details */}
+            <div className="flex items-center justify-center gap-4 py-3 px-6 border-t border-zinc-800 bg-zinc-900/80 text-sm text-zinc-400">
+                {match.map && <span>Map: <strong className="text-zinc-200">{match.map}</strong></span>}
+                {vs.duration && <span>· Duration: <strong className="text-zinc-200">{Math.round(vs.duration / 60)}m</strong></span>}
+                {match.tournamentPhase && <span>· {match.tournamentPhase}</span>}
+            </div>
+
+            {/* Player Stats */}
+            {playerStats.length > 0 && (
+                <div className="p-6 border-t border-zinc-800">
+                    <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
+                        <Target className="w-4 h-4 text-orange-400" /> Player Performance
+                    </h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <TeamSide team={teamA} score={vs.scoreA} won={teamAWon} players={teamAPlayers} />
+                        <TeamSide team={teamB} score={vs.scoreB} won={teamBWon} players={teamBPlayers} align="right" />
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 // ── Leaderboard ──────────────────────────────────────────────────────────────
 const LeaderboardTab = ({ results, map }) => {
     const sorted = useMemo(() => sortResults(results), [results]);
@@ -456,6 +555,8 @@ const DetailedMatchInfo = () => {
         select: (raw) => raw?.match ?? raw,
     });
 
+    const isValorant = !!match?.vsResults;
+
     const results = useMemo(() => {
         if (!match?.results?.length) return [];
         return sortResults(match.results);
@@ -539,7 +640,7 @@ const DetailedMatchInfo = () => {
                                     </div>
                                     <div>
                                         <div className="text-xs text-amber-400 font-semibold uppercase tracking-wide mb-0.5">
-                                            Chicken Dinner
+                                            {winnerLabel}
                                         </div>
                                         <div className="text-xl font-black text-white">{winner.team?.teamName ?? '—'}</div>
                                         <div className="text-zinc-400 text-xs flex items-center gap-3 mt-0.5">
@@ -591,9 +692,15 @@ const DetailedMatchInfo = () => {
                 </div>
 
                 <div className="min-h-[400px]">
-                    {activeTab === 'leaderboard' && <LeaderboardTab results={results} map={match.map} />}
-                    {activeTab === 'overview' && <OverviewTab match={match} results={results} />}
-                    {activeTab === 'statistics' && <StatisticsTab results={results} matchStats={match.matchStats} />}
+                    {isValorant ? (
+                        <ValorantScorecard match={match} />
+                    ) : (
+                        <>
+                            {activeTab === 'leaderboard' && <LeaderboardTab results={results} map={match.map} />}
+                            {activeTab === 'overview' && <OverviewTab match={match} results={results} />}
+                            {activeTab === 'statistics' && <StatisticsTab results={results} matchStats={match.matchStats} />}
+                        </>
+                    )}
                 </div>
 
             </div>

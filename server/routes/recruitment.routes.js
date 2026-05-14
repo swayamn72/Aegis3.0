@@ -346,9 +346,9 @@ router.get('/lft-posts', async (req, res) => {
 
 const MAX_DESC_LEN = 1000; // Updated to match lftPost.model.js
 const MAX_ROLES = 5;
-const ALLOWED_GAMES = ['VALO', 'CS2', 'BGMI']; // Strictly matching model enums
-const ALLOWED_REGIONS = ['India', 'Asia', 'Europe', 'North America', 'Global']; // Strictly matching model enums
-const ALLOWED_ROLES = ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger']; // Matching model enums
+const ALLOWED_GAMES = ['BGMI', 'VALORANT'];
+const ALLOWED_REGIONS = ['India', 'Asia', 'Europe', 'North America', 'Global'];
+const ALLOWED_ROLES = ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger', 'Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex'];
 
 const normalizeRegion = (input, fallback = 'India') => {
   const raw = String(input || '').trim();
@@ -373,7 +373,7 @@ const normalizeRegion = (input, fallback = 'India') => {
 router.post('/lft-posts', auth, async (req, res) => {
   const session = await mongoose.startSession().catch(() => null);
   try {
-    const { description = '', roles = [] } = req.body || {};
+    const { description = '', roles = [], game = 'BGMI' } = req.body || {};
 
     // Basic validation + sanitization
     const desc = String(description).trim().slice(0, MAX_DESC_LEN);
@@ -397,6 +397,9 @@ router.post('/lft-posts', auth, async (req, res) => {
     }
     if (!desc) {
       return res.status(400).json({ error: 'Description is required' });
+    }
+    if (!ALLOWED_GAMES.includes(game)) {
+      return res.status(400).json({ error: 'Invalid game' });
     }
 
     // Optional: check player exists (should always, but defensive)
@@ -431,7 +434,7 @@ router.post('/lft-posts', auth, async (req, res) => {
       createdPost = await LFTPost.create([{
         player: req.user.id,
         description: desc,
-        game: 'BGMI',
+        game: game,
         roles: cleanRoles,
         region: postRegion,
         status: 'active',
@@ -448,7 +451,7 @@ router.post('/lft-posts', auth, async (req, res) => {
       createdPost = new LFTPost({
         player: req.user.id,
         description: desc,
-        game: 'BGMI',
+        game: game,
         roles: cleanRoles,
         region: postRegion,
         status: 'active',

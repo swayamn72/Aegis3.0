@@ -38,8 +38,8 @@ const MyTeams = () => {
     const [createTeamForm, setCreateTeamForm] = useState({
         teamName: '',
         teamTag: '',
-        primaryGame: 'BGMI', // ✅ Fixed to BGMI - not user selectable
-        region: 'India', // ✅ Fixed to India - not user selectable
+        primaryGame: user?.primaryGame || 'BGMI',
+        region: 'India',
         bio: '',
         logo: ''
     });
@@ -82,7 +82,7 @@ const MyTeams = () => {
         onSuccess: async (data) => {
             toast.success(`Team "${data.team.teamName}" created successfully! 🎉`);
             setShowCreateTeamModal(false);
-            setCreateTeamForm({ teamName: '', teamTag: '', primaryGame: 'BGMI', region: 'India', bio: '', logo: '' });
+            setCreateTeamForm({ teamName: '', teamTag: '', primaryGame: user?.primaryGame || 'BGMI', region: 'India', bio: '', logo: '' });
             await refreshUser();
             queryClient.invalidateQueries(['teamData']);
             navigate(`/team/${data.team._id}`);
@@ -297,16 +297,18 @@ const MyTeams = () => {
                                             maxLength={5}
                                         />
                                     </div>
-                                    {/* ✅ Primary Game - Display only (not editable) */}
                                     <div>
                                         <label className="block text-zinc-300 text-sm font-medium mb-2">
                                             Primary Game
                                         </label>
-                                        <div className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-400 flex items-center gap-2">
-                                            <Gamepad2 className="w-4 h-4" />
-                                            <span>BGMI</span>
-                                            <span className="ml-auto text-xs text-zinc-500">(Default)</span>
-                                        </div>
+                                        <select
+                                            value={createTeamForm.primaryGame}
+                                            onChange={(e) => setCreateTeamForm(prev => ({ ...prev, primaryGame: e.target.value }))}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500 transition-colors"
+                                        >
+                                            <option value="BGMI">BGMI</option>
+                                            <option value="VALORANT">VALORANT</option>
+                                        </select>
                                     </div>
                                     {/* ✅ Region - Display only (not editable) */}
                                     <div>

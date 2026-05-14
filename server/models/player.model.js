@@ -1,5 +1,6 @@
 
 import mongoose from 'mongoose';
+import { SUPPORTED_GAMES, getAllRoles } from '../config/gameRegistry.js';
 
 const playerSchema = new mongoose.Schema(
   {
@@ -10,9 +11,14 @@ const playerSchema = new mongoose.Schema(
       trim: true,
       index: true,
     },
-    // Game IDs - Player can have up to 2
+    // Game IDs - Player can have IDs for multiple games
     gameIds: [
       {
+        game: {
+          type: String,
+          enum: SUPPORTED_GAMES,
+          default: 'BGMI',
+        },
         inGameName: {
           type: String,
           required: true,
@@ -20,7 +26,10 @@ const playerSchema = new mongoose.Schema(
         },
         characterId: {
           type: String,
-          required: true,
+          trim: true,
+        },
+        riotId: {
+          type: String,    // Valorant Riot ID (Name#Tag)
           trim: true,
         },
         isPrimary: {
@@ -178,7 +187,7 @@ const playerSchema = new mongoose.Schema(
     ],
     primaryGame: {
       type: String,
-      enum: ['BGMI', 'VALO', 'CS2'],
+      enum: SUPPORTED_GAMES,
     },
     earnings: {
       type: Number,
@@ -188,7 +197,12 @@ const playerSchema = new mongoose.Schema(
     inGameRole: [
       {
         type: String,
-        enum: ['IGL', 'Assaulter', 'Fragger', 'Support', 'Sniper', 'Substitute', 'Player'],
+        enum: [
+          // BGMI roles
+          'IGL', 'Assaulter', 'Fragger', 'Support', 'Sniper', 'Substitute', 'Player',
+          // Valorant roles
+          'Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex',
+        ],
       },
     ],
     location: {
@@ -233,6 +247,49 @@ const playerSchema = new mongoose.Schema(
       totalKills: { type: Number, default: 0 },
       averagePlacement: { type: Number, default: 0 },
       winRate: { type: Number, default: 0 },
+    },
+
+    // --- Valorant Rating (parallel to aegisRating for BGMI) ---
+    valRating: { type: Number, default: 1000 },
+    valRatingPeak: { type: Number, default: 1000 },
+    valRatingFloor: { type: Number, default: 0 },
+    valPrestigeFloor: { type: Number, default: 0 },
+    valMatchesRated: { type: Number, default: 0 },
+    valIsProvisional: { type: Boolean, default: true },
+    valLastRatedMatchAt: { type: Date, default: null },
+
+    // --- Valorant Stats ---
+    valorantStats: {
+      tournamentsPlayed: { type: Number, default: 0 },
+      matchesPlayed: { type: Number, default: 0 },
+      matchesWon: { type: Number, default: 0 },
+      totalKills: { type: Number, default: 0 },
+      totalDeaths: { type: Number, default: 0 },
+      totalAssists: { type: Number, default: 0 },
+      kd: { type: Number, default: 0 },
+      avgAcs: { type: Number, default: 0 },
+      avgAdr: { type: Number, default: 0 },
+      totalClutches: { type: Number, default: 0 },
+      totalFirstKills: { type: Number, default: 0 },
+      totalAces: { type: Number, default: 0 },
+      winRate: { type: Number, default: 0 },
+    },
+
+    // --- Riot API Profile Data (cached from Riot API) ---
+    riotProfile: {
+      puuid: { type: String, default: null },
+      gameName: { type: String, default: null },
+      tagLine: { type: String, default: null },
+      currentRank: { type: String, default: null },
+      currentRankTier: { type: Number, default: null },
+      rr: { type: Number, default: null },             // Ranked Rating
+      peakRank: { type: String, default: null },
+      topAgents: [{
+        agent: String,
+        matchesPlayed: Number,
+        winRate: Number,
+      }],
+      lastUpdated: { type: Date, default: null },
     },
     qualifiedEvents: {
       type: Boolean,
@@ -337,11 +394,45 @@ const playerSchema = new mongoose.Schema(
         ref: "Post",
       },
     ],
+
+    // --- Shadow Profile Fields (admin-created pro player profiles) ---
+    isShadowProfile: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    shadowCreatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Admin',
+      default: null,
+    },
+    // When admin claims/merges this shadow into a real account
+    claimedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Player',
+      default: null,
+    },
+    claimedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
   }
 );
+
+// Shadow profiles auto-generate a sentinel email if none provided
+playerSchema.pre('validate', function () {
+  if (this.isNew && this.isShadowProfile && !this.email) {
+    this.email = `shadow_${this._id}@aegis.internal`;
+  }
+  // Shadow profiles don't need a username — auto-generate if missing
+  if (this.isNew && this.isShadowProfile && !this.username) {
+    const ign = this.gameIds?.[0]?.inGameName || this.realName || this._id.toString().slice(-8);
+    this.username = `pro_${ign.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}_${Date.now()}`;
+  }
+});
 
 const Player = mongoose.model('Player', playerSchema);
 
@@ -352,5 +443,9 @@ playerSchema.index({ aegisRating: -1 });
 playerSchema.index({ team: 1 });
 // Recruitment search pattern
 playerSchema.index({ profileVisibility: 1, primaryGame: 1, aegisRating: -1 });
+// Shadow profile lookups
+playerSchema.index({ isShadowProfile: 1, claimedBy: 1 });
+// Character ID lookup (for claim matching)
+playerSchema.index({ 'gameIds.characterId': 1 });
 
 export default Player;

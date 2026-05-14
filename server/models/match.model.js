@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { SUPPORTED_GAMES } from '../config/gameRegistry.js';
 
 const matchSchema = new mongoose.Schema(
   {
@@ -42,10 +43,18 @@ const matchSchema = new mongoose.Schema(
       index: true,
     },
 
-    // --- Map ---
+    // --- Game Identification ---
+    gameTitle: {
+      type: String,
+      enum: SUPPORTED_GAMES,
+      required: true,
+      default: 'BGMI',
+      index: true,
+    },
+
+    // --- Map (validated at route level per game, no hardcoded enum) ---
     map: {
       type: String,
-      enum: ['Erangel', 'Miramar', 'Sanhok', 'Vikendi', 'Rondo'],
       required: true,
     },
 
@@ -87,8 +96,27 @@ const matchSchema = new mongoose.Schema(
           type: Boolean,
           default: false,
         },
+        // --- Live Scoring Fields ---
+        isEliminated: {
+          type: Boolean,
+          default: false,
+        },
+        eliminationOrder: {
+          type: Number,       // 1 = first team eliminated, 2 = second, etc.
+          default: null,
+        },
       }
     ],
+
+    // --- Live Scoring State ---
+    liveState: {
+      isLiveScoring: { type: Boolean, default: false },
+      teamsAlive: { type: Number, default: 0 },
+      totalTeams: { type: Number, default: 0 },
+      eliminationCount: { type: Number, default: 0 },  // How many teams eliminated so far
+      lastUpdatedAt: { type: Date },
+      lastUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+    },
 
     // --- Match Statistics ---
     matchStats: {
@@ -134,11 +162,61 @@ const matchSchema = new mongoose.Schema(
     // --- Metadata ---
     tags: [String], // For categorization
 
+    // ══════════════════════════════════════════════════════════════════════════
+    // Valorant 5v5 Results (used when gameTitle = 'VALORANT')
+    // ══════════════════════════════════════════════════════════════════════════
+    vsResults: {
+      teamA: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
+      teamB: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
+      scoreA: { type: Number, default: 0 },   // total rounds won by Team A
+      scoreB: { type: Number, default: 0 },   // total rounds won by Team B
+      winner: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', default: null },
+      // For Bo3/Bo5: per-map breakdown
+      mapResults: [{
+        map: String,
+        scoreA: { type: Number, default: 0 },
+        scoreB: { type: Number, default: 0 },
+        winner: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
+        halfScores: {
+          attackA: { type: Number, default: 0 },
+          defenseA: { type: Number, default: 0 },
+          attackB: { type: Number, default: 0 },
+          defenseB: { type: Number, default: 0 },
+        },
+      }],
+      // Individual player stats
+      playerStats: [{
+        player: { type: mongoose.Schema.Types.ObjectId, ref: 'Player' },
+        team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
+        kills: { type: Number, default: 0 },
+        deaths: { type: Number, default: 0 },
+        assists: { type: Number, default: 0 },
+        agent: { type: String },
+        acs: { type: Number, default: 0 },         // Average Combat Score
+        adr: { type: Number, default: 0 },         // Average Damage per Round
+        firstKills: { type: Number, default: 0 },
+        firstDeaths: { type: Number, default: 0 },
+        clutches: { type: Number, default: 0 },
+        plants: { type: Number, default: 0 },
+        defuses: { type: Number, default: 0 },
+        multiKills: { type: Number, default: 0 },  // 3k/4k/5k rounds
+      }],
+      totalRounds: { type: Number, default: 0 },
+      isOvertime: { type: Boolean, default: false },
+    },
+
     // --- Result Processing Metadata ---
     metadata: {
       ocrProcessed: { type: Boolean, default: false },
       ocrProcessedAt: { type: Date },
-      manuallyEntered: { type: Boolean, default: false }
+      manuallyEntered: { type: Boolean, default: false },
+      bestOf: { type: Number, default: 1 },       // Bo1/Bo3/Bo5 for Valorant
+      swissRound: { type: Number, default: null }, // Swiss round index
+    },
+    bracketRound: {
+      type: Number,
+      default: null,
+      index: true, // queried by Swiss idempotency guard
     },
     visibility: {
       type: String,
@@ -166,6 +244,9 @@ matchSchema.index({ map: 1, status: 1 });
 matchSchema.index({ matchType: 1, scheduledStartTime: -1 });
 matchSchema.index({ 'results.team': 1 });
 matchSchema.index({ createdAt: -1 });
+matchSchema.index({ gameTitle: 1, status: 1 });
+matchSchema.index({ 'vsResults.teamA': 1 });
+matchSchema.index({ 'vsResults.teamB': 1 });
 
 // --- Virtuals ---
 
@@ -191,9 +272,15 @@ matchSchema.virtual('isLive').get(function () {
 
 // --- Pre-save middleware ---
 matchSchema.pre('save', function () {
-  // Calculate total match stats from results
-  if (this.results && this.results.length > 0) {
-    this.matchStats.totalKills = this.results.reduce((total, team) => total + team.kills.total, 0);
+  // Calculate total match stats from results (BR games)
+  if (this.gameTitle === 'BGMI' || !this.gameTitle) {
+    if (this.results && this.results.length > 0) {
+      this.matchStats.totalKills = this.results.reduce((total, team) => total + team.kills.total, 0);
+    }
+  }
+  // Calculate total kills from vsResults (Valorant)
+  if (this.gameTitle === 'VALORANT' && this.vsResults?.playerStats?.length > 0) {
+    this.matchStats.totalKills = this.vsResults.playerStats.reduce((total, p) => total + (p.kills || 0), 0);
   }
 });
 

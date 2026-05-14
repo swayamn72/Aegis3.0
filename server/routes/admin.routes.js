@@ -380,7 +380,7 @@ router.get('/tournaments', verifyAdminToken, async (req, res) => {
     }
 
     // Game title filter (SECURITY: validate enum values)
-    if (gameTitle && ['BGMI', 'Multi-Game'].includes(gameTitle)) {
+    if (gameTitle && ['BGMI', 'VALORANT'].includes(gameTitle)) {
       query.gameTitle = gameTitle;
     }
 
@@ -749,6 +749,54 @@ router.patch('/tournaments/:id/status', verifyAdminToken, tournamentActionLimite
   } catch (error) {
     console.error('Error updating tournament status:', error);
     res.status(500).json({ error: 'Failed to update tournament status' });
+  }
+});
+
+// Update Valorant tournament map pool (admin only)
+router.patch('/tournaments/:id/map-pool', verifyAdminToken, tournamentActionLimiter, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { maps } = req.body;
+    const adminId = req.admin.adminId;
+
+    if (!validateObjectId(id)) {
+      return res.status(400).json({ error: 'Invalid tournament ID format' });
+    }
+
+    if (!Array.isArray(maps) || maps.length === 0) {
+      return res.status(400).json({ error: 'maps must be a non-empty array of map names' });
+    }
+
+    // Validate all map names are strings
+    if (!maps.every(m => typeof m === 'string' && m.trim().length > 0)) {
+      return res.status(400).json({ error: 'All map entries must be non-empty strings' });
+    }
+
+    const tournament = await Tournament.findById(id);
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+
+    // Enforce 7-map requirement for VALORANT (map veto: 6 bans + 1 decider)
+    if (tournament.gameTitle === 'VALORANT' && maps.length !== 7) {
+      return res.status(400).json({
+        error: `Valorant map veto requires exactly 7 maps (6 bans + 1 decider). Got ${maps.length}.`
+      });
+    }
+
+    const sanitizedMaps = maps.map(m => sanitizeString(m));
+    tournament.gameSettings = { ...(tournament.gameSettings || {}), maps: sanitizedMaps };
+    await tournament.save();
+
+    console.log(`Admin ${adminId} updated map pool for tournament ${id}: ${sanitizedMaps.join(', ')}`);
+
+    res.json({
+      message: 'Map pool updated successfully',
+      maps: sanitizedMaps,
+      tournamentId: id,
+      updatedAt: new Date(),
+    });
+  } catch (error) {
+    console.error('Error updating map pool:', error);
+    res.status(500).json({ error: 'Failed to update map pool' });
   }
 });
 

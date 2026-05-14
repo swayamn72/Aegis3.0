@@ -9,6 +9,7 @@ import RatingEvent from '../models/ratingEvent.model.js';
 import auth from '../middleware/auth.js';
 import upload from '../config/multer.js';
 import cloudinary from '../config/cloudinary.js';
+import axios from 'axios';
 import bcrypt from 'bcrypt';
 import { AUTH_CONSTANTS } from '../config/constants.js';
 import LFPPost from '../models/lfpPost.model.js';
@@ -83,7 +84,7 @@ router.get('/leaderboard/aegis', async (req, res) => {
     const [total, players] = await Promise.all([
       Player.countDocuments({ aegisMatchesRated: { $gt: 0 } }),
       Player.find({ aegisMatchesRated: { $gt: 0 } })
-        .select('username profilePicture aegisRating aegisRatingPeak aegisIsProvisional aegisMatchesRated tournamentsPlayed matchesPlayed team primaryGame inGameRole verified')
+        .select('username profilePicture aegisRating aegisRatingPeak aegisIsProvisional aegisMatchesRated valRating valRatingPeak valIsProvisional valMatchesRated tournamentsPlayed matchesPlayed team primaryGame inGameRole verified')
         .populate('team', 'teamName teamTag logo')
         .sort({ aegisRating: -1 })
         .skip(skip)
@@ -94,6 +95,152 @@ router.get('/leaderboard/aegis', async (req, res) => {
   } catch (error) {
     console.error('Error fetching Aegis leaderboard:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @desc    Verify Valorant Riot ID via HenrikDev API
+// @route   GET /api/players/verify-valorant
+// @access  Private
+router.get('/verify-valorant', auth, async (req, res) => {
+  try {
+    const { name, tag } = req.query;
+    if (!name || !tag) {
+      return res.status(400).json({ message: 'Riot Name and Tag are required.' });
+    }
+
+    const apiKey = process.env.HENRIKDEV_API_KEY;
+    const headers = {};
+    if (apiKey) {
+      headers['Authorization'] = apiKey;
+    }
+
+    const response = await axios.get(
+      `https://api.henrikdev.xyz/valorant/v1/account/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`,
+      { headers }
+    );
+
+    if (response.data && response.data.data) {
+      return res.json({ account: response.data.data });
+    } else {
+      return res.status(404).json({ message: 'Valorant account not found.' });
+    }
+  } catch (error) {
+    console.error('Valorant API Error:', error.response?.data || error.message);
+
+    // HenrikDev returns { errors: [{ message, code, status }] }
+    const henrikErrors = error.response?.data?.errors;
+    const henrikMsg = Array.isArray(henrikErrors) && henrikErrors.length > 0
+      ? henrikErrors[0].message
+      : null;
+
+    const status = error.response?.status || 500;
+
+    if (status === 404 || henrikMsg === 'Account not found') {
+      return res.status(404).json({ message: 'Riot account not found. Please double-check your Name and Tag (e.g. Player#1234).' });
+    }
+
+    if (status === 429) {
+      return res.status(429).json({ message: 'Verification rate-limited. Please wait a moment and try again.' });
+    }
+
+    const msg = henrikMsg || error.response?.data?.message || 'Failed to verify Riot ID. Ensure the name and tag are correct.';
+    return res.status(status).json({ message: msg });
+  }
+});
+
+// @desc    Sync Valorant Rank/MMR via API
+// @route   POST /api/players/sync-valorant-stats
+// @access  Private
+router.post('/sync-valorant-stats', auth, async (req, res) => {
+  try {
+    const player = await Player.findById(req.user.id);
+    if (!player) return res.status(404).json({ message: 'Player not found' });
+
+    const valoId = player.gameIds.find(g => g.game === 'VALORANT');
+    if (!valoId) return res.status(400).json({ message: 'No Valorant ID linked' });
+
+    const [name, tag] = valoId.inGameName.split('#');
+    if (!name || !tag) return res.status(400).json({ message: 'Invalid Riot ID format' });
+
+    const apiKey = process.env.HENRIKDEV_API_KEY;
+    const headers = apiKey ? { 'Authorization': apiKey } : {};
+
+    // 1. Fetch Account to get Region
+    const accountRes = await axios.get(
+      `https://api.henrikdev.xyz/valorant/v1/account/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`,
+      { headers }
+    );
+    const accountData = accountRes.data?.data;
+    if (!accountData || !accountData.region) {
+      return res.status(400).json({ message: 'Could not fetch account region' });
+    }
+
+    // 2. Fetch MMR
+    const mmrRes = await axios.get(
+      `https://api.henrikdev.xyz/valorant/v1/mmr/${accountData.region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`,
+      { headers }
+    );
+    const mmrData = mmrRes.data?.data;
+
+    if (!mmrData) {
+       return res.status(400).json({ message: 'Could not fetch MMR data' });
+    }
+
+    // Update player.riotProfile
+    player.riotProfile = {
+      ...(player.riotProfile || {}),
+      puuid: accountData.puuid,
+      gameName: accountData.name,
+      tagLine: accountData.tag,
+      currentRank: mmrData.currenttierpatched,
+      currentRankTier: mmrData.currenttier,
+      rr: mmrData.ranking_in_tier,
+      peakRank: mmrData.highest_tier_patched,
+      lastUpdated: new Date()
+    };
+
+    await player.save();
+
+    return res.json({ message: 'Stats synced successfully', riotProfile: player.riotProfile });
+  } catch (error) {
+    console.error('Valorant API Error:', error.response?.data || error.message);
+    const msg = error.response?.data?.message || 'Failed to sync Valorant stats.';
+    return res.status(error.response?.status || 500).json({ message: msg });
+  }
+});
+
+// @desc    Get recent 5 Valorant matches
+// @route   GET /api/players/valorant-matches
+// @access  Private
+router.get('/valorant-matches', auth, async (req, res) => {
+  try {
+    const player = await Player.findById(req.user.id);
+    if (!player) return res.status(404).json({ message: 'Player not found' });
+
+    const valoId = player.gameIds.find(g => g.game === 'VALORANT');
+    if (!valoId) return res.status(400).json({ message: 'No Valorant ID linked' });
+
+    const [name, tag] = valoId.inGameName.split('#');
+    
+    const apiKey = process.env.HENRIKDEV_API_KEY;
+    const headers = apiKey ? { 'Authorization': apiKey } : {};
+
+    const accountRes = await axios.get(
+      `https://api.henrikdev.xyz/valorant/v1/account/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`,
+      { headers }
+    );
+    const region = accountRes.data?.data?.region;
+    if (!region) return res.status(400).json({ message: 'Could not determine region' });
+
+    const matchesRes = await axios.get(
+      `https://api.henrikdev.xyz/valorant/v3/matches/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}?size=5`,
+      { headers }
+    );
+
+    return res.json({ matches: matchesRes.data?.data || [] });
+  } catch (error) {
+    console.error('Valorant Match Fetch Error:', error.response?.data || error.message);
+    return res.status(error.response?.status || 500).json({ message: 'Failed to fetch matches' });
   }
 });
 
@@ -111,7 +258,7 @@ router.get('/discover', auth, async (req, res) => {
     const skip = (page - 1) * limit;
 
     const sortOrder = sortOrderRaw === 'asc' ? 1 : -1;
-    const allowedSortFields = new Set(['aegisRating', 'createdAt', 'username']);
+    const allowedSortFields = new Set(['aegisRating', 'valRating', 'createdAt', 'username']);
     const safeSortBy = allowedSortFields.has(sortBy) ? sortBy : 'aegisRating';
 
     const blockedSet = await getBlockedUserIdSetForUser(viewerId);
@@ -145,7 +292,7 @@ router.get('/discover', auth, async (req, res) => {
     const [total, players] = await Promise.all([
       Player.countDocuments(query),
       Player.find(query)
-        .select('_id username realName profilePicture aegisRating primaryGame inGameRole teamStatus verified')
+        .select('_id username realName profilePicture aegisRating valRating primaryGame inGameRole teamStatus verified')
         .sort({ [safeSortBy]: sortOrder, username: 1 })
         .skip(skip)
         .limit(limit)
@@ -258,7 +405,7 @@ router.get("/me", auth, async (req, res) => {
       .select(
         [
           // User fields
-          "_id", "realName", "age", "location", "bio", "languages", "profilePicture", "gameIds", "earnings", "inGameRole", "teamStatus", "availability", "discordTag", "instagram", "youtube", "twitter", "profileVisibility", "cardTheme", "username", "country", "aegisRating", "aegisRatingPeak", "aegisMatchesRated", "aegisIsProvisional", "sChampionships", "aChampionships", "sTopThree", "verified", "createdAt", "previousTeams", "team", "primaryGame", "tournamentsPlayed", "matchesPlayed", "statistics", "notificationPreferences", "mutedTryoutChats", "agreedToGuidelines"
+          "_id", "realName", "age", "location", "bio", "languages", "profilePicture", "gameIds", "earnings", "inGameRole", "teamStatus", "availability", "discordTag", "instagram", "youtube", "twitter", "profileVisibility", "cardTheme", "username", "country", "aegisRating", "aegisRatingPeak", "aegisMatchesRated", "aegisIsProvisional", "valRating", "valRatingPeak", "valMatchesRated", "valIsProvisional", "valorantStats", "riotProfile", "sChampionships", "aChampionships", "sTopThree", "verified", "createdAt", "previousTeams", "team", "primaryGame", "tournamentsPlayed", "matchesPlayed", "statistics", "notificationPreferences", "mutedTryoutChats", "agreedToGuidelines"
         ].join(" ")
       )
       .populate({
@@ -352,8 +499,8 @@ router.put("/update-profile", auth, async (req, res) => {
 
     // WHITELIST: Only allow these specific fields to be updated
     const ALLOWED_FIELDS = [
-      'realName', 'age', 'location', 'teamStatus', 'availability',
-      'bio', 'languages', 'inGameRole', 'discordTag',
+      'realName', 'age', 'location', 'country', 'teamStatus', 'availability',
+      'bio', 'languages', 'primaryGame', 'inGameRole', 'discordTag',
       'instagram', 'youtube', 'twitter'
     ];
 
@@ -514,7 +661,22 @@ router.post("/change-password", auth, async (req, res) => {
 router.get('/dashboard-data', auth, async (req, res) => {
   try {
     const playerId = req.user.id;
-    const { tournamentLimit = 3, matchLimit = 3, ratingLimit = 5 } = req.query;
+    const { tournamentLimit = 3, matchLimit = 3, ratingLimit = 5, game } = req.query;
+
+    // Build dynamic filters based on selected game
+    const teamFilter = { players: playerId };
+    if (game) teamFilter.primaryGame = game;
+
+    const tournamentFilter = {
+      isOpenForAll: true,
+      visibility: 'public',
+      registrationStartDate: { $lte: new Date() },
+      registrationEndDate: { $gte: new Date() }
+    };
+    if (game) tournamentFilter.gameTitle = game;
+
+    const lfpFilter = { status: 'active' };
+    if (game) lfpFilter.game = game;
 
     // PARALLEL EXECUTION: Run all queries simultaneously
     const [
@@ -530,18 +692,13 @@ router.get('/dashboard-data', auth, async (req, res) => {
         .select('username aegisRating aegisRatingPeak aegisMatchesRated aegisIsProvisional statistics profilePicture bio primaryGame')
         .lean(),
 
-      // Query 2: Get player's teams
-      Team.find({ players: playerId })
-        .select('_id teamName teamTag logo')
+      // Query 2: Get player's teams (Filtered by game)
+      Team.find(teamFilter)
+        .select('_id teamName teamTag logo primaryGame')
         .lean(),
 
-      // Query 3: Get open tournaments
-      Tournament.find({
-        isOpenForAll: true,
-        visibility: 'public',
-        registrationStartDate: { $lte: new Date() },
-        registrationEndDate: { $gte: new Date() }
-      })
+      // Query 3: Get open tournaments (Filtered by game)
+      Tournament.find(tournamentFilter)
         .sort({ startDate: 1 })
         .limit(parseInt(tournamentLimit))
         .select('tournamentName shortName gameTitle region tier status startDate endDate prizePool media participatingTeamsCount slots registrationStartDate registrationEndDate')
@@ -565,8 +722,8 @@ router.get('/dashboard-data', auth, async (req, res) => {
         .sort({ registeredAt: -1 })
         .lean(),
 
-      // Query 6: Latest recruitment opportunities (Looking For Player)
-      LFPPost.find({ status: 'active' })
+      // Query 6: Latest recruitment opportunities (Looking For Player) (Filtered by game)
+      LFPPost.find(lfpFilter)
         .sort({ createdAt: -1 })
         .limit(3)
         .populate('team', 'teamName teamTag logo')
@@ -847,6 +1004,152 @@ router.get('/recent3matches', auth, async (req, res) => {
   }
 });
 
+// ============================================================================
+// GET /api/players/:id/valorant-profile
+// Public endpoint — fetches live rank + recent 5 matches from Henrik API
+// for any registered player. Caches per player ID for 5 minutes.
+// ============================================================================
+const valorantProfileCache = new Map(); // key: playerId → { data, fetchedAt } — v2 (adds mapImage, agentBust)
+const VALORANT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+router.get('/:id/valorant-profile', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid player ID' });
+    }
+
+    // Return from cache if fresh
+    const cached = valorantProfileCache.get(id);
+    if (cached && Date.now() - cached.fetchedAt < VALORANT_CACHE_TTL) {
+      return res.json(cached.data);
+    }
+
+    // Look up the player's linked Valorant ID
+    const player = await Player.findById(id).select('gameIds riotProfile').lean();
+    if (!player) return res.status(404).json({ message: 'Player not found' });
+
+    const valoId = player.gameIds?.find(g => g.game === 'VALORANT');
+    if (!valoId?.inGameName) {
+      return res.json({ rank: null, matches: [], noValorantId: true });
+    }
+
+    const [name, tag] = valoId.inGameName.split('#');
+    if (!name || !tag) {
+      return res.json({ rank: null, matches: [], noValorantId: true });
+    }
+
+    const apiKey = process.env.HENRIKDEV_API_KEY;
+    const headers = apiKey ? { Authorization: apiKey } : {};
+
+    // Fetch account (for region), MMR, and matches in parallel
+    let region = player.riotProfile?.region || null;
+
+    // If we don't have a cached region, fetch account
+    if (!region) {
+      try {
+        const accountRes = await axios.get(
+          `https://api.henrikdev.xyz/valorant/v1/account/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`,
+          { headers }
+        );
+        region = accountRes.data?.data?.region;
+      } catch (_err) {
+        // fallback — try ap (South Asia)
+        region = 'ap';
+      }
+    }
+
+    // Parallel: MMR + Matches
+    const [mmrRes, matchesRes] = await Promise.allSettled([
+      axios.get(
+        `https://api.henrikdev.xyz/valorant/v2/mmr/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`,
+        { headers }
+      ),
+      axios.get(
+        `https://api.henrikdev.xyz/valorant/v3/matches/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}?size=5`,
+        { headers }
+      ),
+    ]);
+
+    // Parse rank (v2 MMR uses data.current_data)
+    let rank = null;
+    if (mmrRes.status === 'fulfilled') {
+      const d = mmrRes.value.data?.data?.current_data;
+      if (d) {
+        rank = {
+          tier: d.currenttierpatched || null,
+          tierNumber: d.currenttier ?? null,
+          rr: d.ranking_in_tier ?? null,
+          lastChange: d.mmr_change_to_last_game ?? null,
+          peakRank: mmrRes.value.data?.data?.highest_rank?.patched_tier || null,
+          iconUrl: d.images?.large || d.images?.small || null,
+        };
+      }
+    }
+
+    // Parse matches — extract just the key stats for the profile card
+    let matches = [];
+    if (matchesRes.status === 'fulfilled') {
+      const raw = matchesRes.value.data?.data || [];
+      matches = raw.slice(0, 5).map(m => {
+        const me = m.players?.all_players?.find(
+          p => p.name?.toLowerCase() === name.toLowerCase() && p.tag?.toLowerCase() === tag.toLowerCase()
+        ) || m.players?.all_players?.[0];
+        const myTeamColor = me?.team?.toLowerCase() || 'red';
+        const myTeamData = m.teams?.[myTeamColor];
+        const won = myTeamData?.has_won ?? false;
+        // Stable map listview icon URLs from valorant-api.com
+        const MAP_IMG_URLS = {
+          Ascent:  'https://media.valorant-api.com/maps/7eaecc1b-4337-bbf6-6ab9-04b8f06b3319/listviewicon.png',
+          Bind:    'https://media.valorant-api.com/maps/2c9d57ec-4431-9c5e-2939-8f9ef6dd5cba/listviewicon.png',
+          Haven:   'https://media.valorant-api.com/maps/2bee0dc9-4bbe-f851-2b25-d3e3e3a7571b/listviewicon.png',
+          Split:   'https://media.valorant-api.com/maps/d960549e-485c-e861-8d71-aa9d1aed12a2/listviewicon.png',
+          Fracture:'https://media.valorant-api.com/maps/b529448b-4d60-346e-e89e-00a4c527a405/listviewicon.png',
+          Pearl:   'https://media.valorant-api.com/maps/fd267378-4d1d-484f-ff52-77821f9d4124/listviewicon.png',
+          Icebox:  'https://media.valorant-api.com/maps/e2ad5c54-4114-a870-9641-8ea21279579a/listviewicon.png',
+          Breeze:  'https://media.valorant-api.com/maps/2fb9a4fd-47b8-4e7d-a969-74b4046ebd53/listviewicon.png',
+          Lotus:   'https://media.valorant-api.com/maps/2fe4ed3a-450a-948b-9615-a7f0dc5f3c26/listviewicon.png',
+          Abyss:   'https://media.valorant-api.com/maps/224b0a95-48b9-f703-1bd8-67aca101a61f/listviewicon.png',
+          Sunset:  'https://media.valorant-api.com/maps/92584fbe-486a-b1b2-9faa-39ebbef7b169/listviewicon.png',
+        };
+        return {
+          matchId: m.metadata?.matchid,
+          map: m.metadata?.map,
+          mode: m.metadata?.mode,
+          startedAt: m.metadata?.game_start_patched,
+          won,
+          agent: me?.character,
+          // Killfeed portrait = face/head shown in in-game scoreboard (from Henrik CDN)
+          agentKillfeed: me?.assets?.agent?.killfeed || null,
+          // Fallback: display icon via valorant-api.com using character UUID
+          agentIcon: me?.character_id
+            ? `https://media.valorant-api.com/agents/${me.character_id.toLowerCase()}/displayicon.png`
+            : null,
+          // Map listview minimap (hardcoded stable URLs)
+          mapImage: MAP_IMG_URLS[m.metadata?.map] || null,
+          kills: me?.stats?.kills ?? 0,
+          deaths: me?.stats?.deaths ?? 0,
+          assists: me?.stats?.assists ?? 0,
+          kd: me?.stats?.deaths ? ((me.stats.kills || 0) / me.stats.deaths).toFixed(2) : (me?.stats?.kills || 0).toFixed(2),
+          acs: me?.stats?.score && m.metadata?.rounds_played
+            ? Math.round(me.stats.score / m.metadata.rounds_played)
+            : 0,
+          score: myTeamData
+            ? `${myTeamData.rounds_won ?? '?'} - ${(m.teams?.[myTeamColor === 'red' ? 'blue' : 'red']?.rounds_won ?? '?')}`
+            : '—',
+        };
+      });
+    }
+
+    const payload = { rank, matches, riotId: `${name}#${tag}` };
+    valorantProfileCache.set(id, { data: payload, fetchedAt: Date.now() });
+    return res.json(payload);
+  } catch (error) {
+    console.error('Valorant profile fetch error:', error.response?.data || error.message);
+    return res.status(error.response?.status || 500).json({ message: 'Failed to fetch Valorant profile' });
+  }
+});
+
 // GET /api/players/:id/matches - Get player's match history with pagination
 router.get('/:id/matches', async (req, res) => {
   try {
@@ -1036,7 +1339,7 @@ router.get('/:id/profile', async (req, res) => {
   try {
     const { id } = req.params;
     const player = await Player.findById(id)
-      .select('_id username gameIds realName profilePicture verified primaryGame country location age teamStatus inGameRole team bio languages previousTeams createdAt discordTag instagram youtube twitter aegisRating aegisRatingPeak aegisRatingFloor aegisPrestigeFloor aegisMatchesRated aegisIsProvisional aegisLastRatedMatchAt sChampionships aChampionships sTopThree statistics')
+      .select('_id username gameIds realName profilePicture verified primaryGame country location age teamStatus inGameRole team bio languages previousTeams createdAt discordTag instagram youtube twitter aegisRating aegisRatingPeak aegisRatingFloor aegisPrestigeFloor aegisMatchesRated aegisIsProvisional aegisLastRatedMatchAt valRating valRatingPeak valRatingFloor valMatchesRated valIsProvisional valLastRatedMatchAt valorantStats riotProfile sChampionships aChampionships sTopThree statistics')
       .populate({
         path: 'team',
         select: '_id teamName teamTag logo primaryGame region players captain',
@@ -1078,7 +1381,7 @@ router.get('/:id/rating-history', async (req, res) => {
 
     const [player, total, events] = await Promise.all([
       Player.findById(req.params.id)
-        .select('aegisRating aegisRatingPeak aegisRatingFloor aegisPrestigeFloor aegisMatchesRated aegisIsProvisional aegisLastRatedMatchAt sChampionships aChampionships sTopThree')
+        .select('aegisRating aegisRatingPeak aegisRatingFloor aegisPrestigeFloor aegisMatchesRated aegisIsProvisional aegisLastRatedMatchAt valRating valRatingPeak valRatingFloor valMatchesRated valIsProvisional valLastRatedMatchAt sChampionships aChampionships sTopThree')
         .lean(),
       RatingEvent.countDocuments({ player: req.params.id }),
       RatingEvent.find({ player: req.params.id })
@@ -1196,7 +1499,8 @@ router.get('/game-ids', auth, async (req, res) => {
 // Add new game ID
 router.post('/game-ids', auth, async (req, res) => {
   try {
-    const { inGameName, characterId, isPrimary } = req.body;
+    const { inGameName, characterId, isPrimary, game } = req.body;
+    const gameType = game || 'BGMI';
 
     if (!inGameName || !characterId) {
       return res.status(400).json({ message: 'In-game name and character ID are required' });
@@ -1208,9 +1512,15 @@ router.post('/game-ids', auth, async (req, res) => {
       return res.status(404).json({ message: 'Player not found' });
     }
 
-    // Check if player already has 2 game IDs
-    if (player.gameIds && player.gameIds.length >= 2) {
-      return res.status(400).json({ message: 'Maximum 2 game IDs allowed. Please delete one to add another.' });
+    // Enforce constraints: BGMI max 2, VALORANT max 1
+    const bgmiCount = player.gameIds ? player.gameIds.filter(g => g.game === 'BGMI' || !g.game).length : 0;
+    const valoCount = player.gameIds ? player.gameIds.filter(g => g.game === 'VALORANT').length : 0;
+
+    if (gameType === 'BGMI' && bgmiCount >= 2) {
+      return res.status(400).json({ message: 'Maximum 2 BGMI IDs allowed. Please delete one to add another.' });
+    }
+    if (gameType === 'VALORANT' && valoCount >= 1) {
+      return res.status(400).json({ message: 'Maximum 1 VALORANT ID allowed. Please delete your existing ID to add a new one.' });
     }
 
     // Check if player is in ongoing tournament
@@ -1234,6 +1544,7 @@ router.post('/game-ids', auth, async (req, res) => {
 
     // Add new game ID
     player.gameIds.push({
+      game: gameType,
       inGameName: inGameName.trim(),
       characterId: characterId.trim(),
       isPrimary: shouldBePrimary,

@@ -16,7 +16,7 @@ const TOURNAMENT_ID = process.argv[2] || '69d24203d5524e57c388333f';
 const TEAM_COUNT = Number.parseInt(process.argv[3] || '1020', 10);
 const PLAYERS_PER_TEAM = 4;
 
-const SUPPORTED_GAMES = new Set(['BGMI', 'VALO', 'CS2']);
+const SUPPORTED_GAMES = new Set(['BGMI', 'VALORANT']);
 
 function isObjectId(value) {
     return mongoose.Types.ObjectId.isValid(value);

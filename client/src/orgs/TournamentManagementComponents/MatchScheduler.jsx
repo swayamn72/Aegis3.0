@@ -33,11 +33,12 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
   const [showScheduleForm, setShowScheduleForm] = useState(false);
   const [selectedGroups, setSelectedGroups] = useState([]);
   const [totalTeams, setTotalTeams] = useState(0);
+  const isValorant = tournament?.gameTitle === 'VALORANT';
   const [formData, setFormData] = useState({
     tournamentPhase: '',
     scheduledDate: '',
     scheduledTime: '',
-    map: 'Erangel'
+    map: isValorant ? 'Ascent' : 'Erangel'
   });
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -53,7 +54,13 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
 
   const phases = tournament.phases || [];
   const allGroups = phases.flatMap(phase => phase.groups || []);
-  const maps = ['Erangel', 'Miramar', 'Sanhok', 'Vikendi', 'Livik', 'Nusa', 'Rondo'];
+
+  // Derive map list from tournament data for Valorant; fall back to BGMI defaults otherwise
+  const VALORANT_MAPS = ['Ascent', 'Bind', 'Haven', 'Split', 'Icebox', 'Breeze', 'Fracture', 'Pearl', 'Lotus', 'Sunset', 'Abyss'];
+  const BGMI_MAPS = ['Erangel', 'Miramar', 'Sanhok', 'Vikendi', 'Livik', 'Nusa', 'Rondo'];
+  const maps = isValorant
+    ? (tournament?.gameSettings?.maps?.length ? tournament.gameSettings.maps : VALORANT_MAPS)
+    : BGMI_MAPS;
 
   useEffect(() => {
     setCurrentPage(1);
@@ -181,7 +188,8 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
       toast.error('Please select at least one group');
       return false;
     }
-    if (totalTeams > 24) {
+    // For BGMI (battle royale), enforce 24-team lobby cap. Valorant is always 1v1 (2 teams).
+    if (!isValorant && totalTeams > 24) {
       toast.error('Total teams cannot exceed 24');
       return false;
     }
@@ -814,7 +822,8 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
                           {/* Collapsible slot list */}
                           {isOpen && slotList.length > 0 && (
                             <div className="border-t border-zinc-700/50">
-                              {/* Download button row */}
+                              {/* Download button row — slot list is BGMI-specific, hide for Valorant */}
+                              {!isValorant && (
                               <div className="flex justify-end px-3 pt-2 pb-1">
                                 <button
                                   onClick={(e) => { e.stopPropagation(); downloadSlotListPNG(match, group, slotList); }}
@@ -825,6 +834,7 @@ const MatchScheduler = ({ tournament, onUpdate }) => {
                                   Download PNG
                                 </button>
                               </div>
+                              )}
                               <div className="px-3 pb-2 space-y-1">
                                 {slotList.map(entry => (
                                   <div key={entry.slot} className="flex items-center gap-3 text-xs py-0.5">

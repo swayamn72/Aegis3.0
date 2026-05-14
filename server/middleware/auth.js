@@ -21,3 +21,8 @@ export default function auth(req, res, next) {
     return res.status(401).json({ message: "Invalid token" });
   }
 }
+
+// Named export alias — used by new routes (mapVeto, matchRoom, resultSubmission)
+// The default export and this named export are the same function.
+export { auth as verifyToken };
+

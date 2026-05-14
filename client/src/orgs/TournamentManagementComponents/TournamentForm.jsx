@@ -188,6 +188,19 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
     }
   }, [tournament]);
 
+  // Clear map selection when game changes (BGMI maps ≠ Valorant maps)
+  useEffect(() => {
+    if (!tournament) { // only on create, not edit
+      setFormData(prev => ({
+        ...prev,
+        gameSettings: {
+          ...prev.gameSettings,
+          maps: [],
+        }
+      }));
+    }
+  }, [formData.gameTitle]);
+
   const handleMapToggle = (mapName) => {
     setFormData(prev => {
       const currentMaps = prev.gameSettings?.maps || [];
@@ -354,12 +367,7 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
 
   const gameOptions = [
     'BGMI',
-    'Valorant',
-    'CS2',
-    'LoL',
-    'Dota 2',
-    'COD Mobile',
-    'Free Fire'
+    'VALORANT',
   ];
 
   const regionOptions = [
@@ -543,13 +551,16 @@ const TournamentForm = ({ tournament, onSubmit, onCancel, isEditing = false }) =
                 </div>
               </div>
 
-              {/* Map Selection Component (Available while Editing or Creation) */}
+              {/* Map Selection Component (game-aware) */}
               <div className={isEditing ? 'mt-6' : ''}>
                 <label className="block text-sm font-medium text-zinc-300 mb-3">
                   Maps *
                 </label>
                 <div className="flex flex-wrap gap-3">
-                  {['Erangel', 'Miramar', 'Sanhok', 'Vikendi', 'Rondo'].map((mapName) => {
+                  {(formData.gameTitle === 'VALORANT'
+                    ? ['Ascent', 'Bind', 'Haven', 'Split', 'Icebox', 'Breeze', 'Fracture', 'Pearl', 'Lotus', 'Sunset', 'Abyss']
+                    : ['Erangel', 'Miramar', 'Sanhok', 'Vikendi', 'Rondo']
+                  ).map((mapName) => {
                     const isSelected = formData.gameSettings?.maps?.includes(mapName);
                     return (
                       <button

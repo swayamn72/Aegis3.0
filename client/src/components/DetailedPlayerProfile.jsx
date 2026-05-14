@@ -6,17 +6,19 @@ import {
     ArrowUp, ArrowDown, Activity, Clock, Zap, Shield, Sword,
     Medal, Crown, ChevronRight, ExternalLink, Hash, Globe, Mail,
     Flame, Timer, Crosshair, Eye, BarChart3, Percent, Sparkles,
-    Map, Loader2, AlertCircle, ChevronDown, Instagram, Twitter, Youtube
+    Map, Loader2, AlertCircle, ChevronDown, Instagram, Twitter, Youtube,
+    Swords, TrendingDown
 } from 'lucide-react';
 import { FaDiscord, FaInstagram, FaYoutube, FaTwitter } from 'react-icons/fa';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
-import { getPlayerById } from '../api/players';
+import { getPlayerById, getPlayerValorantProfile } from '../api/players';
 import { blockUser, getRelationshipStatus, reportUser, unblockUser } from '../api/moderation';
 import { fetchPlayerMatches } from '../api/playerMatches';
 import { usePlayerMatches, usePlayerTournaments } from '../hooks/useProfile';
 import { useAuth } from '../context/AuthContext';
 import { getRatingBadge, formatDelta } from '../utils/aegisRatingUtils';
+import { ValorantRankCard, ValorantMatchRow, GameViewSwitcher } from './profile/ValorantProfileWidgets';
 
 import ErangelMap from '../assets/mapImages/erangel.jpg';
 import MiramarMap from '../assets/mapImages/miramar.webp';
@@ -385,7 +387,6 @@ const EmptyState = ({ icon: Icon, title, subtitle, cta, onCta }) => (
     </div>
 );
 
-
 // ─── Team Member Avatar ───────────────────────────────────────────────────────
 
 const TeamMemberAvatar = ({ member }) => {
@@ -416,6 +417,8 @@ const DetailedPlayerProfile = () => {
     const [imageError, setImageError] = useState(false);
     const [relationship, setRelationship] = useState({ iBlocked: false, blockedMe: false, isBlocked: false });
     const [moderationBusy, setModerationBusy] = useState(false);
+    // 'bgmi' | 'valorant' — which game's live stats to show
+    const [gameView, setGameView] = useState('bgmi');
 
     const isOwnProfile = user?._id && id ? user._id === id : false;
 
@@ -454,6 +457,35 @@ const DetailedPlayerProfile = () => {
         hasNextPage: hasMoreTournaments,
         isFetchingNextPage: tournamentsFetchingMore,
     } = usePlayerTournaments(id, 5);
+
+    // Detect whether player has a Valorant ID linked (regardless of primaryGame)
+    const hasValorantId = useMemo(
+        () => (playerData?.gameIds || []).some(g => g.game === 'VALORANT' && g.inGameName?.includes('#')),
+        [playerData?.gameIds]
+    );
+    const hasBgmiId = useMemo(
+        () => (playerData?.gameIds || []).some(g => g.game === 'BGMI'),
+        [playerData?.gameIds]
+    );
+    // When the profile first loads, default to the player's primaryGame view
+    useEffect(() => {
+        if (!playerLoading && playerData?.primaryGame) {
+            setGameView(playerData.primaryGame === 'VALORANT' ? 'valorant' : 'bgmi');
+        }
+    }, [playerLoading, playerData?.primaryGame]);
+
+    // Live Valorant rank + recent matches — enabled whenever the player has a Valorant ID
+    const {
+        data: valoProfile,
+        isLoading: valoLoading,
+        isError: valoError,
+    } = useQuery({
+        queryKey: ['valorantProfile', id],
+        queryFn: () => getPlayerValorantProfile(id),
+        enabled: !!id && hasValorantId && !playerLoading,
+        staleTime: 5 * 60 * 1000,
+        retry: 1,
+    });
 
     // Flatten pages into lists
     const allMatches = useMemo(
@@ -569,8 +601,7 @@ const DetailedPlayerProfile = () => {
 
     const getGameColor = () => {
         switch (playerData?.primaryGame) {
-            case 'VALO': return 'text-red-400';
-            case 'CS2': return 'text-blue-400';
+            case 'VALORANT': return 'text-red-400';
             case 'BGMI': return 'text-yellow-400';
             default: return 'text-zinc-400';
         }
@@ -716,6 +747,43 @@ const DetailedPlayerProfile = () => {
                                 </span>
                             ))}
                         </div>
+
+                        {/* Game View Switcher — only visible when player has multiple game IDs */}
+                        {hasValorantId && (
+                            <div className="mt-4 flex items-center gap-2">
+                                <span className="text-zinc-500 text-xs font-semibold uppercase tracking-wider">View stats for:</span>
+                                <div className="flex items-center bg-zinc-800/80 border border-zinc-700/50 rounded-xl p-1 gap-1">
+                                    {hasBgmiId && (
+                                        <button
+                                            onClick={() => setGameView('bgmi')}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${
+                                                gameView === 'bgmi'
+                                                    ? 'bg-yellow-500 text-zinc-900 shadow-lg shadow-yellow-500/30'
+                                                    : 'text-zinc-400 hover:text-yellow-400 hover:bg-zinc-700/50'
+                                            }`}
+                                        >
+                                            <span className="text-[10px]">🔫</span>
+                                            BGMI
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => setGameView('valorant')}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${
+                                            gameView === 'valorant'
+                                                ? 'bg-red-500 text-white shadow-lg shadow-red-500/30'
+                                                : 'text-zinc-400 hover:text-red-400 hover:bg-zinc-700/50'
+                                        }`}
+                                    >
+                                        <span className="text-[10px]">◆</span>
+                                        VALORANT
+                                        {valoLoading && <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />}
+                                    </button>
+                                </div>
+                                {gameView === 'valorant' && valoProfile?.riotId && (
+                                    <span className="text-zinc-600 text-[10px] font-mono">{valoProfile.riotId}</span>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -859,6 +927,38 @@ const DetailedPlayerProfile = () => {
                                     )}
                                 </div>
 
+                                {/* Valorant Recent Matches — shown when game view is set to VALORANT */}
+                                {gameView === 'valorant' && hasValorantId && (
+                                    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+                                        <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                            <Swords className="w-5 h-5 text-red-400" />
+                                            Recent Valorant Matches
+                                            <span className="ml-auto text-[10px] text-zinc-600 font-normal bg-zinc-800 px-2 py-0.5 rounded-full">
+                                                Last 5 • Live
+                                            </span>
+                                        </h2>
+                                        {valoLoading ? (
+                                            <div className="space-y-2">
+                                                {[1, 2, 3, 4, 5].map(i => (
+                                                    <div key={i} className="h-14 bg-zinc-800 rounded-xl animate-pulse" />
+                                                ))}
+                                            </div>
+                                        ) : valoError || !valoProfile ? (
+                                            <ErrorState message="Could not load Valorant match history" />
+                                        ) : valoProfile.noValorantId ? (
+                                            <EmptyState icon={Swords} title="No Valorant ID linked" subtitle="This player hasn't linked their Riot ID yet" />
+                                        ) : valoProfile.matches?.length > 0 ? (
+                                            <div className="space-y-2">
+                                                {valoProfile.matches.map((m, i) => (
+                                                    <ValorantMatchRow key={m.matchId || i} match={m} />
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <EmptyState icon={Swords} title="No recent matches found" subtitle="No Valorant matches retrieved from the API" />
+                                        )}
+                                    </div>
+                                )}
+
                                 {/* Social Links (Integrated into Overview) */}
                                 <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
                                     <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
@@ -937,6 +1037,17 @@ const DetailedPlayerProfile = () => {
 
                     {/* Sidebar Area */}
                     <div className="space-y-6">
+
+                        {/* Valorant Rank Card — shown when game view is set to VALORANT */}
+                        {gameView === 'valorant' && hasValorantId && (
+                            <ValorantRankCard
+                                rank={valoProfile?.rank}
+                                riotId={valoProfile?.riotId || playerData.gameIds?.find(g => g.game === 'VALORANT')?.inGameName}
+                                isLoading={valoLoading && !valoProfile}
+                                error={valoError ? 'Could not load rank' : null}
+                            />
+                        )}
+
                         {/* Info Block */}
                         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
                             <h3 className="text-lg font-bold mb-4">Player Details</h3>
@@ -959,6 +1070,26 @@ const DetailedPlayerProfile = () => {
                                                 <div key={idx} className="flex items-center justify-between text-xs p-2 bg-zinc-800/50 rounded border border-zinc-700/50">
                                                     <span className="text-zinc-300 font-medium">{team.name}</span>
                                                     <span className="text-zinc-600 font-bold">{new Date(team.startDate).getFullYear()}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Valorant stats from Aegis database (tournament play) */}
+                                {hasValorantId && playerData.valorantStats && playerData.valorantStats.matchesPlayed > 0 && (
+                                    <div>
+                                        <p className="text-zinc-500 text-[10px] uppercase tracking-wider font-semibold mb-2">Valorant Tournament Stats</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {[
+                                                { label: 'Matches', value: playerData.valorantStats.matchesPlayed },
+                                                { label: 'Win Rate', value: `${(playerData.valorantStats.winRate || 0).toFixed(0)}%` },
+                                                { label: 'K/D', value: (playerData.valorantStats.kd || 0).toFixed(2) },
+                                                { label: 'Avg ACS', value: (playerData.valorantStats.avgAcs || 0).toFixed(0) },
+                                            ].map(({ label, value }) => (
+                                                <div key={label} className="bg-zinc-800/60 rounded-lg p-2 text-center border border-zinc-700/30">
+                                                    <p className="text-zinc-500 text-[9px] uppercase tracking-wider">{label}</p>
+                                                    <p className="text-white font-bold text-sm">{value}</p>
                                                 </div>
                                             ))}
                                         </div>

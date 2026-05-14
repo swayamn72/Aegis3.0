@@ -66,7 +66,7 @@ const TeamCard = ({ team, groupName, allGroups, onRemove, onMove, isLocked }) =>
 };
 
 // ─── GroupCard ────────────────────────────────────────────────────────────────
-const GroupCard = ({ group, phaseTeamMap, allGroups, unassignedTeams, onRemove, onMove, onAddTeam, onDeleteGroup, index, slotData }) => {
+const GroupCard = ({ group, phaseTeamMap, allGroups, unassignedTeams, onRemove, onMove, onAddTeam, onDeleteGroup, index, slotData, isValorant }) => {
     const [addingTeam, setAddingTeam] = useState(false);
     const groupNumber = group.name?.match(/\d+/)?.[0] || (index + 1);
     const isLocked = slotData?.isLocked || false;
@@ -128,21 +128,24 @@ const GroupCard = ({ group, phaseTeamMap, allGroups, unassignedTeams, onRemove, 
                     ))}
                 </div>
             ) : (
-                /* Fallback: no slot list yet — show BGMI slot numbers derived client-side */
+                /* Fallback: no slot list yet — show team list */
                 <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                     {group.teams.map((teamId, idx) => {
                         const team = phaseTeamMap[teamId];
                         if (!team) return null;
-                        // BGMI: teams 1-23 → slots 3-25, team 24 → slot 2
+                        // BGMI: teams 1-23 → slots 3-25, team 24 → slot 2. Slot numbers are irrelevant for Valorant.
                         const slotNum = idx < 23 ? idx + 3 : 2;
                         return (
                             <div
                                 key={teamId}
                                 className="flex items-center gap-3 px-3 py-2 bg-gray-700/50 rounded-lg"
                             >
-                                <span className="flex-shrink-0 w-16 text-xs font-bold text-orange-400">
-                                    Slot {slotNum}
-                                </span>
+                                {/* Only show slot numbers for BGMI (BR convention) */}
+                                {!isValorant && (
+                                    <span className="flex-shrink-0 w-16 text-xs font-bold text-orange-400">
+                                        Slot {slotNum}
+                                    </span>
+                                )}
                                 <div className="flex-1 flex items-center gap-2 min-w-0">
                                     {team.logo ? (
                                         <img src={team.logo} alt={team.teamName} className="w-6 h-6 rounded flex-shrink-0 object-cover" />
@@ -220,9 +223,11 @@ const GroupCard = ({ group, phaseTeamMap, allGroups, unassignedTeams, onRemove, 
 // ─── Main Component ────────────────────────────────────────────────────────────
 const TeamGrouping = ({ tournament, onUpdate }) => {
     const queryClient = useQueryClient();
+    const isValorant = tournament?.gameTitle === 'VALORANT';
     const [selectedPhase, setSelectedPhase] = useState('');
     const [groups, setGroups] = useState([]);
-    const [teamsPerGroup, setTeamsPerGroup] = useState(16);
+    // Valorant: default 4 teams per group (GSL/RR style); BGMI: 16 (BR lobby)
+    const [teamsPerGroup, setTeamsPerGroup] = useState(isValorant ? 4 : 16);
     const [groupsPage, setGroupsPage] = useState(1);
     const GROUPS_PER_PAGE = 6;
 
@@ -438,7 +443,10 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
                 <div>
                     <h2 className="text-2xl font-bold text-white">Team Grouping</h2>
                     <p className="text-gray-400 text-sm mt-1">
-                        Organise teams into groups for round-robin matches
+                        {isValorant
+                            ? 'Organise teams into groups or brackets for playoff play'
+                            : 'Organise teams into groups for round-robin matches'
+                        }
                     </p>
                 </div>
                 <button
@@ -557,6 +565,7 @@ const TeamGrouping = ({ tournament, onUpdate }) => {
                                         onDeleteGroup={handleDeleteGroup}
                                         index={groups.findIndex(g => g.name === group.name)}
                                         slotData={slotDataByGroup[group.name]}
+                                        isValorant={isValorant}
                                     />
                                 ))}
                             </div>

@@ -11,6 +11,8 @@ import axiosInstance from '../utils/axiosConfig';
 import PhaseManager from './TournamentManagementComponents/PhaseManager';
 import MatchScheduler from './TournamentManagementComponents/MatchScheduler';
 import PointsTable from './TournamentManagementComponents/PointsTable';
+import ValorantStandingsPanel from './TournamentManagementComponents/ValorantStandingsPanel';
+import ResultReviewPanel from './TournamentManagementComponents/ResultReviewPanel';
 import TeamGrouping from './TournamentManagementComponents/TeamGrouping';
 import MatchManagement from './TournamentManagementComponents/MatchManagement';
 import TeamSelector from './TournamentManagementComponents/TeamSelector';
@@ -262,6 +264,7 @@ const TournamentManagementPageOrg = () => {
         { id: 'registrations', name: 'Registrations', icon: ClipboardList },
         { id: 'groups', name: 'Groups', icon: Grid3x3 },
         { id: 'standings', name: 'Standings', icon: Trophy },
+        ...(tournament?.gameTitle === 'VALORANT' ? [{ id: 'results', name: 'Results', icon: CheckCircle }] : []),
         { id: 'prizes', name: 'Prizes', icon: Award },
         { id: 'announcements', name: 'Announcements', icon: Bell },
     ];
@@ -1036,11 +1039,25 @@ const TournamentManagementPageOrg = () => {
                     )}
 
                     {activeSection === 'standings' && (
-                        <PointsTable tournament={tournament} onUpdate={fetchTournament} />
+                        tournament?.gameTitle === 'VALORANT'
+                            ? <div className="p-6"><ValorantStandingsPanel tournament={tournament} onUpdate={fetchTournament} /></div>
+                            : <PointsTable tournament={tournament} onUpdate={fetchTournament} />
                     )}
 
                     {activeSection === 'announcements' && (
                         <Announcements tournament={tournament} />
+                    )}
+
+                    {activeSection === 'results' && tournament?.gameTitle === 'VALORANT' && (
+                        <div className="p-6">
+                            <div className="flex items-center justify-between mb-6">
+                                <div>
+                                    <h2 className="text-2xl font-bold text-white">Result Submissions</h2>
+                                    <p className="text-sm text-gray-400 mt-1">Review team-submitted scoreboard screenshots and confirm match results</p>
+                                </div>
+                            </div>
+                            <ResultReviewPanel tournament={tournament} />
+                        </div>
                     )}
 
                     {activeSection === 'prizes' && (

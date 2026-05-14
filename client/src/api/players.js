@@ -66,3 +66,10 @@ export const getAegisLeaderboard = async (page = 1, limit = 25) => {
     });
     return data;
 };
+
+// Get live Valorant rank + recent 5 matches for any player (public)
+export const getPlayerValorantProfile = async (playerId) => {
+    if (!playerId) throw new Error('Player ID is required');
+    const { data } = await axiosInstance.get(`/api/players/${playerId}/valorant-profile`);
+    return data;
+};

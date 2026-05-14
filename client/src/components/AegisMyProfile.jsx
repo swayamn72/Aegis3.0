@@ -3,13 +3,13 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTeam, usePlayerMatches, usePlayerTournaments } from '../hooks/useProfile';
 import { getRatingBadge } from '../utils/aegisRatingUtils';
+import axiosInstance from '../utils/axiosConfig';
+import { useQuery } from '@tanstack/react-query';
+import { getPlayerValorantProfile } from '../api/players';
+import { toast } from 'react-toastify';
+import { ValorantRankCard, ValorantMatchRow, GameViewSwitcher } from './profile/ValorantProfileWidgets';
 import {
-  User, MapPin, Calendar, Globe, Users, Trophy,
-  Gamepad2, Share2, Edit,
-  Clock, Medal, ChevronRight, Hash,
-  ExternalLink, Check, X, Shield, Eye,
-  Sword, Instagram, Twitter, Youtube,
-  Loader2, AlertCircle, ChevronDown, Flame, Map
+  MapPin, Calendar, Users, Trophy, ExternalLink, Shield, AlertCircle, Edit, Map, Check, Flame, ChevronRight, X, User, Sword, Medal, Hash, Twitter, Instagram, Youtube, Globe, Clock, ChevronDown, Loader2, Share2, Gamepad2, RefreshCw
 } from 'lucide-react';
 
 import ErangelMap from '../assets/mapImages/erangel.jpg';
@@ -342,8 +342,100 @@ const AegisMyProfile = () => {
   const [copied, setCopied] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [teamLogoError, setTeamLogoError] = useState(false);
+  const [syncingValo, setSyncingValo] = useState(false);
+  // 'bgmi' | 'valorant'
+  const [gameView, setGameView] = useState('bgmi');
 
-  const isLoading = !user || !user.username;
+  const handleSyncValorant = async () => {
+    setSyncingValo(true);
+    try {
+      const res = await axiosInstance.post('/api/players/sync-valorant-stats');
+      toast.success(res.data.message);
+      setTimeout(() => window.location.reload(), 1000);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to sync stats');
+    } finally {
+      setSyncingValo(false);
+    }
+  };
+
+  const userData = {
+    realName: user?.realName || 'Not provided',
+    username: user?.username || '',
+    primaryGameId: user?.gameIds?.find(g => g.isPrimary)?.inGameName || null,
+    age: user?.age || 'N/A',
+    location: user?.location || 'Not provided',
+    country: user?.country || 'Not provided',
+    bio: user?.bio || 'No bio yet',
+    languages: user?.languages || [],
+    aegisRating: user?.aegisRating || 1200,
+    verified: user?.verified || false,
+    joinDate: user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', {
+      month: 'short', year: 'numeric'
+    }) : 'Recently',
+    primaryGame: user?.primaryGame || 'Not selected',
+    earnings: user?.earnings || 0,
+    inGameRole: user?.inGameRole || [],
+    teamStatus: user?.teamStatus || 'Not specified',
+    availability: user?.availability || 'Not specified',
+    discordTag: user?.discordTag || '',
+    instagram: user?.instagram || '',
+    youtube: user?.youtube || '',
+    profileVisibility: user?.profileVisibility || 'public',
+    profilePicture: user?.profilePicture || null,
+    statistics: user?.statistics || {
+      tournamentsPlayed: 0,
+      matchesPlayed: 0,
+      matchesWon: 0,
+      totalKills: 0,
+      winRate: 0,
+      averagePlacement: 0,
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'matches' && userData.primaryGame === 'VALORANT') {
+      const fetchValoMatches = async () => {
+        setValoMatchesLoading(true);
+        try {
+          const res = await axiosInstance.get('/api/players/valorant-matches');
+          setValoMatches(res.data.matches || []);
+        } catch (e) {
+          console.error("Failed to fetch valo matches", e);
+        } finally {
+          setValoMatchesLoading(false);
+        }
+      };
+      fetchValoMatches();
+    }
+  }, [activeTab, userData.primaryGame]);
+
+  const hasValorantId = useMemo(
+    () => (user?.gameIds || []).some(g => g.game === 'VALORANT' && g.inGameName?.includes('#')),
+    [user?.gameIds]
+  );
+  const hasBgmiId = useMemo(
+    () => (user?.gameIds || []).some(g => g.game === 'BGMI'),
+    [user?.gameIds]
+  );
+
+  // Default gameView to primaryGame once user loads
+  useEffect(() => {
+    if (user?.primaryGame) setGameView(user.primaryGame === 'VALORANT' ? 'valorant' : 'bgmi');
+  }, [user?.primaryGame]);
+
+  // Live Valorant rank + last 5 matches via the new public endpoint
+  const {
+    data: valoProfile,
+    isLoading: valoLoading,
+    isError: valoError,
+  } = useQuery({
+    queryKey: ['valorantProfile', user?._id],
+    queryFn: () => getPlayerValorantProfile(user._id),
+    enabled: !!user?._id && hasValorantId,
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
 
   const teamId = user?.team ? (typeof user.team === 'object' ? user.team._id : user.team) : null;
 
@@ -385,6 +477,8 @@ const AegisMyProfile = () => {
   useEffect(() => { setImageError(false); }, [user?.profilePicture]);
   useEffect(() => { setTeamLogoError(false); }, [team?.logo]);
 
+  const isLoading = !user || !user.username;
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-zinc-950">
@@ -396,39 +490,7 @@ const AegisMyProfile = () => {
     );
   }
 
-  const userData = {
-    realName: user.realName || 'Not provided',
-    username: user.username || '',
-    primaryGameId: user.gameIds?.find(g => g.isPrimary)?.inGameName || null,
-    age: user.age || 'N/A',
-    location: user.location || 'Not provided',
-    country: user.country || 'Not provided',
-    bio: user.bio || 'No bio yet',
-    languages: user.languages || [],
-    aegisRating: user.aegisRating || 1200,
-    verified: user.verified || false,
-    joinDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', {
-      month: 'short', year: 'numeric'
-    }) : 'Recently',
-    primaryGame: user.primaryGame || 'Not selected',
-    earnings: user.earnings || 0,
-    inGameRole: user.inGameRole || [],
-    teamStatus: user.teamStatus || 'Not specified',
-    availability: user.availability || 'Not specified',
-    discordTag: user.discordTag || '',
-    instagram: user?.instagram || '',
-    youtube: user.youtube || '',
-    profileVisibility: user.profileVisibility || 'public',
-    profilePicture: user.profilePicture || null,
-    statistics: user.statistics || {
-      tournamentsPlayed: 0,
-      matchesPlayed: 0,
-      matchesWon: 0,
-      totalKills: 0,
-      winRate: 0,
-      averagePlacement: 0,
-    }
-  };
+
 
   const StatBox = ({ icon: Icon, label, value, color = 'cyan' }) => (
     <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
@@ -601,6 +663,16 @@ const AegisMyProfile = () => {
                 </span>
               ))}
             </div>
+
+            {/* Game View Switcher */}
+            <GameViewSwitcher
+              gameView={gameView}
+              setGameView={setGameView}
+              hasBgmiId={hasBgmiId}
+              hasValorantId={hasValorantId}
+              valoLoading={valoLoading}
+              riotId={valoProfile?.riotId || user?.gameIds?.find(g => g.game === 'VALORANT')?.inGameName}
+            />
           </div>
         </div>
 
@@ -770,6 +842,28 @@ const AegisMyProfile = () => {
               </div>
             )}
 
+
+            {/* VALORANT RECENT MATCHES */}
+            {activeTab === 'matches' && gameView === 'valorant' && hasValorantId && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+                <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                  <span className="text-red-400">◆</span> Recent Valorant Matches
+                  <span className="ml-auto text-[10px] text-zinc-600 font-normal bg-zinc-800 px-2 py-0.5 rounded-full">Last 5 • Live</span>
+                </h2>
+                {valoLoading ? (
+                  <div className="space-y-2">{[1,2,3,4,5].map(i => <div key={i} className="h-14 bg-zinc-800 rounded-xl animate-pulse" />)}</div>
+                ) : valoError || !valoProfile ? (
+                  <div className="flex items-center gap-3 text-zinc-500 py-8 justify-center text-sm"><AlertCircle className="w-4 h-4" /> Could not load matches</div>
+                ) : valoProfile.matches?.length > 0 ? (
+                  <div className="space-y-2">
+                    {valoProfile.matches.map((m, i) => <ValorantMatchRow key={m.matchId || i} match={m} />)}
+                  </div>
+                ) : (
+                  <div className="text-center py-10 text-zinc-600 text-sm">No recent Valorant matches found</div>
+                )}
+              </div>
+            )}
+
             {/* TOURNAMENTS TAB */}
             {activeTab === 'tournaments' && (
               <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
@@ -812,6 +906,19 @@ const AegisMyProfile = () => {
 
           {/* Sidebar */}
           <div className="space-y-6">
+
+            {/* Valorant Rank Card */}
+            {hasValorantId && gameView === 'valorant' && (
+              <ValorantRankCard
+                rank={valoProfile?.rank}
+                riotId={valoProfile?.riotId || user?.gameIds?.find(g => g.game === 'VALORANT')?.inGameName}
+                isLoading={valoLoading && !valoProfile}
+                error={valoError ? 'Could not load rank' : null}
+                onSync={handleSyncValorant}
+                syncing={syncingValo}
+              />
+            )}
+
             {/* Earnings */}
             {userData.earnings > 0 && (
               <div className="bg-gradient-to-br from-green-900/20 to-emerald-900/20 border border-green-800/30 rounded-xl p-6">

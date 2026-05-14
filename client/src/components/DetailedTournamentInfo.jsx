@@ -17,6 +17,29 @@ import VikendiMap from '../assets/mapImages/vikendi.jpg';
 import { useQuery } from '@tanstack/react-query';
 import axiosInstance from '../utils/axiosConfig';
 import { toast } from 'react-toastify';
+import {
+  VALORANT_MAPS_URL,
+  PLACEHOLDER_TOURNAMENT_BANNER,
+  PLACEHOLDER_TOURNAMENT_LOGO,
+  PLACEHOLDER_TEAM_LOGO_SM,
+  PLACEHOLDER_TEAM_LOGO_MD,
+  PLACEHOLDER_MATCH_MAP,
+  placeholderImage,
+} from '../constants/externalApis';
+
+// Fetch Valorant map splash images from the free valorant-api.com
+const fetchValorantMapImages = async () => {
+  const res = await fetch(VALORANT_MAPS_URL);
+  if (!res.ok) return {};
+  const json = await res.json();
+  const imageMap = {};
+  for (const m of json.data || []) {
+    if (m.displayName && m.splash) {
+      imageMap[m.displayName] = m.splash;
+    }
+  }
+  return imageMap;
+};
 
 const fetchTournament = async (id) => {
   const { data } = await axiosInstance.get(`/api/tournaments/${id}`);
@@ -173,11 +196,17 @@ const DetailedTournamentInfo = () => {
   const registrationClosed = tournamentData?.registrationEndDate && new Date(tournamentData.registrationEndDate) < new Date();
   const isTeamRegistered = !!registrationStatus?.registration;
   const registrationPending = registrationStatus?.registration?.status === 'pending';
-  const registrationApproved = ['approved', 'checked_in'].includes(registrationStatus?.registration?.status);
+  const isValorant = tournamentData?.game === 'VALORANT';
 
-  useEffect(() => {
-    console.log('Registration Status Data:', registrationStatus);
-  }, [registrationStatus]);
+  // Fetch Valorant map splash images (cached 24h, only triggered for Valorant tournaments)
+  const { data: valorantMapImages = {} } = useQuery({
+    queryKey: ['valorantMapImages'],
+    queryFn: fetchValorantMapImages,
+    enabled: isValorant,
+    staleTime: 24 * 60 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+  });
+
 
   useEffect(() => {
     if (groupsData[selectedPhase]) {
@@ -370,7 +399,7 @@ const DetailedTournamentInfo = () => {
               src={mapImage}
               alt={match.map}
               className="w-16 h-14 rounded-lg object-cover"
-              onError={(e) => { e.target.src = `https://placehold.co/64x56/1a1a1a/ffffff?text=${match.map || 'MAP'}`; }}
+              onError={(e) => { e.target.src = PLACEHOLDER_MATCH_MAP; }}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent rounded-lg" />
             <div className="absolute bottom-1 left-1 text-white text-xs font-medium">{match.map}</div>
@@ -398,10 +427,10 @@ const DetailedTournamentInfo = () => {
             </div>
             <div className="flex items-center gap-2 mt-1">
               <img
-                src={winnerTeam.logo || `https://placehold.co/32x32/1a1a1a/fb923c?text=${encodeURIComponent((winnerTeam.teamTag || winnerTeam.teamName || winnerTeam.name || '?')[0])}`}
+                src={winnerTeam.logo || placeholderImage('32x32', '1a1a1a', 'fb923c', (winnerTeam.teamTag || winnerTeam.teamName || winnerTeam.name || '?')[0])}
                 alt={winnerTeam.teamName || winnerTeam.name}
                 className="w-6 h-6 rounded object-cover border border-amber-500/20"
-                onError={(e) => { e.target.src = `https://placehold.co/32x32/1a1a1a/fb923c?text=${encodeURIComponent((winnerTeam.teamTag || winnerTeam.teamName || winnerTeam.name || '?')[0])}`; }}
+                onError={(e) => { e.target.src = placeholderImage('32x32', '1a1a1a', 'fb923c', (winnerTeam.teamTag || winnerTeam.teamName || winnerTeam.name || '?')[0]); }}
               />
               <span className="text-white font-bold text-sm tracking-tight">{winnerTeam.teamName || winnerTeam.name}</span>
             </div>
@@ -478,10 +507,10 @@ const DetailedTournamentInfo = () => {
         {/* ── Header Banner ───────────────────────────────────────── */}
         <div className="relative mb-6 rounded-2xl overflow-hidden">
           <img
-            src={tournamentData?.media?.coverImage || tournamentData?.media?.banner || 'https://placehold.co/1200x400/1a1a1a/ffffff?text=Tournament+Banner'}
+            src={tournamentData?.media?.coverImage || tournamentData?.media?.banner || PLACEHOLDER_TOURNAMENT_BANNER}
             alt="Tournament Banner"
             className="w-full h-48 sm:h-64 md:h-80 object-cover"
-            onError={(e) => { e.target.src = 'https://placehold.co/1200x400/1a1a1a/ffffff?text=Tournament+Banner'; }}
+            onError={(e) => { e.target.src = PLACEHOLDER_TOURNAMENT_BANNER; }}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-zinc-900 via-zinc-900/60 to-transparent" />
 
@@ -489,10 +518,10 @@ const DetailedTournamentInfo = () => {
             <div className="flex items-end justify-between gap-4">
               <div className="flex items-end gap-3 sm:gap-6 flex-1 min-w-0">
                 <img
-                  src={tournamentData?.media?.logo || 'https://placehold.co/96x96/1a1a1a/ffffff?text=LOGO'}
+                  src={tournamentData?.media?.logo || PLACEHOLDER_TOURNAMENT_LOGO}
                   alt="Tournament Logo"
                   className="w-16 h-16 sm:w-24 sm:h-24 rounded-xl border-2 border-orange-400 shadow-lg shrink-0"
-                  onError={(e) => { e.target.src = 'https://placehold.co/96x96/1a1a1a/ffffff?text=LOGO'; }}
+                  onError={(e) => { e.target.src = PLACEHOLDER_TOURNAMENT_LOGO; }}
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2 mb-1 sm:mb-2">
@@ -573,7 +602,6 @@ const DetailedTournamentInfo = () => {
                           ['Organizer', tournamentData?.organizer?.name || 'Unknown'],
                           ['Format', tournamentData?.format || 'Battle Royale'],
                           ['Game Mode', tournamentData?.gameSettings?.gameMode || 'TPP Squad'],
-                          ['Maps', tournamentData?.gameSettings?.maps?.join(', ') || 'Erangel, Miramar'],
                           ['Server', tournamentData?.gameSettings?.serverRegion || 'Asia'],
                         ].map(([label, value]) => (
                           <div key={label} className="flex justify-between gap-2">
@@ -581,7 +609,46 @@ const DetailedTournamentInfo = () => {
                             <span className="text-white font-medium text-right">{value}</span>
                           </div>
                         ))}
-                      </div>
+                          {/* Maps - text list for BGMI only */}
+                          {!isValorant && (
+                            <div className="flex justify-between gap-2">
+                              <span className="text-zinc-400 shrink-0">Maps</span>
+                              <span className="text-white font-medium text-right">{tournamentData?.gameSettings?.maps?.join(', ') || 'Erangel, Miramar'}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Valorant map pool - splash image grid */}
+                        {isValorant && tournamentData?.gameSettings?.maps?.length > 0 && (
+                          <div className="mt-4">
+                            <p className="text-zinc-400 text-xs uppercase tracking-wider font-semibold mb-2">
+                              Map Pool <span className="text-zinc-500 font-normal normal-case">({tournamentData.gameSettings.maps.length} maps)</span>
+                            </p>
+                            <div className="grid grid-cols-4 gap-1.5">
+                              {tournamentData.gameSettings.maps.map((mapName) => {
+                                const splash = valorantMapImages[mapName];
+                                return (
+                                  <div key={mapName} className="relative rounded-lg overflow-hidden group cursor-default" style={{ aspectRatio: '16/9' }}>
+                                    {splash ? (
+                                      <img
+                                        src={splash}
+                                        alt={mapName}
+                                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                                        loading="lazy"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full bg-zinc-800 flex items-center justify-center">
+                                        <span className="text-zinc-500 text-xs font-bold">{mapName[0]}</span>
+                                      </div>
+                                    )}
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+                                    <span className="absolute bottom-1 left-0 right-0 text-center text-white text-[9px] font-bold tracking-wide truncate px-0.5">{mapName}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                     </div>
                     <div>
                       <h3 className="text-base sm:text-lg font-semibold text-white mb-3">Prize Distribution</h3>
@@ -692,28 +759,30 @@ const DetailedTournamentInfo = () => {
                   </div>
                 </div>
 
-                <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-5">
-                  <h3 className="text-lg font-bold text-white mb-4">Points System</h3>
-                  <div className="space-y-3">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-zinc-400">Kill Points</span>
-                      <span className="text-orange-400 font-bold">{tournamentData?.gameSettings?.pointsSystem?.killPoints || 1} per kill</span>
-                    </div>
-                    <div>
-                      <div className="text-zinc-400 text-sm mb-2">Placement Points</div>
-                      <div className="grid grid-cols-2 gap-1.5 text-sm">
-                        {[1, 2, 3, 4].map(position => (
-                          <div key={position} className="flex justify-between">
-                            <span className="text-zinc-500">#{position}:</span>
-                            <span className={position === 1 ? 'text-amber-400' : 'text-zinc-400'}>
-                              {tournamentData?.gameSettings?.pointsSystem?.placementPoints?.[position] || 0}
-                            </span>
-                          </div>
-                        ))}
+                {!isValorant && (
+                  <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-5">
+                    <h3 className="text-lg font-bold text-white mb-4">Points System</h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-zinc-400">Kill Points</span>
+                        <span className="text-orange-400 font-bold">{tournamentData?.gameSettings?.pointsSystem?.killPoints || 1} per kill</span>
+                      </div>
+                      <div>
+                        <div className="text-zinc-400 text-sm mb-2">Placement Points</div>
+                        <div className="grid grid-cols-2 gap-1.5 text-sm">
+                          {[1, 2, 3, 4].map(position => (
+                            <div key={position} className="flex justify-between">
+                              <span className="text-zinc-500">#{position}:</span>
+                              <span className={position === 1 ? 'text-amber-400' : 'text-zinc-400'}>
+                                {tournamentData?.gameSettings?.pointsSystem?.placementPoints?.[position] || 0}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           )}
@@ -930,10 +999,10 @@ const DetailedTournamentInfo = () => {
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-3">
                                   <img
-                                    src={team.logo || `https://placehold.co/32x32/27272a/71717a?text=${encodeURI((team.tag || team.name || '?')[0])}`}
+                                    src={team.logo || PLACEHOLDER_TEAM_LOGO_SM}
                                     className="w-8 h-8 rounded-md border border-zinc-700 shrink-0"
                                     alt={team.name}
-                                    onError={(e) => { e.target.src = `https://placehold.co/32x32/27272a/71717a?text=${encodeURI((team.tag || team.name || '?')[0])}`; }}
+                                    onError={(e) => { e.target.src = PLACEHOLDER_TEAM_LOGO_SM; }}
                                   />
                                   <div className="min-w-0">
                                     <div className="text-white text-sm font-bold truncate group-hover:text-orange-400 transition-colors">{team.name}</div>
@@ -964,10 +1033,10 @@ const DetailedTournamentInfo = () => {
                           {team.slot || (teamsPage - 1) * 24 + index + 1}
                         </span>
                         <img
-                          src={team.logo || `https://placehold.co/32x32/27272a/71717a?text=${encodeURIComponent((team.tag || team.name || '?')[0])}`}
+                          src={team.logo || PLACEHOLDER_TEAM_LOGO_SM}
                           alt={team.name}
                           className="w-8 h-8 rounded-md object-cover border border-zinc-700 shrink-0"
-                          onError={(e) => { e.target.src = `https://placehold.co/32x32/27272a/71717a?text=${encodeURIComponent((team.tag || team.name || '?')[0])}`; }}
+                          onError={(e) => { e.target.src = PLACEHOLDER_TEAM_LOGO_SM; }}
                         />
                         <span className="flex-1 text-white text-sm font-medium truncate">{team.name}</span>
                         {team.tag && (
@@ -1188,7 +1257,7 @@ const DetailedTournamentInfo = () => {
                           src={userTeam.logo}
                           alt="Team Logo"
                           className="w-16 h-16 rounded-lg mt-2 object-cover border border-zinc-700"
-                          onError={(e) => { e.target.src = `https://placehold.co/64x64/27272a/ffffff?text=${encodeURIComponent((userTeam.teamTag || userTeam.teamName || '?')[0])}`; }}
+                          onError={(e) => { e.target.src = PLACEHOLDER_TEAM_LOGO_MD; }}
                         />
                       ) : (
                         <div className="w-16 h-16 rounded-lg mt-2 bg-zinc-800 border border-zinc-700 flex items-center justify-center text-xl font-bold text-zinc-500">

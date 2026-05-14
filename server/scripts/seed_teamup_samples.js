@@ -17,7 +17,7 @@ const FREE_AGENTS = 8;
 const TEAM_COUNT = 3;
 const PLAYERS_PER_TEAM = 4;
 
-const GAMES = ['BGMI', 'VALO', 'CS2'];
+const GAMES = ['BGMI', 'VALORANT'];
 const REGIONS = ['India', 'Asia', 'Europe', 'North America', 'Global'];
 const ROLES = ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger'];
 

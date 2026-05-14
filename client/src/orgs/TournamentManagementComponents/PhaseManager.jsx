@@ -22,7 +22,7 @@ const PhaseManager = ({ isOpen, onClose, onSave, initialPhases = [], tournamentS
   const [phases, setPhases] = useState([]);
   const [errors, setErrors] = useState({});
 
-  const phaseTypes = ['qualifiers', 'final_stage'];
+  const phaseTypes = ['qualifiers', 'group_stage', 'playoffs', 'final_stage'];
 
   useEffect(() => {
     if (initialPhases.length > 0) {
@@ -145,13 +145,7 @@ const PhaseManager = ({ isOpen, onClose, onSave, initialPhases = [], tournamentS
         newErrors[`${index}_type`] = 'Valid phase type is required';
       }
 
-      if (!phase.startDate) {
-        newErrors[`${index}_startDate`] = 'Start date is required';
-      }
-
-      if (!phase.endDate) {
-        newErrors[`${index}_endDate`] = 'End date is required';
-      }
+      // Dates are optional — don't block saving if empty
 
       const invitePlan = normalizePhaseDirectInvites(phase.directInvites);
       if (invitePlan.mode === 'fixed_count' && (!invitePlan.targetCount || invitePlan.targetCount < 1)) {
@@ -226,6 +220,10 @@ const PhaseManager = ({ isOpen, onClose, onSave, initialPhases = [], tournamentS
     switch (type) {
       case 'qualifiers':
         return <Target className="w-5 h-5" />;
+      case 'group_stage':
+        return <Users className="w-5 h-5" />;
+      case 'playoffs':
+        return <Calendar className="w-5 h-5" />;
       case 'final_stage':
         return <Trophy className="w-5 h-5" />;
       default:

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { SUPPORTED_GAMES, isBattleRoyale } from '../config/gameRegistry.js';
 
 /**
  * PhaseStanding Schema
@@ -19,6 +20,14 @@ const phaseStandingSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
+      index: true,
+    },
+
+    // --- Game Identification ---
+    gameTitle: {
+      type: String,
+      enum: SUPPORTED_GAMES,
+      default: 'BGMI',
       index: true,
     },
 
@@ -60,6 +69,9 @@ const phaseStandingSchema = new mongoose.Schema(
         type: Number,
         default: 0,
       },
+      // Valorant-specific
+      totalRoundsPlayed: { type: Number, default: null },
+      totalMatchesWon: { type: Number, default: null },
     },
 
     // --- Top Performers (Cached for quick access) ---

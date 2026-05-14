@@ -317,17 +317,7 @@ router.get('/:id', async (req, res) => {
       format: tournament.format || 'Battle Royale Points System',
       formatDetails: tournament.formatDetails,
 
-      gameSettings: tournament.gameSettings || {
-        serverRegion: tournament.region || 'Asia',
-        gameMode: 'TPP Squad',
-        maps: ['Erangel', 'Miramar', 'Sanhok'],
-        pointsSystem: {
-          killPoints: 1,
-          placementPoints: {
-            1: 10, 2: 6, 3: 5, 4: 4, 5: 3, 6: 2, 7: 1, 8: 1
-          }
-        }
-      },
+      gameSettings: tournament.gameSettings || {},
 
       prizePool: tournament.prizePool || {
         total: 0,

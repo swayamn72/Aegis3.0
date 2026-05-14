@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import slugify from 'slugify';
+import { SUPPORTED_GAMES, getAllFormats } from '../config/gameRegistry.js';
 
 /**
  * REFACTORED Tournament Schema
@@ -37,7 +38,7 @@ const tournamentSchema = new mongoose.Schema(
     },
     gameTitle: {
       type: String,
-      enum: ['BGMI', 'Multi-Game'],
+      enum: SUPPORTED_GAMES,
       default: 'BGMI',
       required: true,
       index: true,
@@ -147,7 +148,14 @@ const tournamentSchema = new mongoose.Schema(
     // --- Tournament Structure & Participation ---
     format: {
       type: String,
-      enum: ['Battle Royale Points System', 'Elimination Format', 'Custom'],
+      enum: [
+        // BGMI formats
+        'Battle Royale Points System', 'Elimination Format',
+        // Valorant formats
+        'Best of 1', 'Best of 3', 'Best of 5', 'Round Robin', 'Swiss', 'Double Elimination',
+        // Shared
+        'Custom',
+      ],
       required: true,
     },
     formatDetails: {
@@ -190,7 +198,7 @@ const tournamentSchema = new mongoose.Schema(
         name: String,
         type: {
           type: String,
-          enum: ['qualifiers', 'final_stage'],
+          enum: ['qualifiers', 'group_stage', 'playoffs', 'final_stage'],
           required: true,
         },
         startDate: Date,
@@ -355,10 +363,14 @@ const tournamentSchema = new mongoose.Schema(
         team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
         match: { type: mongoose.Schema.Types.ObjectId, ref: 'Match' },
       },
+      // BGMI-specific
       mostChickenDinners: {
         count: Number,
         team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
       },
+      // Valorant-specific
+      totalRoundsPlayed: { type: Number, default: null },
+      totalAces: { type: Number, default: null },
       viewership: {
         currentViewers: { type: Number, default: 0 },
         peakViewers: { type: Number, default: 0 },
@@ -373,7 +385,12 @@ const tournamentSchema = new mongoose.Schema(
       {
         type: {
           type: String,
-          enum: ['MVP', 'Best Player', 'Most Kills', 'Fan Favorite', 'Aegis Star'],
+          enum: [
+            // Shared
+            'MVP', 'Best Player', 'Most Kills', 'Fan Favorite', 'Aegis Star',
+            // Valorant-specific
+            'Tournament MVP', 'Clutch King', 'Entry Fragger', 'Best Sentinel',
+          ],
         },
         recipient: {
           player: { type: mongoose.Schema.Types.ObjectId, ref: 'Player' },
@@ -437,20 +454,35 @@ const tournamentSchema = new mongoose.Schema(
     rulesetDocument: String,
     websiteLink: String,
 
-    // --- Game Specific Settings (BGMI) ---
+    // --- Game Specific Settings (polymorphic per game) ---
     gameSettings: {
       serverRegion: String,
+      // BGMI settings
       gameMode: {
         type: String,
-        enum: ['TPP Squad', 'FPP Squad', 'Custom'],
+        enum: ['TPP Squad', 'FPP Squad', 'Standard', 'Custom'],
         default: 'TPP Squad',
       },
       maps: {
         type: [String],
-        enum: ['Erangel', 'Miramar', 'Sanhok', 'Vikendi', 'Rondo'],
-        default: ['Erangel', 'Miramar'],
+        default: [],
       },
       pointsSystem: mongoose.Schema.Types.Mixed,
+      teamSize: {
+        type: Number,
+        min: 1,
+        max: 10,
+      },
+      matchFormat: {
+        type: String,
+        enum: ['1vAll', '1v1'],
+      },
+      // Valorant settings
+      bestOf: {
+        type: Number,
+        enum: [1, 3, 5],
+        default: null,
+      },
     },
 
     // --- Administrative ---

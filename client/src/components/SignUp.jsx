@@ -284,10 +284,10 @@ const AegisSignup = () => {
               }
             } else if (userObj.usernameCustomized === false) {
               window.location.href = '/setup-username';
-            } else if (userObj.primaryGame) {
+            } else if (userObj.primaryGame || (userObj.gameIds && userObj.gameIds.length > 0)) {
               window.location.href = '/my-profile';
             } else {
-              window.location.href = '/settings';
+              window.location.href = '/onboarding';
             }
           }, 100);
         }

@@ -1705,7 +1705,7 @@ router.put('/:tournamentId', verifyApprovedOrgToken, upload.fields([
       'requiresApproval', 'registrationStartDate', 'registrationEndDate',
       'slots', 'prizePool', 'rulesetDocument', 'websiteLink',
       'gameSettings', 'streamLinks', 'socialMedia', 'format', 'formatDetails',
-      'media'
+      'media', 'phases'
     ];
     const updateData = {};
 
@@ -1715,11 +1715,7 @@ router.put('/:tournamentId', verifyApprovedOrgToken, upload.fields([
       }
     });
 
-    if (rawUpdateData.phases !== undefined) {
-      return res.status(400).json({
-        error: 'Phase settings are locked after tournament creation. Use phase-specific actions (lock registrations, assign groups, advance phase).'
-      });
-    }
+
 
     // Fetch tournament
     const tournament = await Tournament.findById(tournamentId)
@@ -2596,19 +2592,37 @@ router.post(
 
         // Social media (if provided)
         socialMedia: tournamentData.socialMedia || {},
-
-        // Game settings
-        gameSettings: tournamentData.gameSettings || {
-          serverRegion: tournamentData.region || 'India',
-          gameMode: 'TPP Squad',
-          maps: ['Erangel', 'Miramar'],
-          pointsSystem: {
-            killPoints: 1,
-            placementPoints: {
-              1: 10, 2: 6, 3: 5, 4: 4, 5: 3, 6: 2, 7: 1, 8: 1
-            }
+        // Game settings (game-aware: always enforce correct matchFormat from registry)
+        gameSettings: (() => {
+          const gameKey = tournamentData.gameTitle || 'BGMI';
+          // Start from frontend-provided settings or build defaults
+          const base = tournamentData.gameSettings || {};
+          if (gameKey === 'VALORANT') {
+            return {
+              serverRegion: base.serverRegion || tournamentData.region || 'India',
+              gameMode: base.gameMode || 'Standard',
+              maps: Array.isArray(base.maps) ? base.maps : [],
+              teamSize: base.teamSize || 5,
+              matchFormat: '1v1',   // ALWAYS enforce — schema only allows '1v1' or '1vAll'
+              bestOf: base.bestOf || 1,
+              pointsSystem: base.pointsSystem || undefined,
+            };
           }
-        },
+          // BGMI / default
+          return {
+            serverRegion: base.serverRegion || tournamentData.region || 'India',
+            gameMode: base.gameMode || 'TPP Squad',
+            maps: Array.isArray(base.maps) ? base.maps : ['Erangel', 'Miramar'],
+            teamSize: base.teamSize || 4,
+            matchFormat: '1vAll',   // ALWAYS enforce
+            pointsSystem: base.pointsSystem || {
+              killPoints: 1,
+              placementPoints: {
+                1: 10, 2: 6, 3: 5, 4: 4, 5: 3, 6: 2, 7: 1, 8: 1
+              }
+            }
+          };
+        })(),
 
         // Documentation
         rulesetDocument: tournamentData.rulesetDocument || '',
@@ -3104,6 +3118,248 @@ router.get('/:id/announcements', verifyApprovedOrgToken, async (req, res) => {
   } catch (error) {
     console.error('Error fetching announcements:', error);
     res.status(500).json({ error: 'Failed to fetch announcements' });
+  }
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SWISS SYSTEM ROUTES (Valorant)
+// ─────────────────────────────────────────────────────────────────────────────
+
+import {
+  calculateStandings,
+  generateSwissMatchups,
+  getSwissStatus,
+} from '../utils/standingsCalculator.js';
+import { getGameConfig } from '../config/gameRegistry.js';
+
+// ── GET /api/org-tournaments/:tournamentId/standings ──────────────────────────
+// Returns current standings for the active phase (game-aware)
+router.get('/:tournamentId/standings', verifyApprovedOrgToken, async (req, res) => {
+  try {
+    const { tournamentId } = req.params;
+    const { phase } = req.query; // optional: filter by phase name
+
+    const tournament = await Tournament.findOne({
+      _id: tournamentId,
+      organization: req.organization._id, // verifyApprovedOrgToken sets req.organization
+    }).lean();
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+
+    const matchQuery = { tournament: tournamentId, status: 'completed' };
+    if (phase) matchQuery.tournamentPhase = phase;
+
+    const matches = await Match.find(matchQuery)
+      .populate('vsResults.teamA', 'teamName teamTag logo')
+      .populate('vsResults.teamB', 'teamName teamTag logo')
+      .populate('vsResults.winner', 'teamName')
+      .populate('results.team', 'teamName')
+      .lean();
+
+    const gameConfig = getGameConfig(tournament.gameTitle);
+    const useBuchholz = gameConfig?.swiss?.useBuchholz ?? false;
+
+    const standings = calculateStandings(tournament.gameTitle, matches, {
+      includeBuchholz: useBuchholz,
+    });
+
+    res.json({ standings, gameTitle: tournament.gameTitle, matchCount: matches.length });
+  } catch (error) {
+    console.error('Error fetching standings:', error);
+    res.status(500).json({ error: 'Failed to fetch standings' });
+  }
+});
+
+// ── POST /api/org-tournaments/:tournamentId/swiss/next-round ──────────────────
+// Generate matchups for the next Swiss round
+router.post('/:tournamentId/swiss/next-round', verifyApprovedOrgToken, async (req, res) => {
+  try {
+    const { tournamentId } = req.params;
+    const { phase, scheduledStartTime, bestOf = 1 } = req.body;
+
+    const tournament = await Tournament.findOne({
+      _id: tournamentId,
+      organization: req.organization._id,
+    }).lean();
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+    if (tournament.gameTitle !== 'VALORANT') {
+      return res.status(400).json({ error: 'Swiss system is only available for Valorant tournaments' });
+    }
+
+    const gameConfig = getGameConfig('VALORANT');
+    const swissCfg = gameConfig.swiss;
+
+    // Get current standings
+    const completedMatches = await Match.find({
+      tournament: tournamentId,
+      tournamentPhase: phase,
+      status: 'completed',
+    })
+      .populate('vsResults.teamA', 'teamName')
+      .populate('vsResults.teamB', 'teamName')
+      .populate('vsResults.winner')
+      .lean();
+
+    const standings = calculateStandings('VALORANT', completedMatches, { includeBuchholz: true });
+    const { active, advanced, eliminated } = getSwissStatus(standings, swissCfg.winsToAdvance, swissCfg.lossesToEliminate);
+
+    if (active.length < 2) {
+      return res.status(400).json({
+        error: 'Not enough active teams to generate a new round',
+        advanced,
+        eliminated,
+      });
+    }
+
+    // Generate matchups from active teams only
+    const activeStandings = standings.filter(s => active.includes(s.teamId));
+    const matchups = generateSwissMatchups(activeStandings, { avoidRematches: true });
+
+    if (matchups.length === 0) {
+      return res.status(400).json({ error: 'Could not generate matchups — all combinations may be rematches' });
+    }
+
+    // Determine round number from existing matches in this phase
+    const existingMatches = await Match.find({ tournament: tournamentId, tournamentPhase: phase }).lean();
+    // Safe round number — reduce handles empty array correctly (no spread of empty)
+    const roundNumber = existingMatches.reduce((max, m) => Math.max(max, m.bracketRound || 0), 0) + 1;
+
+    // Idempotency guard: abort if scheduled matches already exist for this round
+    const alreadyScheduled = await Match.countDocuments({
+      tournament: tournamentId,
+      tournamentPhase: phase,
+      bracketRound: roundNumber,
+      status: 'scheduled',
+    });
+    if (alreadyScheduled > 0) {
+      return res.status(409).json({ error: `Round ${roundNumber} already has ${alreadyScheduled} scheduled match(es). Complete them first.` });
+    }
+
+    // Create Match documents
+    const matchDocs = [];
+    for (let i = 0; i < matchups.length; i++) {
+      const { teamA, teamB } = matchups[i];
+      const teamADoc = await Team.findById(teamA).select('teamName teamTag').lean();
+      const teamBDoc = await Team.findById(teamB).select('teamName teamTag').lean();
+
+      matchDocs.push({
+        matchNumber: existingMatches.length + i + 1,
+        tournament: tournamentId,
+        tournamentPhase: phase,
+        scheduledStartTime: scheduledStartTime || new Date(Date.now() + 24 * 60 * 60 * 1000),
+        status: 'scheduled',
+        gameTitle: 'VALORANT',
+        map: 'TBD',
+        bracketRound: roundNumber,
+        metadata: { bestOf, swissRound: roundNumber },
+        vsResults: {
+          teamA,
+          teamB,
+          teamAName: teamADoc?.teamName,
+          teamBName: teamBDoc?.teamName,
+        },
+      });
+    }
+
+    const created = await Match.insertMany(matchDocs);
+
+    // The vetoWindowScheduler cron picks up new matches automatically on its next tick (every minute)
+
+    res.status(201).json({
+      message: `Round ${roundNumber} generated`,
+      matchups: created.length,
+      matches: created,
+      roundNumber,
+      swissStatus: { active: active.length, advanced: advanced.length, eliminated: eliminated.length },
+    });
+  } catch (error) {
+    console.error('Error generating Swiss round:', error);
+    res.status(500).json({ error: 'Failed to generate Swiss round' });
+  }
+});
+
+// ── POST /api/org-tournaments/:tournamentId/swiss/advance ─────────────────────
+// Advance the Swiss stage — move qualifying teams to the next phase
+router.post('/:tournamentId/swiss/advance', verifyApprovedOrgToken, async (req, res) => {
+  try {
+    const { tournamentId } = req.params;
+    const { fromPhase, toPhase } = req.body;
+
+    if (!fromPhase || !toPhase) {
+      return res.status(400).json({ error: 'fromPhase and toPhase are required' });
+    }
+
+    const tournament = await Tournament.findOne({ _id: tournamentId, organization: req.organization._id }).lean();
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+
+    // Check any matches still pending in this phase
+    const pendingMatches = await Match.countDocuments({
+      tournament: tournamentId,
+      tournamentPhase: fromPhase,
+      status: { $in: ['scheduled', 'in_progress'] },
+    });
+    if (pendingMatches > 0) {
+      return res.status(400).json({ error: `${pendingMatches} match(es) in '${fromPhase}' are still pending. Complete them before advancing.` });
+    }
+
+    const completedMatches = await Match.find({
+      tournament: tournamentId,
+      tournamentPhase: fromPhase,
+      status: 'completed',
+    })
+      .populate('vsResults.teamA vsResults.teamB vsResults.winner results.team')
+      .lean();
+
+    const standings = calculateStandings(tournament.gameTitle, completedMatches, { includeBuchholz: true });
+    const gameConfig = getGameConfig(tournament.gameTitle);
+    const swissCfg = gameConfig?.swiss;
+
+    let qualifiedTeamIds;
+    if (swissCfg) {
+      const { advanced } = getSwissStatus(standings, swissCfg.winsToAdvance, swissCfg.lossesToEliminate);
+      qualifiedTeamIds = advanced;
+    } else {
+      // Default: top N based on points
+      const topN = req.body.topN || Math.ceil(standings.length / 2);
+      qualifiedTeamIds = standings.slice(0, topN).map(s => s.teamId);
+    }
+
+    if (qualifiedTeamIds.length === 0) {
+      return res.status(400).json({ error: 'No teams have qualified yet' });
+    }
+
+    // Register qualified teams in the next phase
+    const currentRegs = await Registration.find({
+      tournament: tournamentId,
+      team: { $in: qualifiedTeamIds },
+    }).lean();
+
+    const regUpdates = [];
+    for (const reg of currentRegs) {
+      if (!qualifiedTeamIds.includes(reg.team.toString())) continue;
+      regUpdates.push(
+        Registration.findByIdAndUpdate(reg._id, { $addToSet: { phases: toPhase } }, { new: true })
+      );
+    }
+    await Promise.all(regUpdates);
+
+    // Send notifications
+    await sendPhaseOutcomeNotifications({
+      tournamentId,
+      tournamentName: tournament.tournamentName,
+      phaseName: fromPhase,
+      nextPhaseName: toPhase,
+      qualifiedTeamIds,
+    });
+
+    res.json({
+      message: `${qualifiedTeamIds.length} team(s) advanced from '${fromPhase}' to '${toPhase}'`,
+      qualifiedTeamIds,
+      standings: standings.slice(0, 10),
+    });
+  } catch (error) {
+    console.error('Error advancing Swiss phase:', error);
+    res.status(500).json({ error: 'Failed to advance phase' });
   }
 });
 
