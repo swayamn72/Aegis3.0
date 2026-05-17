@@ -405,27 +405,49 @@ router.get("/me", auth, async (req, res) => {
   try {
     // req.user.id is set by the auth middleware
     const userId = req.user.id;
-
+    // Mongoose Maps don't support .populate() directly.
+    // We select teams (the raw Map of game→ObjectId), then manually resolve each.
     const user = await Player.findById(userId)
       .select(
         [
-          // User fields
-          "_id", "realName", "age", "location", "bio", "languages", "profilePicture", "gameIds", "earnings", "inGameRole", "teamStatus", "availability", "discordTag", "instagram", "youtube", "twitter", "profileVisibility", "cardTheme", "username", "country", "aegisRating", "aegisRatingPeak", "aegisMatchesRated", "aegisIsProvisional", "valRating", "valRatingPeak", "valMatchesRated", "valIsProvisional", "valorantStats", "riotProfile", "sChampionships", "aChampionships", "sTopThree", "verified", "createdAt", "previousTeams", "team", "primaryGame", "tournamentsPlayed", "matchesPlayed", "statistics", "notificationPreferences", "mutedTryoutChats", "agreedToGuidelines"
+          "_id", "realName", "age", "location", "bio", "languages", "profilePicture",
+          "gameIds", "earnings", "inGameRole", "teamStatus", "availability", "discordTag",
+          "instagram", "youtube", "twitter", "profileVisibility", "cardTheme", "username",
+          "country", "aegisRating", "aegisRatingPeak", "aegisMatchesRated", "aegisIsProvisional",
+          "valRating", "valRatingPeak", "valMatchesRated", "valIsProvisional", "valorantStats",
+          "riotProfile", "sChampionships", "aChampionships", "sTopThree", "verified", "createdAt",
+          "previousTeams", "teams", "primaryGame", "tournamentsPlayed", "matchesPlayed",
+          "statistics", "notificationPreferences", "mutedTryoutChats", "agreedToGuidelines"
         ].join(" ")
       )
-      .populate({
-        path: 'team',
-        select: [
-          "_id", "teamName", "teamTag", "logo", "primaryGame", "region", "bio", "players", "captain"
-        ].join(" "),
-        populate: {
-          path: 'captain',
-          select: ["_id", "username", "profilePicture"].join(" ")
-        }
-      })
       .lean();
+
     if (!user) {
       return res.status(404).json({ message: "User not found" });
+    }
+
+    // Populate teams map: resolve each ObjectId to a Team doc
+    if (user.teams && Object.keys(user.teams).length > 0) {
+      const populatedTeams = {};
+      for (const [game, teamId] of Object.entries(user.teams)) {
+        if (teamId) {
+          const teamDoc = await Team.findById(teamId)
+            .select('_id teamName teamTag logo primaryGame region bio players captain')
+            .populate('captain', '_id username profilePicture')
+            .lean();
+          populatedTeams[game] = teamDoc;
+        }
+      }
+      user.teams = populatedTeams;
+      // Also expose a top-level 'team' key for backward compat
+      // (primaryGame team, or first available)
+      const primaryTeam = user.primaryGame && populatedTeams[user.primaryGame]
+        ? populatedTeams[user.primaryGame]
+        : Object.values(populatedTeams)[0] || null;
+      user.team = primaryTeam;
+    } else {
+      user.teams = {};
+      user.team = null;
     }
 
     res.status(200).json(user);
@@ -1346,25 +1368,46 @@ router.get('/:id/profile', async (req, res) => {
   try {
     const { id } = req.params;
     const player = await Player.findById(id)
-      .select('_id username gameIds realName profilePicture verified primaryGame country location age teamStatus inGameRole team bio languages previousTeams createdAt discordTag instagram youtube twitter aegisRating aegisRatingPeak aegisRatingFloor aegisPrestigeFloor aegisMatchesRated aegisIsProvisional aegisLastRatedMatchAt valRating valRatingPeak valRatingFloor valMatchesRated valIsProvisional valLastRatedMatchAt valorantStats riotProfile sChampionships aChampionships sTopThree statistics')
-      .populate({
-        path: 'team',
-        select: '_id teamName teamTag logo primaryGame region players captain',
-        populate: {
-          path: 'captain',
-          select: '_id username profilePicture'
-        }
-      });
+      .select('_id username gameIds realName profilePicture verified primaryGame country location age teamStatus inGameRole teams bio languages previousTeams createdAt discordTag instagram youtube twitter aegisRating aegisRatingPeak aegisRatingFloor aegisPrestigeFloor aegisMatchesRated aegisIsProvisional aegisLastRatedMatchAt valRating valRatingPeak valRatingFloor valMatchesRated valIsProvisional valLastRatedMatchAt valorantStats riotProfile sChampionships aChampionships sTopThree statistics')
+      .lean();
     if (!player) {
       return res.status(404).json({ message: 'Player not found' });
     }
-    // For team members grid, you may want to populate team.players with minimal info
+
+    // Populate teams map: resolve each ObjectId to a Team doc
+    const allPlayerIds = new Set();
+    if (player.teams && Object.keys(player.teams).length > 0) {
+      const populatedTeams = {};
+      for (const [game, teamId] of Object.entries(player.teams)) {
+        if (teamId) {
+          const teamDoc = await Team.findById(teamId)
+            .select('_id teamName teamTag logo primaryGame region players captain')
+            .populate('captain', '_id username profilePicture')
+            .lean();
+          populatedTeams[game] = teamDoc;
+          if (teamDoc?.players) {
+            teamDoc.players.forEach(pid => allPlayerIds.add(pid.toString()));
+          }
+        }
+      }
+      player.teams = populatedTeams;
+      // Backward compat: expose primary game's team (or first)
+      player.team = player.primaryGame && populatedTeams[player.primaryGame]
+        ? populatedTeams[player.primaryGame]
+        : Object.values(populatedTeams)[0] || null;
+    } else {
+      player.teams = {};
+      player.team = null;
+    }
+
+    // Populate team members (across all teams)
     let teamMembers = [];
-    if (player.team && player.team.players) {
-      teamMembers = await Player.find({ _id: { $in: player.team.players } })
+    if (allPlayerIds.size > 0) {
+      teamMembers = await Player.find({ _id: { $in: Array.from(allPlayerIds) } })
         .select('_id username profilePicture')
         .lean();
     }
+
     res.json({
       player,
       teamMembers

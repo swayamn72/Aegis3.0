@@ -49,13 +49,8 @@ const MyTeams = () => {
 
 
 
-    // Redirect: If user has a team, navigate directly to team page
-    useEffect(() => {
-        if (!authLoading && user?.team) {
-            const teamId = user.team._id || user.team;
-            navigate(`/team/${teamId}`, { replace: true });
-        }
-    }, [authLoading, user, navigate]);
+    // Get list of teams from user map (filter out nulls if any)
+    const myTeamsList = user?.teams ? Object.values(user.teams).filter(Boolean) : [];
 
     // Manual fetch for invitations
     const handleRefreshInvitations = async () => {
@@ -192,6 +187,71 @@ const MyTeams = () => {
                         </button>
                     </div>
                 </div>
+
+                {/* My Teams Grid */}
+                {myTeamsList.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                        {myTeamsList.map((team) => (
+                            <div 
+                                key={team._id} 
+                                onClick={() => navigate(`/team/${team._id}`)}
+                                className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 hover:border-cyan-500/50 cursor-pointer transition-colors group relative overflow-hidden"
+                            >
+                                {/* Decorative gradient */}
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none" />
+
+                                <div className="flex items-start justify-between mb-4">
+                                    <div className="flex items-center gap-4">
+                                        {team.logo ? (
+                                            <img src={team.logo} alt={team.teamName} className="w-16 h-16 rounded-xl object-cover border border-zinc-800" />
+                                        ) : (
+                                            <div className="w-16 h-16 bg-gradient-to-br from-zinc-800 to-zinc-900 border border-zinc-700 rounded-xl flex items-center justify-center">
+                                                <Shield className="w-8 h-8 text-zinc-500" />
+                                            </div>
+                                        )}
+                                        <div>
+                                            <h3 className="text-xl font-bold group-hover:text-cyan-400 transition-colors line-clamp-1">{team.teamName}</h3>
+                                            <div className="flex items-center gap-2 text-zinc-400 text-sm mt-1">
+                                                <Gamepad2 className="w-4 h-4" />
+                                                <span className="font-medium text-cyan-500">{team.primaryGame}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div className="flex items-center justify-between text-sm text-zinc-400 border-t border-zinc-800/50 pt-4 mt-4">
+                                    <div className="flex items-center gap-2">
+                                        <Users className="w-4 h-4" />
+                                        <span>{team.players?.length || 1} Members</span>
+                                    </div>
+                                    {(team.captain?._id === (user?._id || user?.id) || team.captain === (user?._id || user?.id)) && (
+                                        <div className="flex items-center gap-1 text-amber-400 bg-amber-400/10 px-2 py-1 rounded-md">
+                                            <Crown className="w-3 h-3" />
+                                            <span className="text-xs font-medium">Captain</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-12 text-center mb-8 relative overflow-hidden">
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
+                        <Shield className="w-16 h-16 text-zinc-700 mx-auto mb-4 relative z-10" />
+                        <h2 className="text-2xl font-bold text-white mb-2 relative z-10">No Teams Yet</h2>
+                        <p className="text-zinc-400 mb-6 max-w-md mx-auto relative z-10">
+                            You haven't joined any teams. Create your own team or find one that matches your skills.
+                        </p>
+                        <button
+                            onClick={() => setShowCreateTeamModal(true)}
+                            className="px-6 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg transition-colors inline-flex items-center gap-2 font-medium relative z-10"
+                        >
+                            <Plus className="w-5 h-5" />
+                            Create Your Team
+                        </button>
+                    </div>
+                )}
+
                 {invitationsData.length > 0 && showInvitations && (
                     <div className="mb-8 bg-zinc-900 border border-zinc-800 rounded-xl p-6">
                         <div className="flex items-center justify-between mb-4">

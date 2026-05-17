@@ -11,6 +11,7 @@ import auth from '../middleware/auth.js';
 import mongoose from 'mongoose';
 import { createTryoutMessage, fetchTryoutMessages } from '../services/tryoutMessage.service.js';
 import notificationService from '../services/notification.service.js';
+import { hasTeamForGame, getMaxPlayers, getPlayerTeamForGame } from '../utils/teamHelpers.js';
 
 const router = express.Router();
 
@@ -19,7 +20,7 @@ router.get('/my-approaches', auth, async (req, res) => {
     const userId = req.user.id;
 
     const player = await Player.findById(userId)
-      .select('team')
+      .select('teams primaryGame')
       .lean();
 
     if (!player) {
@@ -30,12 +31,12 @@ router.get('/my-approaches', auth, async (req, res) => {
       { player: userId }, // approaches TO this player
     ];
 
-    // If player is in a team, and is captain, also include approaches FROM that team
-    if (player.team && mongoose.Types.ObjectId.isValid(player.team)) {
-      const team = await Team.findById(player.team).select('captain').lean();
-
-      if (team && team.captain?.toString() === userId.toString()) {
-        orConditions.push({ team: team._id });
+    // If player is a captain of any team, include approaches FROM those teams
+    const teamIds = player.teams ? Object.values(player.teams).filter(Boolean) : [];
+    for (const teamId of teamIds) {
+      const t = await Team.findById(teamId).select('captain').lean();
+      if (t && t.captain?.toString() === userId.toString()) {
+        orConditions.push({ team: t._id });
       }
     }
 
@@ -59,7 +60,6 @@ router.get('/my-approaches', auth, async (req, res) => {
 });
 
 const MAX_MESSAGE_LEN = 500; // Updated to match recruitmentApproach.model.js
-const MAX_TEAM_PLAYERS = 5;
 
 router.post('/approach-player/:playerId', auth, async (req, res) => {
   const session = await mongoose.startSession().catch(() => null);
@@ -79,12 +79,21 @@ router.post('/approach-player/:playerId', auth, async (req, res) => {
       message = 'We would like to discuss recruitment opportunities with you.';
     }
 
-    // Get caller + team (ensure player exists)
-    const caller = await Player.findById(req.user.id).populate('team', 'teamName captain players logo');
+    // Get caller's team for the game context (use primaryGame as default)
+    const caller = await Player.findById(req.user.id).select('teams primaryGame');
     if (!caller) return res.status(400).json({ error: 'Caller profile not found' });
 
-    const team = caller.team;
-    if (!team) return res.status(400).json({ error: 'You must be in a team to approach players' });
+    // Find which team the caller is captain of (prefer primaryGame, then any)
+    let team = null;
+    const callerTeamsMap = caller.teams instanceof Map ? Object.fromEntries(caller.teams) : (caller.teams || {});
+    for (const [, teamId] of Object.entries(callerTeamsMap)) {
+      const t = await Team.findById(teamId).select('teamName captain players logo primaryGame');
+      if (t && t.captain.toString() === req.user.id.toString()) {
+        team = t;
+        break;
+      }
+    }
+    if (!team) return res.status(400).json({ error: 'You must be a team captain to approach players' });
 
     // confirm caller is captain
     if (!team.captain || team.captain.toString() !== req.user.id.toString()) {
@@ -97,24 +106,29 @@ router.post('/approach-player/:playerId', auth, async (req, res) => {
     }
 
     // target player exists
-    const targetPlayer = await Player.findById(playerId).select('username team profileVisibility');
+    const targetPlayer = await Player.findById(playerId).select('username teams profileVisibility');
     if (!targetPlayer) {
       return res.status(404).json({ error: 'Target player not found' });
     }
 
-    // Prevent targeting players already in this team
-    if (String(targetPlayer.team || '') === String(team._id)) {
+    // Prevent targeting players already in THIS team
+    const targetTeamsMap = targetPlayer.teams instanceof Map
+      ? Object.fromEntries(targetPlayer.teams)
+      : (targetPlayer.teams || {});
+    const targetInThisTeam = Object.values(targetTeamsMap).some(
+      tid => tid && tid.toString() === team._id.toString()
+    );
+    if (targetInThisTeam) {
       return res.status(400).json({ error: 'Player is already in your team' });
     }
 
-    // Prevent approaching players who are already in *any* team
-    if (targetPlayer.team) {
-      return res.status(400).json({ error: 'Player is already in another team' });
+    // Game-scoped: only block if player already has a team for this team's game
+    if (hasTeamForGame(targetPlayer, team.primaryGame)) {
+      return res.status(400).json({ error: `Player already has a ${team.primaryGame} team` });
     }
 
-
     // Optional: prevent if team full
-    if (Array.isArray(team.players) && team.players.length >= MAX_TEAM_PLAYERS) {
+    if (Array.isArray(team.players) && team.players.length >= getMaxPlayers(team.primaryGame)) {
       return res.status(400).json({ error: 'Your team roster is full' });
     }
 
@@ -403,16 +417,15 @@ router.post('/lft-posts', auth, async (req, res) => {
     }
 
     // Optional: check player exists (should always, but defensive)
-    const player = await Player.findById(req.user.id).select('_id username profilePicture aegisRating verified team teamStatus country');
+    const player = await Player.findById(req.user.id).select('_id username profilePicture aegisRating verified teams primaryGame teamStatus country');
     if (!player) {
       return res.status(400).json({ error: 'Player profile not found' });
     }
 
-    const hasTeamRef = Boolean(player.team);
-    const isMarkedInTeam = String(player.teamStatus || '').toLowerCase() === 'in a team';
-    if (hasTeamRef || isMarkedInTeam) {
+    // LFT is only valid for a specific game — block if player already has a team for this game
+    if (hasTeamForGame(player, game)) {
       return res.status(400).json({
-        error: 'You are already in a team. Leave your current team before posting LFT.'
+        error: `You already have a ${game} team. Leave your current team before posting LFT.`
       });
     }
 
@@ -961,24 +974,35 @@ router.post('/lfp-posts', auth, async (req, res) => {
     // Sanitize input
     const desc = String(description).trim().slice(0, MAX_LFP_DESC_LEN);
 
-    // Get player and team
-    const player = await Player.findById(req.user.id).populate('team');
+    // Get player and resolve their team for the requested game
+    const player = await Player.findById(req.user.id).select('teams primaryGame');
     if (!player) {
       return res.status(400).json({ error: 'Player profile not found' });
     }
 
-    if (!player.team) {
+    // Find which team the player is captain of for the requested game
+    const postGame = game || player.primaryGame;
+    const teamId = getPlayerTeamForGame(player, postGame);
+    if (!teamId) {
+      return res.status(400).json({ error: `You must have a ${postGame} team to post LFP` });
+    }
+
+    const teamDoc = await Team.findById(teamId);
+    if (!teamDoc) {
+      return res.status(400).json({ error: 'Team not found' });
+    }
+
+    if (!teamDoc) {
       return res.status(400).json({ error: 'You must be in a team to post LFP' });
     }
 
     // Verify player is captain
-    if (player.team.captain.toString() !== req.user.id.toString()) {
+    if (teamDoc.captain.toString() !== req.user.id.toString()) {
       return res.status(403).json({ error: 'Only team captains can post LFP' });
     }
 
-    // Determine game and region
-    const postGame = game || player.team.primaryGame;
-    const postRegion = normalizeRegion(player.team.region, 'India');
+    // Determine region
+    const postRegion = normalizeRegion(teamDoc.region, 'India');
 
     // Validate inputs
     if (!desc) {
@@ -1012,7 +1036,7 @@ router.post('/lfp-posts', auth, async (req, res) => {
     let createdPost;
     if (session) {
       session.startTransaction();
-      const exists = await LFPPost.findOne({ team: player.team._id, status: 'active' }).session(session);
+      const exists = await LFPPost.findOne({ team: teamDoc._id, status: 'active' }).session(session);
       if (exists) {
         await session.abortTransaction();
         session.endSession();
@@ -1020,7 +1044,7 @@ router.post('/lfp-posts', auth, async (req, res) => {
       }
 
       createdPost = await LFPPost.create([{
-        team: player.team._id,
+        team: teamDoc._id,
         description: desc,
         game: postGame,
         openRoles: cleanRoles,
@@ -1032,11 +1056,11 @@ router.post('/lfp-posts', auth, async (req, res) => {
       session.endSession();
       createdPost = createdPost[0];
     } else {
-      const exists = await LFPPost.findOne({ team: player.team._id, status: 'active' });
+      const exists = await LFPPost.findOne({ team: teamDoc._id, status: 'active' });
       if (exists) return res.status(400).json({ error: 'Your team already has an active LFP post' });
 
       createdPost = new LFPPost({
-        team: player.team._id,
+        team: teamDoc._id,
         description: desc,
         game: postGame,
         openRoles: cleanRoles,

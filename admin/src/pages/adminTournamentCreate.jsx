@@ -4,6 +4,8 @@ import { createTournamentAPI } from '../api/adminApi';
 import AdminLayout from '../components/AdminLayout';
 import { toast } from 'react-toastify';
 import { Trophy, Plus, Trash2, ChevronRight, ChevronLeft } from 'lucide-react';
+import PhaseStructureSuggester from '../components/PhaseStructureSuggester';
+import { BGMI_MAPS, VALORANT_MAPS } from '../constants/gameConstants';
 
 const TIERS = ['S', 'A', 'B', 'C', 'Community'];
 const GAME_CONFIGS = {
@@ -11,7 +13,7 @@ const GAME_CONFIGS = {
     displayName: 'BGMI',
     formats: ['Battle Royale Points System', 'Elimination Format', 'Custom'],
     gameModes: ['TPP Squad', 'FPP Squad', 'Custom'],
-    maps: ['Erangel', 'Miramar', 'Sanhok', 'Vikendi', 'Rondo'],
+    maps: BGMI_MAPS,
     defaultSlots: 16,
     teamSize: 4,
   },
@@ -19,7 +21,7 @@ const GAME_CONFIGS = {
     displayName: 'Valorant',
     formats: ['Best of 1', 'Best of 3', 'Best of 5', 'Round Robin', 'Swiss', 'Double Elimination', 'Custom'],
     gameModes: ['Standard', 'Custom'],
-    maps: ['Ascent', 'Bind', 'Haven', 'Split', 'Icebox', 'Breeze', 'Fracture', 'Pearl', 'Lotus', 'Sunset', 'Abyss'],
+    maps: VALORANT_MAPS,
     defaultSlots: 8,
     teamSize: 5,
   },
@@ -118,8 +120,8 @@ export default function AdminTournamentCreate() {
               </div>
               <div><label className={labelCls}>Tier</label><select value={form.tier} onChange={e => setForm({ ...form, tier: e.target.value })} className={inputCls}>{TIERS.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
               <div><label className={labelCls}>Format</label><select value={form.format} onChange={e => setForm({ ...form, format: e.target.value })} className={inputCls}>{gameConfig.formats.map(f => <option key={f} value={f}>{f}</option>)}</select></div>
-              <div><label className={labelCls}>Start Date *</label><input type="datetime-local" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} className={inputCls} /></div>
-              <div><label className={labelCls}>End Date *</label><input type="datetime-local" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} className={inputCls} /></div>
+              <div><label className={labelCls}>Start Date *</label><input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} className={inputCls} /></div>
+              <div><label className={labelCls}>End Date *</label><input type="date" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} className={inputCls} /></div>
               <div><label className={labelCls}>Region</label><input value={form.region} onChange={e => setForm({ ...form, region: e.target.value })} className={inputCls} /></div>
               <div><label className={labelCls}>Importance Score (0-100)</label><input type="number" min={0} max={100} value={form.importanceScore} onChange={e => setForm({ ...form, importanceScore: +e.target.value })} className={inputCls} /></div>
               <div><label className={labelCls}>Total Slots</label><input type="number" value={form.slots.total} onChange={e => setForm({ ...form, slots: { ...form.slots, total: +e.target.value } })} className={inputCls} /></div>
@@ -144,6 +146,11 @@ export default function AdminTournamentCreate() {
               <h2 className="text-xl font-semibold text-white">Phases & Roadmap</h2>
               <button onClick={addPhase} className="px-4 py-2 bg-zinc-800 text-zinc-300 rounded-lg hover:bg-zinc-700 flex items-center gap-2"><Plus className="w-4 h-4" /> Add Phase</button>
             </div>
+            <PhaseStructureSuggester
+              totalTeams={form.slots.total}
+              gameTitle={form.gameTitle}
+              onApply={(phases) => setForm(f => ({ ...f, phases }))}
+            />
             {form.phases.length === 0 && <p className="text-zinc-500 text-center py-8">No phases yet. Add at least one phase.</p>}
             {form.phases.map((phase, i) => (
               <div key={i} className="bg-zinc-800/50 rounded-lg p-4 border border-zinc-700">
@@ -154,8 +161,8 @@ export default function AdminTournamentCreate() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <input placeholder="Phase Name (e.g. Qualifiers)" value={phase.name} onChange={e => updatePhase(i, 'name', e.target.value)} className={inputCls} />
                   <select value={phase.type} onChange={e => updatePhase(i, 'type', e.target.value)} className={inputCls}>{PHASE_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}</select>
-                  <input type="datetime-local" value={phase.startDate} onChange={e => updatePhase(i, 'startDate', e.target.value)} className={inputCls} />
-                  <input type="datetime-local" value={phase.endDate} onChange={e => updatePhase(i, 'endDate', e.target.value)} className={inputCls} />
+                  <input type="date" value={phase.startDate} onChange={e => updatePhase(i, 'startDate', e.target.value)} className={inputCls} />
+                  <input type="date" value={phase.endDate} onChange={e => updatePhase(i, 'endDate', e.target.value)} className={inputCls} />
                 </div>
                 <div className="mt-3">
                   <div className="flex items-center justify-between">

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchShadowPlayersAPI, createShadowPlayerAPI, updateShadowPlayerAPI, claimShadowPlayerAPI, searchPlayersAPI, bulkCreateShadowPlayersAPI } from '../api/adminApi';
+import { fetchShadowPlayersAPI, createShadowPlayerAPI, updateShadowPlayerAPI, claimShadowPlayerAPI, searchPlayersAPI, bulkCreateShadowPlayersAPI, createShadowTeamAPI } from '../api/adminApi';
 import AdminLayout from '../components/AdminLayout';
 import { toast } from 'react-toastify';
-import { Users, Plus, Search, UserCheck, Upload, Edit, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { Users, Plus, Search, UserCheck, Upload, Edit, ChevronDown, ChevronUp, X, ShieldPlus } from 'lucide-react';
 
 export default function AdminPlayers() {
   const qc = useQueryClient();
@@ -12,12 +12,22 @@ export default function AdminPlayers() {
   const [claimedFilter, setClaimedFilter] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
+  const [showCreateTeam, setShowCreateTeam] = useState(false);
   const [claimTarget, setClaimTarget] = useState(null);
   const [claimSearch, setClaimSearch] = useState('');
   const [editPlayer, setEditPlayer] = useState(null);
 
   // Form state
   const [form, setForm] = useState({ realName: '', inGameName: '', characterId: '', inGameRole: '', profilePicture: '', teamId: '' });
+  const [teamForm, setTeamForm] = useState({
+    teamName: '', teamTag: '', logo: null,
+    players: [
+      { inGameName: '', characterId: '', inGameRole: '', realName: '', pfpFile: null },
+      { inGameName: '', characterId: '', inGameRole: '', realName: '', pfpFile: null },
+      { inGameName: '', characterId: '', inGameRole: '', realName: '', pfpFile: null },
+      { inGameName: '', characterId: '', inGameRole: '', realName: '', pfpFile: null }
+    ]
+  });
   const [bulkJson, setBulkJson] = useState('');
 
   const { data, isLoading } = useQuery({
@@ -55,10 +65,50 @@ export default function AdminPlayers() {
     onError: (e) => toast.error(e.message || 'Bulk create failed'),
   });
 
+  const createTeamMutation = useMutation({
+    mutationFn: createShadowTeamAPI,
+    onSuccess: () => {
+      toast.success('Team and players created');
+      qc.invalidateQueries(['shadowPlayers']);
+      setShowCreateTeam(false);
+      setTeamForm({
+        teamName: '', teamTag: '', logo: null,
+        players: [
+          { inGameName: '', characterId: '', inGameRole: '', realName: '' },
+          { inGameName: '', characterId: '', inGameRole: '', realName: '' },
+          { inGameName: '', characterId: '', inGameRole: '', realName: '' },
+          { inGameName: '', characterId: '', inGameRole: '', realName: '' }
+        ]
+      });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || e.message || 'Failed to create team'),
+  });
+
   const handleCreate = (e) => { e.preventDefault(); createMutation.mutate(form); };
   const handleBulk = () => {
     try { const players = JSON.parse(bulkJson); if (!Array.isArray(players)) throw new Error('Must be array'); bulkMutation.mutate(players); }
     catch (e) { toast.error('Invalid JSON: ' + e.message); }
+  };
+  const handleCreateTeam = (e) => {
+    e.preventDefault();
+    if (!teamForm.teamName) return toast.error('Team name is required');
+    const validPlayers = teamForm.players.filter(p => p.inGameName);
+    if (validPlayers.length === 0) return toast.error('At least 1 player with IGN is required');
+
+    const formData = new FormData();
+    formData.append('teamName', teamForm.teamName);
+    formData.append('teamTag', teamForm.teamTag);
+    formData.append('players', JSON.stringify(validPlayers));
+    if (teamForm.logo) formData.append('logo', teamForm.logo);
+    validPlayers.forEach((p, idx) => {
+      // Find the index of this valid player in the original array to get the corresponding file
+      const originalIndex = teamForm.players.findIndex(op => op === p);
+      if (originalIndex !== -1 && teamForm.players[originalIndex].pfpFile) {
+        formData.append('playerPfps', teamForm.players[originalIndex].pfpFile, `player_${idx}`);
+      }
+    });
+
+    createTeamMutation.mutate(formData);
   };
 
   const players = data?.players || [];
@@ -72,9 +122,10 @@ export default function AdminPlayers() {
             <h1 className="text-3xl font-bold text-white flex items-center gap-3"><Users className="w-8 h-8 text-orange-500" /> Pro Players (Shadow)</h1>
             <p className="text-zinc-400 mt-1">Manage professional player profiles</p>
           </div>
-          <div className="flex gap-3">
-            <button onClick={() => setShowBulk(!showBulk)} className="px-4 py-2 bg-zinc-800 text-zinc-300 rounded-lg hover:bg-zinc-700 flex items-center gap-2"><Upload className="w-4 h-4" /> Bulk Import</button>
-            <button onClick={() => setShowCreate(!showCreate)} className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center gap-2"><Plus className="w-4 h-4" /> Create Player</button>
+          <div className="flex gap-3 flex-wrap">
+            <button onClick={() => { setShowCreateTeam(!showCreateTeam); setShowCreate(false); setShowBulk(false); }} className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 flex items-center gap-2"><ShieldPlus className="w-4 h-4" /> Add Team</button>
+            <button onClick={() => { setShowBulk(!showBulk); setShowCreate(false); setShowCreateTeam(false); }} className="px-4 py-2 bg-zinc-800 text-zinc-300 rounded-lg hover:bg-zinc-700 flex items-center gap-2"><Upload className="w-4 h-4" /> Bulk Import</button>
+            <button onClick={() => { setShowCreate(!showCreate); setShowBulk(false); setShowCreateTeam(false); }} className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center gap-2"><Plus className="w-4 h-4" /> Create Player</button>
           </div>
         </div>
 
@@ -92,6 +143,61 @@ export default function AdminPlayers() {
               <div className="md:col-span-2 flex gap-3">
                 <button type="submit" disabled={createMutation.isPending} className="px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50">{createMutation.isPending ? 'Creating...' : 'Create Player'}</button>
                 <button type="button" onClick={() => setShowCreate(false)} className="px-6 py-2 bg-zinc-800 text-zinc-300 rounded-lg hover:bg-zinc-700">Cancel</button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* Create Team Form */}
+        {showCreateTeam && (
+          <div className="bg-zinc-900 rounded-xl p-6 mb-6 border border-zinc-800">
+            <h3 className="text-lg font-semibold text-white mb-4">Add Team with Players</h3>
+            <form onSubmit={handleCreateTeam} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-400 mb-1">Team Name *</label>
+                  <input placeholder="Team Name" required value={teamForm.teamName} onChange={e => setTeamForm({ ...teamForm, teamName: e.target.value })} className="w-full bg-zinc-800 text-white px-4 py-2 rounded-lg border border-zinc-700 focus:border-orange-500 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-400 mb-1">Team Tag</label>
+                  <input placeholder="Tag (e.g., TSM)" value={teamForm.teamTag} onChange={e => setTeamForm({ ...teamForm, teamTag: e.target.value })} className="w-full bg-zinc-800 text-white px-4 py-2 rounded-lg border border-zinc-700 focus:border-orange-500 outline-none" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-zinc-400 mb-1">Team Logo</label>
+                  <input type="file" accept="image/*" onChange={e => setTeamForm({ ...teamForm, logo: e.target.files[0] })} className="w-full bg-zinc-800 text-zinc-300 px-4 py-2 rounded-lg border border-zinc-700" />
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-md font-semibold text-white mb-3">Add Players (Up to 4)</h4>
+                <div className="space-y-3">
+                  {teamForm.players.map((p, idx) => (
+                    <div key={idx} className="flex flex-col sm:flex-row items-start sm:items-center gap-2 p-2 bg-zinc-800/50 rounded border border-zinc-700/50">
+                      <span className="text-zinc-600 text-xs w-6">{idx + 1}.</span>
+                      <input placeholder="IGN *" value={p.inGameName} onChange={e => { const newP = [...teamForm.players]; newP[idx].inGameName = e.target.value; setTeamForm({ ...teamForm, players: newP }); }} className="w-full sm:w-auto px-3 py-2 bg-zinc-800 text-white rounded-lg border border-zinc-700 focus:border-orange-500 outline-none text-sm" />
+                      <input placeholder="Character ID" value={p.characterId} onChange={e => { const newP = [...teamForm.players]; newP[idx].characterId = e.target.value; setTeamForm({ ...teamForm, players: newP }); }} className="w-full sm:w-auto px-3 py-2 bg-zinc-800 text-white rounded-lg border border-zinc-700 focus:border-orange-500 outline-none text-sm" />
+                      <input placeholder="Real Name" value={p.realName} onChange={e => { const newP = [...teamForm.players]; newP[idx].realName = e.target.value; setTeamForm({ ...teamForm, players: newP }); }} className="w-full sm:w-auto px-3 py-2 bg-zinc-800 text-white rounded-lg border border-zinc-700 focus:border-orange-500 outline-none text-sm" />
+                      <select value={p.inGameRole} onChange={e => { const newP = [...teamForm.players]; newP[idx].inGameRole = e.target.value; setTeamForm({ ...teamForm, players: newP }); }} className="w-full sm:w-auto px-3 py-2 bg-zinc-800 text-white rounded-lg border border-zinc-700 focus:border-orange-500 outline-none text-sm">
+                        <option value="">Role (opt)</option>
+                        <option value="IGL">IGL</option>
+                        <option value="Fragger">Fragger</option>
+                        <option value="Support">Support</option>
+                        <option value="Assaulter">Assaulter</option>
+                        <option value="Sniper">Sniper</option>
+                        <option value="Flex">Flex</option>
+                        <option value="Coach">Coach</option>
+                        <option value="Analyst">Analyst</option>
+                      </select>
+                      <input type="file" accept="image/*" onChange={e => { const newP = [...teamForm.players]; newP[idx].pfpFile = e.target.files[0]; setTeamForm({ ...teamForm, players: newP }); }} className="w-full sm:w-auto text-xs text-zinc-400 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:bg-zinc-700 file:text-white hover:file:bg-zinc-600" title="Player Avatar" />
+                    </div>
+                  ))}
+                </div>
+                <p className="text-zinc-500 text-xs mt-2">Leave IGN blank to skip adding that player row.</p>
+              </div>
+
+              <div className="flex gap-3">
+                <button type="submit" disabled={createTeamMutation.isPending} className="px-6 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 disabled:opacity-50">{createTeamMutation.isPending ? 'Saving...' : 'Add Team & Players'}</button>
+                <button type="button" onClick={() => setShowCreateTeam(false)} className="px-6 py-2 bg-zinc-800 text-zinc-300 rounded-lg hover:bg-zinc-700">Cancel</button>
               </div>
             </form>
           </div>

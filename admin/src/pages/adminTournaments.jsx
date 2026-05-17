@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAdmin } from '../context/AdminContext';
 import AdminLayout from '../components/AdminLayout';
 import {
@@ -34,6 +35,7 @@ import {
 
 const AdminTournaments = () => {
     const { admin } = useAdmin();
+    const navigate = useNavigate();
     const [tournaments, setTournaments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedTournament, setSelectedTournament] = useState(null);
@@ -577,6 +579,13 @@ const AdminTournaments = () => {
                                                             title="View Details"
                                                         >
                                                             <Eye className="w-4 h-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => navigate(`/admin/tournaments/${tournament._id}`)}
+                                                            className="px-3 py-1.5 text-xs font-medium text-orange-400 hover:bg-orange-500/20 rounded-lg transition-colors border border-orange-500/30"
+                                                            title="Manage Tournament"
+                                                        >
+                                                            Manage
                                                         </button>
                                                         {tournament._approvalStatus === 'pending' && (
                                                             <>

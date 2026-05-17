@@ -277,8 +277,8 @@ router.get('/matches', verifyAdminToken, async (req, res) => {
         .skip(skip)
         .limit(parseInt(limit))
         .populate('tournament', 'tournamentName shortName gameTitle status slug')
-        .populate('participatingTeams.team', 'teamName teamTag logo aegisRating')
-        .select('-participatingTeams.kills.breakdown -roomCredentials.password') // Exclude sensitive data
+        .populate('results.team', 'teamName teamTag logo aegisRating')
+        .select('-results.kills.breakdown -roomCredentials.password') // Exclude sensitive data
         .lean(),
       Match.countDocuments(query)
     ]);
@@ -1088,6 +1088,136 @@ router.patch('/reports/:id', verifyAdminToken, async (req, res) => {
   } catch (error) {
     console.error('Admin update report error:', error);
     res.status(500).json({ error: 'Failed to update report' });
+  }
+});
+
+// ==================== TOURNAMENT GROUP MANAGEMENT ROUTES ====================
+
+// Get all teams in a phase (with their group assignments) — used by group manager UI
+router.get('/tournaments/:id/phase-teams', verifyAdminToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { phase } = req.query;
+
+    if (!validateObjectId(id)) return res.status(400).json({ error: 'Invalid tournament ID' });
+    if (!phase) return res.status(400).json({ error: '"phase" query param required' });
+
+    const tournament = await Tournament.findById(id).select('phases').lean();
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+    if (!tournament.phases?.some(p => p.name === phase)) {
+      return res.status(404).json({ error: `Phase "${phase}" not found` });
+    }
+
+    const registrations = await Registration.find({
+      tournament: id,
+      phase,
+      status: { $nin: ['rejected', 'withdrawn'] }
+    })
+      .populate('team', 'teamName teamTag logo')
+      .select('team group status')
+      .lean();
+
+    res.json({
+      phase,
+      teams: registrations
+        .filter(r => r.team)
+        .map(r => ({
+          _id: r.team._id,
+          teamName: r.team.teamName,
+          teamTag: r.team.teamTag,
+          logo: r.team.logo,
+          group: r.group || null,
+          registrationId: r._id,
+        }))
+    });
+  } catch (error) {
+    console.error('Error fetching phase teams:', error);
+    res.status(500).json({ error: 'Failed to fetch phase teams' });
+  }
+});
+
+// Assign teams to groups — writes to Registration.group + Tournament.phases[].groups
+router.put('/tournaments/:id/assign-groups', verifyAdminToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { phase, groups } = req.body;
+
+    if (!validateObjectId(id)) return res.status(400).json({ error: 'Invalid tournament ID' });
+    if (!phase || !Array.isArray(groups)) {
+      return res.status(400).json({ error: '"phase" and "groups" array are required' });
+    }
+
+    const tournament = await Tournament.findById(id).select('phases status').lean();
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+
+    const phaseDoc = tournament.phases?.find(p => p.name === phase);
+    if (!phaseDoc) return res.status(404).json({ error: `Phase "${phase}" not found` });
+
+    // Build bulk ops — one updateOne per team per group
+    const bulkOps = [];
+    for (const group of groups) {
+      if (!group.name || !Array.isArray(group.teams)) continue;
+      for (const teamId of group.teams) {
+        if (!validateObjectId(teamId)) continue;
+        bulkOps.push({
+          updateOne: {
+            filter: { tournament: id, team: teamId, phase },
+            update: { $set: { group: group.name } }
+          }
+        });
+      }
+    }
+
+    // Clear group on teams not included in the payload
+    const allIncludedTeamIds = groups.flatMap(g => (g.teams || []));
+    bulkOps.push({
+      updateMany: {
+        filter: {
+          tournament: id,
+          phase,
+          team: { $nin: allIncludedTeamIds.filter(tid => validateObjectId(tid)) }
+        },
+        update: { $set: { group: '' } }
+      }
+    });
+
+    if (bulkOps.length > 0) {
+      await Registration.bulkWrite(bulkOps, { ordered: false });
+    }
+
+    // Persist group metadata (slotList) to tournament doc
+    const groupMetadata = groups
+      .filter(g => g.name)
+      .map(g => {
+        const existingGroup = (phaseDoc.groups || []).find(eg => eg.name === g.name);
+        const slotList = (g.teams || [])
+          .filter(tid => validateObjectId(tid))
+          .map((teamId, idx) => ({
+            slot: idx < 23 ? idx + 3 : 2,
+            team: teamId
+          }));
+        return {
+          name: g.name,
+          teams: [],
+          isLocked: existingGroup?.isLocked || false,
+          slotList
+        };
+      });
+
+    await Tournament.updateOne(
+      { _id: id, 'phases._id': phaseDoc._id },
+      { $set: { 'phases.$.groups': groupMetadata } }
+    );
+
+    res.json({
+      success: true,
+      message: `Groups saved for phase "${phase}"`,
+      groupsCreated: groups.length,
+      teamsAssigned: allIncludedTeamIds.length
+    });
+  } catch (error) {
+    console.error('Error assigning groups:', error);
+    res.status(500).json({ error: 'Failed to assign groups' });
   }
 });
 

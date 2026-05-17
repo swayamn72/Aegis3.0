@@ -304,10 +304,14 @@ const playerSchema = new mongoose.Schema(
       type: String,
       enum: ['looking for a team', 'in a team', 'open for offers'],
     },
-    team: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Team',
-      default: null,
+
+    // ── Multi-game team membership (new schema) ──────────────────────────────
+    // Map<gameKey, TeamObjectId>  e.g. { BGMI: ObjectId, VALORANT: ObjectId }
+    // At most one team per game. Use teamHelpers.js to read/write this field.
+    teams: {
+      type: Map,
+      of: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
+      default: new Map(),
     },
     previousTeams: [
       {
@@ -419,19 +423,50 @@ const playerSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
 
 // Shadow profiles auto-generate a sentinel email if none provided
-playerSchema.pre('validate', function () {
+playerSchema.pre('validate', async function () {
   if (this.isNew && this.isShadowProfile && !this.email) {
     this.email = `shadow_${this._id}@aegis.internal`;
   }
   // Shadow profiles don't need a username — auto-generate if missing
   if (this.isNew && this.isShadowProfile && !this.username) {
     const ign = this.gameIds?.[0]?.inGameName || this.realName || this._id.toString().slice(-8);
-    this.username = `pro_${ign.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}_${Date.now()}`;
+    const baseUsername = ign.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+    
+    let tempUsername = baseUsername;
+    let counter = 1;
+    const PlayerModel = mongoose.models.Player || this.constructor;
+    
+    while (await PlayerModel.findOne({ username: tempUsername })) {
+      tempUsername = `${baseUsername}${counter}`;
+      counter++;
+    }
+    this.username = tempUsername;
   }
+});
+
+// ── Backward-compat virtual: player.team ─────────────────────────────────────
+// Returns the ObjectId/Team for the player's primaryGame, or the first team
+// in their teams map if primaryGame has no match.
+// NEW WRITES must target player.teams — never set player.team directly.
+playerSchema.virtual('team').get(function () {
+  const teamsMap = this.teams;
+  if (!teamsMap || teamsMap.size === 0) return null;
+  if (this.primaryGame && teamsMap.get(this.primaryGame)) {
+    return teamsMap.get(this.primaryGame);
+  }
+  // Return the first entry for players with no primaryGame set
+  return teamsMap.values().next().value ?? null;
+});
+
+// Virtual: quick boolean — player has at least one team
+playerSchema.virtual('hasAnyTeam').get(function () {
+  return this.teams instanceof Map ? this.teams.size > 0 : false;
 });
 
 const Player = mongoose.model('Player', playerSchema);
@@ -439,8 +474,9 @@ const Player = mongoose.model('Player', playerSchema);
 // --- Performance Indexes ---
 // Leaderboard sorting (GET /api/players/leaderboard/aegis)
 playerSchema.index({ aegisRating: -1 });
-// Team lookups (used in team member queries, team stats)
-playerSchema.index({ team: 1 });
+// Multi-game team lookups — compound index on map keys
+playerSchema.index({ 'teams.BGMI': 1 });
+playerSchema.index({ 'teams.VALORANT': 1 });
 // Recruitment search pattern
 playerSchema.index({ profileVisibility: 1, primaryGame: 1, aegisRating: -1 });
 // Shadow profile lookups

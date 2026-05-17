@@ -203,12 +203,56 @@ export const updateMapPoolAPI = async (id, maps) => {
 };
 
 // ==================== ADMIN TEAM APIs ====================
+export const createShadowTeamAPI = async (formData) => {
+  const { data } = await API.post('/teams/shadow-with-players', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+};
 export const createTeamAPI = async (teamData) => {
   const { data } = await API.post('/teams/create', teamData);
   return data;
 };
+export const searchTeamsAPI = async (q) => {
+  const { data } = await API.get('/teams/search', { params: { q } });
+  return data;
+};
+
+// ==================== TOURNAMENT MANAGEMENT APIs ====================
+export const getTournamentRegistrationsAPI = async (tournamentId) => {
+  const { data } = await API.get(`/tournaments/${tournamentId}/registrations`);
+  return data;
+};
+export const adminRegisterTeamAPI = async (tournamentId, teamId) => {
+  const { data } = await API.post(`/tournaments/${tournamentId}/admin-register`, { teamId });
+  return data;
+};
+export const removeRegistrationAPI = async (tournamentId, teamId) => {
+  const { data } = await API.delete(`/tournaments/${tournamentId}/registrations/${teamId}`);
+  return data;
+};
+export const advancePhaseAPI = async (tournamentId, phaseName) => {
+  const { data } = await API.post(`/tournaments/${tournamentId}/advance-phase`, { phaseName });
+  return data;
+};
+export const getPhaseTeamsAPI = async (tournamentId, phase) => {
+  const { data } = await API.get(`/tournaments/${tournamentId}/phase-teams`, { params: { phase } });
+  return data;
+};
+export const assignGroupsAPI = async (tournamentId, phase, groups) => {
+  const { data } = await API.put(`/tournaments/${tournamentId}/assign-groups`, { phase, groups });
+  return data;
+};
 
 // ==================== MATCH APIs ====================
+export const fetchMatchesAPI = async (params = {}) => {
+  const { data } = await API.get('/matches', { params });
+  return data;
+};
+export const getTournamentMatchesAPI = async (tournamentId) => {
+  const { data } = await API.get(`/tournaments/${tournamentId}/matches`);
+  return data;
+};
 export const createMatchAPI = async (tournamentId, matchData) => {
   const { data } = await API.post(`/tournaments/${tournamentId}/matches`, matchData);
   return data;
@@ -227,8 +271,16 @@ export const startLiveScoringAPI = async (matchId) => {
   const { data } = await API.post(`/matches/${matchId}/live/start`);
   return data;
 };
-export const addLiveKillAPI = async (matchId, { teamId, playerId, kills }) => {
-  const { data } = await API.post(`/matches/${matchId}/live/kill`, { teamId, playerId, kills });
+export const knockLivePlayerAPI = async (matchId, { teamId, playerId, isPlayzone }) => {
+  const { data } = await API.post(`/matches/${matchId}/live/knock`, { teamId, playerId, isPlayzone });
+  return data;
+};
+export const finishLivePlayerAPI = async (matchId, { killerTeamId, killerPlayerId, victimTeamId, victimPlayerId, isPlayzone }) => {
+  const { data } = await API.post(`/matches/${matchId}/live/finish`, { killerTeamId, killerPlayerId, victimTeamId, victimPlayerId, isPlayzone });
+  return data;
+};
+export const reviveLivePlayerAPI = async (matchId, { teamId, playerId }) => {
+  const { data } = await API.post(`/matches/${matchId}/live/revive`, { teamId, playerId });
   return data;
 };
 export const eliminateTeamAPI = async (matchId, teamId) => {
@@ -237,6 +289,10 @@ export const eliminateTeamAPI = async (matchId, teamId) => {
 };
 export const endLiveScoringAPI = async (matchId) => {
   const { data } = await API.post(`/matches/${matchId}/live/end`);
+  return data;
+};
+export const undoLiveActionAPI = async (matchId) => {
+  const { data } = await API.post(`/matches/${matchId}/live/undo`);
   return data;
 };
 export const getLiveMatchAPI = async (matchId) => {

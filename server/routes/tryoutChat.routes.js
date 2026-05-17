@@ -11,6 +11,11 @@ import {
   createTryoutMessage,
   fetchTryoutMessages,
 } from '../services/tryoutMessage.service.js';
+import {
+  getMaxPlayers,
+  hasTeamForGame,
+  setTeamForGame,
+} from '../utils/teamHelpers.js';
 
 const router = express.Router();
 const LIST_PREVIEW_MESSAGE_LIMIT = 30;
@@ -277,14 +282,14 @@ router.post('/:chatId/send-offer', auth, async (req, res) => {
       return res.status(400).json({ error: 'Tryout is not active' });
     }
 
-    if (chat.team.players.length >= 5) {
-      return res.status(400).json({ error: 'Team is already full (max 5 players)' });
+    if (chat.team.players.length >= getMaxPlayers(chat.team.primaryGame)) {
+      return res.status(400).json({ error: `Team is already full (max ${getMaxPlayers(chat.team.primaryGame)} players)` });
     }
 
-    // Optional but recommended: ensure applicant is still teamless
-    const applicantDoc = await Player.findById(chat.applicant._id).select('team');
-    if (applicantDoc?.team) {
-      return res.status(400).json({ error: 'Player is already in a team' });
+    // Game-scoped: ensure applicant is still teamless for THIS game
+    const applicantDoc = await Player.findById(chat.applicant._id).select('teams');
+    if (hasTeamForGame(applicantDoc, chat.team.primaryGame)) {
+      return res.status(400).json({ error: `Player already has a ${chat.team.primaryGame} team` });
     }
 
     chat.tryoutStatus = 'offer_sent';
@@ -386,25 +391,27 @@ router.post('/:chatId/accept-offer', auth, async (req, res) => {
       return res.status(404).json({ error: 'Player not found' });
     }
 
-    if (player.team) {
-      return res.status(400).json({ error: 'You are already in a team' });
-    }
-
+    // Load a fresh team doc (chat.team is populated, need mutable doc)
     const team = await Team.findById(chat.team._id);
     if (!team) {
       return res.status(404).json({ error: 'Team not found' });
     }
 
-    if (team.players.length >= 5) {
-      return res.status(400).json({ error: 'Team is already full' });
+    // Game-scoped: check player doesn't already have a team for this game
+    if (hasTeamForGame(player, team.primaryGame)) {
+      return res.status(400).json({ error: `You already have a ${team.primaryGame} team` });
+    }
+
+    if (team.players.length >= getMaxPlayers(team.primaryGame)) {
+      return res.status(400).json({ error: `Team is already full (max ${getMaxPlayers(team.primaryGame)} players)` });
     }
 
     // Add player to team
     team.players.push(userId);
     await team.save();
 
-    // Update player
-    player.team = team._id;
+    // Update player — write to game-scoped teams map
+    player.teams.set(team.primaryGame, team._id);
     player.teamStatus = 'in a team';
     await player.save();
 

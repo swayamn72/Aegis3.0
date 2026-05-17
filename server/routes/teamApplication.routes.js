@@ -9,6 +9,7 @@ import auth from '../middleware/auth.js';
 import { deactivateLFTPost, deactivateLFPPost } from '../utils/recruitmentHelpers.js';
 import { createTryoutMessage, fetchTryoutMessages } from '../services/tryoutMessage.service.js';
 import notificationService from '../services/notification.service.js';
+import { hasTeamForGame, getMaxPlayers, setTeamForGame } from '../utils/teamHelpers.js';
 
 
 const router = express.Router();
@@ -142,16 +143,12 @@ router.post('/apply', auth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid team ID' });
     }
 
-    const player = await Player.findById(req.user.id).select('username team inGameRole');
+    const player = await Player.findById(req.user.id).select('username teams inGameRole');
     if (!player) {
       return res.status(404).json({ error: 'Player profile not found' });
     }
 
-    if (player.team) {
-      return res.status(400).json({ error: 'You are already in a team' });
-    }
-
-    const team = await Team.findById(teamId).select('captain players teamName status profileVisibility');
+    const team = await Team.findById(teamId).select('captain players teamName status profileVisibility primaryGame');
     if (!team) {
       return res.status(404).json({ error: 'Team not found' });
     }
@@ -168,7 +165,12 @@ router.post('/apply', auth, async (req, res) => {
       return res.status(400).json({ error: 'You are already in this team' });
     }
 
-    if (Array.isArray(team.players) && team.players.length >= 5) {
+    // Game-scoped: only block if player already has a team for THIS game
+    if (hasTeamForGame(player, team.primaryGame)) {
+      return res.status(400).json({ error: `You already have a ${team.primaryGame} team` });
+    }
+
+    if (Array.isArray(team.players) && team.players.length >= getMaxPlayers(team.primaryGame)) {
       return res.status(400).json({ error: 'Team roster is full' });
     }
 
@@ -534,23 +536,25 @@ router.post('/:applicationId/accept', auth, async (req, res) => {
     }
 
     // Check if team is full
-    if (application.team.players.length >= 5) {
+    if (application.team.players.length >= getMaxPlayers(application.team.primaryGame)) {
       return res.status(400).json({ error: 'Team roster is full' });
     }
 
-    // Check if player is already in a team
-    if (application.player.team) {
-      return res.status(400).json({ error: 'Player is already in a team' });
+    // Game-scoped: check if player already has a team for this game
+    if (hasTeamForGame(application.player, application.team.primaryGame)) {
+      return res.status(400).json({ error: `Player already has a ${application.team.primaryGame} team` });
     }
 
     // Add player to team
     application.team.players.push(application.player._id);
     await application.team.save();
 
-    // Update player
+    // Update player — write to game-scoped teams map
     await Player.findByIdAndUpdate(application.player._id, {
-      team: application.team._id,
-      teamStatus: 'in a team',
+      $set: {
+        ...setTeamForGame(application.team.primaryGame, application.team._id),
+        teamStatus: 'in a team',
+      },
     });
 
     // Update application
@@ -577,8 +581,8 @@ router.post('/:applicationId/accept', auth, async (req, res) => {
     // Deactivate any active LFT posts for the player who joined
     await deactivateLFTPost(application.player._id);
 
-    // If team roster is now full (5 players), deactivate their LFP post
-    if (application.team.players.length >= 5) {
+    // If team roster is now full, deactivate their LFP post
+    if (application.team.players.length >= getMaxPlayers(application.team.primaryGame)) {
       await deactivateLFPPost(application.team._id);
     }
 

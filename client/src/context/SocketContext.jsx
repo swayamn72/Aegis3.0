@@ -188,6 +188,8 @@ export const SocketProvider = ({ children, userId }) => {
         on,
         off,
         emit,
+        onEvent: on,
+        emitEvent: emit,
         sendMessage,
         getCurrentRooms: () => Array.from(currentRoomsRef.current)
     };

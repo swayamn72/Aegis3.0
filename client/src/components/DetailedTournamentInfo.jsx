@@ -130,7 +130,6 @@ const DetailedTournamentInfo = () => {
         params: {
           phase: matchPhase === 'All' ? '' : matchPhase,
           group: matchGroup === 'All' ? '' : matchGroup,
-          status: 'completed',
           limit: MATCHES_PER_PAGE,
           offset: (matchPage - 1) * MATCHES_PER_PAGE
         }
@@ -193,7 +192,7 @@ const DetailedTournamentInfo = () => {
   const streamLinks = tournamentResp?.streamLinks || [];
 
   const isCaptain = userTeam && user && userTeam.captain?._id?.toString() === user._id?.toString();
-  const registrationClosed = tournamentData?.registrationEndDate && new Date(tournamentData.registrationEndDate) < new Date();
+  const registrationClosed = (tournamentData?.status && tournamentData.status !== 'registration_open') || (tournamentData?.registrationEndDate && new Date(tournamentData.registrationEndDate) < new Date());
   const isTeamRegistered = !!registrationStatus?.registration;
   const registrationPending = registrationStatus?.registration?.status === 'pending';
   const isValorant = tournamentData?.game === 'VALORANT';
@@ -371,7 +370,10 @@ const DetailedTournamentInfo = () => {
       'Erangel': ErangelMap,
       'Miramar': MiramarMap,
       'Sanhok': SanhokMap,
-      'Vikendi': VikendiMap
+      'Vikendi': VikendiMap,
+      'Livik': ErangelMap,
+      'Nusa': ErangelMap,
+      'Rondo': ErangelMap,
     };
     const mapImage = mapImages[match.map] || ErangelMap;
     const winnerTeam = match.results?.find(pt => pt.finalPosition === 1 || pt.chickenDinner)?.team || match.winner?.team;
@@ -436,7 +438,7 @@ const DetailedTournamentInfo = () => {
             </div>
           </div>
         )}
-        <div className="flex justify-end mt-3 pt-2 border-t border-zinc-700">
+        <div className="flex items-center justify-between mt-3 pt-2 border-t border-zinc-700">
           <div className="flex items-center gap-1 text-orange-400 text-xs group-hover:text-orange-300 transition-colors">
             <span>View Details</span>
             <ArrowRight className="w-3.5 h-3.5" />

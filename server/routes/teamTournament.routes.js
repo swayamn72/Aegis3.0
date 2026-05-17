@@ -8,10 +8,13 @@ import PhaseStanding from '../models/phaseStanding.model.js';
 import Team from '../models/team.model.js';
 import Player from '../models/player.model.js';
 import { sendTournamentRegistrationEmail } from '../config/email.js';
+import { getPlayerTeamForGame, getMaxPlayers } from '../utils/teamHelpers.js';
 
 const router = express.Router();
 
 // Middleware to verify team captain
+// Requires ?game= query param OR infers game from the tournament being acted upon.
+// For routes that operate on a specific tournament, the game is known from the tournament doc.
 const verifyTeamCaptain = async (req, res, next) => {
   try {
     const token = extractToken(req);
@@ -21,13 +24,34 @@ const verifyTeamCaptain = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const player = await Player.findById(decoded.id).populate('team');
-    if (!player || !player.team) {
-      return res.status(403).json({ message: 'Player not in a team' });
+    const player = await Player.findById(decoded.id).select('teams primaryGame');
+    if (!player) {
+      return res.status(403).json({ message: 'Player not found' });
     }
 
-    // Check if player is team captain
-    const team = player.team;
+    // Determine which game context this request is for.
+    // For tournament routes, look up the tournament first to get its game.
+    let game = req.query.game || req.body?.game;
+
+    if (!game && req.params.tournamentId) {
+      const t = await Tournament.findById(req.params.tournamentId).select('gameTitle').lean();
+      game = t?.gameTitle;
+    }
+
+    if (!game) {
+      return res.status(400).json({ message: 'Cannot determine game context for this request' });
+    }
+
+    const teamId = getPlayerTeamForGame(player, game);
+    if (!teamId) {
+      return res.status(403).json({ message: `Player is not in a ${game} team` });
+    }
+
+    const team = await Team.findById(teamId);
+    if (!team) {
+      return res.status(403).json({ message: 'Team not found' });
+    }
+
     if (team.captain.toString() !== player._id.toString()) {
       return res.status(403).json({ message: 'Only team captain can manage tournament invitations' });
     }
@@ -281,8 +305,9 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
         throw err;
       }
 
-      // Check team has minimum required members
-      if (req.team.players.length < 4) {
+      // Check team has minimum required members (teamSize from gameRegistry)
+      const minSize = getMaxPlayers(req.team.primaryGame) >= 5 ? 4 : 3;
+      if (req.team.players.length < minSize) {
         throw new Error('TEAM_TOO_SMALL');
       }
 

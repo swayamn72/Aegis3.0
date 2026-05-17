@@ -65,11 +65,11 @@ const PageLoader = () => (
 // OrgDashboard for orgs, and HomePage for players.
 const RootRoute = () => {
   const { isAuthenticated, loading, userRole } = useAuth();
-  
+
   if (loading) return <PageLoader />;
   if (!isAuthenticated) return <LandingPage />;
   if (userRole === 'organization') return <Navigate to="/org/dashboard" replace />;
-  
+
   return (
     <ProtectedRoute requireRole="player">
       <HomePage />

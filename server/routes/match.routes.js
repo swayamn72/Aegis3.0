@@ -2,6 +2,7 @@ import express from 'express';
 import auth from '../middleware/auth.js';
 import { verifyOrgToken } from '../middleware/orgAuth.js';
 import Match from '../models/match.model.js';
+import LiveMatchState from '../models/liveMatchState.model.js';
 import Tournament from '../models/tournament.model.js';
 import Team from '../models/team.model.js';
 import Player from '../models/player.model.js';
@@ -1245,6 +1246,37 @@ router.delete('/scheduled/:matchId', verifyOrgToken, verifyMatchOwnership, async
 
 // Get a single match by ID (public — no auth required)
 // Optimized with targeted population and lean()
+router.get('/:matchId/live', async (req, res) => {
+  try {
+    const { matchId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(matchId)) {
+      return res.status(400).json({ error: 'Invalid match ID format' });
+    }
+
+    const match = await Match.findById(matchId)
+      .populate('results.team', 'teamName teamTag logo')
+      .populate('results.kills.breakdown.player', 'username gameIds inGameName profilePicture')
+      .populate('tournament', 'tournamentName shortName logo')
+      .lean();
+
+    if (!match) {
+      return res.status(404).json({ error: 'Match not found' });
+    }
+
+    const live = await LiveMatchState.findOne({ match: matchId })
+      .populate('teams.team', 'teamName teamTag logo')
+      .populate('teams.players.player', 'username gameIds inGameName profilePicture')
+      .lean();
+
+    const gameConfig = getGameConfig(match.gameTitle || 'BGMI');
+    res.json({ match, live, scoring: gameConfig?.scoring || null });
+  } catch (error) {
+    console.error('Error fetching live match state:', error);
+    res.status(500).json({ error: 'Failed to fetch live match info' });
+  }
+});
+
 router.get('/:matchId', async (req, res) => {
   try {
     const { matchId } = req.params;

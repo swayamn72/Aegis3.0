@@ -21,10 +21,10 @@ const BGMI = {
   type: 'battle_royale',
 
   // Team & Match Structure
-  teamSize: 4,            // players per roster (excluding subs)
-  maxRosterSize: 6,       // including substitutes
-  maxTeamsPerMatch: 25,    // BR lobby size
-  matchFormat: '1vAll',    // all teams in one lobby
+  teamSize: 4,            // core players per roster (IGL, Assaulter, etc.)
+  maxRosterSize: 5,       // max members on platform team (no subs slot)
+  maxTeamsPerMatch: 25,   // BR lobby size
+  matchFormat: '1vAll',   // all teams in one lobby
 
   // Maps
   maps: ['Erangel', 'Miramar', 'Sanhok', 'Vikendi', 'Rondo'],
@@ -100,7 +100,7 @@ const VALORANT = {
 
   // Team & Match Structure
   teamSize: 5,
-  maxRosterSize: 7,       // 5 starters + 2 subs
+  maxRosterSize: 6,       // 5 starters + 1 sub
   maxTeamsPerMatch: 2,    // head-to-head
   matchFormat: '1v1',
 

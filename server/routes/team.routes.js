@@ -13,6 +13,13 @@ import upload from '../config/multer.js';
 import cloudinary from '../config/cloudinary.js';
 import mongoose from 'mongoose';
 import { deactivateLFTPost } from '../utils/recruitmentHelpers.js';
+import {
+  getMaxPlayers,
+  hasTeamForGame,
+  setTeamForGame,
+  unsetTeamForGame,
+  resolveTeamStatusAfterRemoval,
+} from '../utils/teamHelpers.js';
 
 // ============================================================================
 // PHASE STATUS HELPER
@@ -357,12 +364,16 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'Team name is required' });
     }
 
+    const game = primaryGame || 'BGMI';
+
     const player = await Player.findById(req.user.id);
     if (!player) {
       return res.status(400).json({ message: 'Player profile not found' });
     }
-    if (player.team) {
-      return res.status(400).json({ message: 'You are already in a team' });
+
+    // Game-scoped check: one team per game
+    if (hasTeamForGame(player, game)) {
+      return res.status(400).json({ message: `You already have a ${game} team` });
     }
 
     // Generate unique 6-character alphanumeric teamId
@@ -372,7 +383,7 @@ router.post('/', auth, async (req, res) => {
       teamId,
       teamName: teamName.trim(),
       teamTag: teamTag ? teamTag.toUpperCase() : undefined,
-      primaryGame: primaryGame || 'BGMI',
+      primaryGame: game,
       region: region || 'India',
       bio,
       logo,
@@ -382,9 +393,12 @@ router.post('/', auth, async (req, res) => {
 
     await newTeam.save();
 
+    // Write to game-scoped teams map
     await Player.findByIdAndUpdate(req.user.id, {
-      team: newTeam._id,
-      teamStatus: 'in a team'
+      $set: {
+        ...setTeamForGame(game, newTeam._id),
+        teamStatus: 'in a team',
+      },
     });
 
     // Deactivate any active LFT posts for the new captain
@@ -399,7 +413,6 @@ router.post('/', auth, async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating team:', error);
-    // Only teamId has a unique index now — collision is astronomically unlikely
     if (error.code === 11000) {
       return res.status(500).json({ message: 'ID collision — please try again' });
     }
@@ -448,17 +461,17 @@ router.post('/invitations/:id/accept', auth, async (req, res) => {
       return res.status(400).json({ message: 'Player profile not found' });
     }
 
-    if (player.team) {
-      return res.status(400).json({ message: 'You are already in a team' });
-    }
-
-    const team = await Team.findById(invitation.team); // ✅ FIXED
-
+    const team = await Team.findById(invitation.team);
     if (!team) {
       return res.status(400).json({ message: 'Team no longer exists' });
     }
 
-    const maxPlayers = team.primaryGame === 'VALORANT' ? 6 : 5;
+    // Game-scoped check: only block if player already has a team for THIS game
+    if (hasTeamForGame(player, team.primaryGame)) {
+      return res.status(400).json({ message: `You already have a ${team.primaryGame} team` });
+    }
+
+    const maxPlayers = getMaxPlayers(team.primaryGame);
     if (team.players.length >= maxPlayers) {
       return res.status(400).json({ message: `Team is already full (max ${maxPlayers} players)` });
     }
@@ -467,10 +480,12 @@ router.post('/invitations/:id/accept', auth, async (req, res) => {
     team.players.push(req.user.id);
     await team.save();
 
-    // Update player
+    // Update player — write to game-scoped teams map
     await Player.findByIdAndUpdate(req.user.id, {
-      team: team._id,
-      teamStatus: 'in a team',
+      $set: {
+        ...setTeamForGame(team.primaryGame, team._id),
+        teamStatus: 'in a team',
+      },
     });
 
     // Deactivate any active LFT posts for the player who joined
@@ -581,9 +596,11 @@ router.delete('/:id/players/:playerId', auth, async (req, res) => {
     team.players = team.players.filter(p => p.toString() !== playerId);
     await team.save();
 
+    const newStatus = resolveTeamStatusAfterRemoval(playerDoc, team.primaryGame);
+
     await Player.findByIdAndUpdate(playerId, {
-      $unset: { team: "" },
-      $set: { teamStatus: 'looking for a team' },
+      $unset: unsetTeamForGame(team.primaryGame),
+      $set: { teamStatus: newStatus },
       $push: {
         previousTeams: {
           team: teamId,
@@ -629,11 +646,14 @@ router.delete('/:id', auth, async (req, res) => {
       return res.status(400).json({ message: 'Cannot delete team while participating in an active tournament. Withdraw first.' });
     }
 
-    // Unset player's team and preserve history
+    // Unset the specific game entry from teams map (preserve other game teams)
     const playerId = req.user.id;
+    const captainDoc = await Player.findById(playerId);
+    const newStatus = resolveTeamStatusAfterRemoval(captainDoc, team.primaryGame);
+
     await Player.findByIdAndUpdate(playerId, {
-      $unset: { team: "" },
-      $set: { teamStatus: 'looking for a team' },
+      $unset: unsetTeamForGame(team.primaryGame),
+      $set: { teamStatus: newStatus },
       $push: {
         previousTeams: {
           team: teamId,
@@ -950,9 +970,9 @@ router.post('/:id/invite', auth, async (req, res) => {
       return res.status(404).json({ message: 'Player not found' });
     }
 
-    // If your business rule is 1 team per player, this is correct
-    if (player.team) {
-      return res.status(400).json({ message: 'Player is already in a team' });
+    // Game-scoped: block if player already has a team for THIS game
+    if (hasTeamForGame(player, team.primaryGame)) {
+      return res.status(400).json({ message: `Player already has a ${team.primaryGame} team` });
     }
 
     // Extra safety: if somehow player is already in this team
@@ -962,7 +982,7 @@ router.post('/:id/invite', auth, async (req, res) => {
     }
 
     // Hard cap on size
-    const maxPlayers = team.primaryGame === 'VALORANT' ? 6 : 5;
+    const maxPlayers = getMaxPlayers(team.primaryGame);
     if (team.players.length >= maxPlayers) {
       return res.status(400).json({ message: `Team is already full (max ${maxPlayers} players)` });
     }

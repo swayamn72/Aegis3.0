@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { SUPPORTED_GAMES } from '../config/gameRegistry.js';
+import { SUPPORTED_GAMES, GAME_REGISTRY } from '../config/gameRegistry.js';
 
 const teamSchema = new mongoose.Schema(
   {
@@ -181,6 +181,14 @@ const teamSchema = new mongoose.Schema(
     toObject: { virtuals: true },
   }
 );
+
+// Enforce per-game max roster size from gameRegistry (BGMI=5, VALORANT=6)
+teamSchema.pre('validate', function () {
+  const max = GAME_REGISTRY[this.primaryGame]?.maxRosterSize ?? 5;
+  if (Array.isArray(this.players) && this.players.length > max) {
+    this.invalidate('players', `Team roster cannot exceed ${max} players for ${this.primaryGame}`);
+  }
+});
 
 // Virtual for win rate calculation
 teamSchema.virtual('winRatePercentage').get(function () {
