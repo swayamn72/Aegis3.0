@@ -60,7 +60,7 @@ export const approachPlayer = async (playerId, message) => {
     return data;
 };
 
-// Approach Team (placeholder for future implementation)
+// Approach Team (player → team captain)
 export const approachTeam = async (teamId, message) => {
     const { data } = await axiosInstance.post(
         `/api/recruitment/approach-team/${teamId}`,

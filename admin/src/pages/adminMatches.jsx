@@ -180,7 +180,7 @@ const MatchTable = ({ matches, onEdit, onDelete, onView }) => {
                   <div className="text-sm text-white">{match.map}</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
-                  {match.participatingTeams?.length || 0} teams
+                  {match.results?.length || 0} teams
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-400">
                   {formatDate(match.scheduledStartTime)}

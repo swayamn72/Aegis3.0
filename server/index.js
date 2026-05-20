@@ -17,6 +17,7 @@ import logger from './config/logger.js';
 import "./config/cloudinary.js";
 import './config/firebase.js';
 import initChat from './config/chat.js';
+import { initMapVetoStore } from './utils/mapVetoStore.js';
 
 // ROUTES
 import authRoutes from './routes/auth.routes.js';
@@ -48,6 +49,14 @@ import resultSubmissionRoutes from './routes/resultSubmission.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { responseHelpers } from './middleware/responseHelpers.js';
 
+if (process.env.NODE_ENV === 'production') {
+  const secret = process.env.JWT_SECRET || '';
+  if (secret.length < 32 || secret.includes('test-jwt-secret-for-local-development-only')) {
+    console.error('FATAL: Set a strong JWT_SECRET (32+ chars) in production.');
+    process.exit(1);
+  }
+}
+
 const app = express();
 const httpServer = createServer(app);
 
@@ -62,11 +71,23 @@ app.set('io', io);
 
 // CONNECT DB
 connectDB();
+initMapVetoStore().catch((err) => {
+  logger.warn('map_veto_store_init_failed', { error: err.message });
+});
 
 // MIDDLEWARES
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'", 'https:'],
+      frameSrc: ["'none'"],
+    },
+  } : false,
 }));
 app.use(compression());
 app.use(cors(corsOptions)); // Centralized CORS — single source of truth

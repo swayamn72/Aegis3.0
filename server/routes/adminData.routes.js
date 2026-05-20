@@ -7,7 +7,7 @@ import LiveMatchState from '../models/liveMatchState.model.js';
 import Tournament from '../models/tournament.model.js';
 import Registration from '../models/registration.model.js';
 import PhaseStanding from '../models/phaseStanding.model.js';
-import { verifyAdminToken } from '../middleware/adminAuth.js';
+import { verifyAdminToken, requirePermission } from '../middleware/adminAuth.js';
 import { claimShadowProfile } from '../services/shadowClaim.service.js';
 import { getGameConfig } from '../config/gameRegistry.js';
 import rateLimit from 'express-rate-limit';
@@ -191,7 +191,7 @@ router.post('/players/shadow/:id/claim', verifyAdminToken, actionLimiter, async 
 // ===================== ADMIN TOURNAMENT CRUD =====================
 
 // Create tournament
-router.post('/tournaments/create', verifyAdminToken, actionLimiter, async (req, res) => {
+router.post('/tournaments/create', verifyAdminToken, requirePermission('canCreateTournament'), actionLimiter, async (req, res) => {
   try {
     const { tournamentName, shortName, gameTitle, tier, region, format, startDate, endDate,
       description, prizePool, phases, slots, gameSettings, media, streamLinks, tags,
@@ -401,33 +401,6 @@ router.post('/teams/create', verifyAdminToken, upload.single('logo'), actionLimi
 
 // ===================== MATCH MANAGEMENT =====================
 
-// List matches (with optional tournament filter, status filter, phase filter)
-router.get('/matches', verifyAdminToken, async (req, res) => {
-  try {
-    const { tournament, status, phase, limit = 50, page = 1 } = req.query;
-    const query = {};
-    if (tournament && isValidId(tournament)) query.tournament = tournament;
-    if (status) query.status = status;
-    if (phase) query.tournamentPhase = phase;
-
-    const skip = (Math.max(1, +page) - 1) * Math.min(100, +limit);
-    const [matches, total] = await Promise.all([
-      Match.find(query)
-        .sort({ matchNumber: 1, scheduledStartTime: 1 })
-        .skip(skip)
-        .limit(+limit)
-        .populate('tournament', 'tournamentName gameTitle')
-        .populate('results.team', 'teamName teamTag logo')
-        .lean(),
-      Match.countDocuments(query),
-    ]);
-    res.json({ matches, total, page: +page });
-  } catch (error) {
-    console.error('List matches error:', error);
-    res.status(500).json({ error: 'Failed to fetch matches' });
-  }
-});
-
 // Get matches for a specific tournament
 router.get('/tournaments/:tid/matches', verifyAdminToken, async (req, res) => {
   try {
@@ -445,7 +418,7 @@ router.get('/tournaments/:tid/matches', verifyAdminToken, async (req, res) => {
 });
 
 // Create match
-router.post('/tournaments/:tid/matches', verifyAdminToken, actionLimiter, async (req, res) => {
+router.post('/tournaments/:tid/matches', verifyAdminToken, requirePermission('canCreateMatch'), actionLimiter, async (req, res) => {
   try {
     const { tid } = req.params;
     if (!isValidId(tid)) return res.status(400).json({ error: 'Invalid tournament ID' });
@@ -464,9 +437,10 @@ router.post('/tournaments/:tid/matches', verifyAdminToken, actionLimiter, async 
         if (!isValidId(tId)) continue;
         const team = await Team.findById(tId).populate('players', '_id');
         if (!team) continue;
+        const playersList = Array.isArray(team.players) ? team.players : [];
         results.push({
           team: team._id, finalPosition: null,
-          kills: { total: 0, unmatchedKills: 0, breakdown: team.players.map(p => ({ player: p._id, kills: 0, isPlaying: true })) },
+          kills: { total: 0, unmatchedKills: 0, breakdown: playersList.map(p => ({ player: p._id || p, kills: 0, isPlaying: true })) },
           points: { placementPoints: 0, killPoints: 0, totalPoints: 0 }, chickenDinner: false, isEliminated: false,
         });
       }

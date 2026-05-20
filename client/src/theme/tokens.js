@@ -1,5 +1,5 @@
 /**
- * Aegis 3.0 Design Tokens
+ * Aegis Design Tokens
  * Mirrored from mobile spec for cross-platform consistency.
  */
 

@@ -340,7 +340,7 @@ matchSchema.statics.findRecentCompleted = function (limit = 10) {
     status: 'completed',
     visibility: 'public'
   })
-    .sort({ actualEndTime: -1 })
+    .sort({ scheduledStartTime: -1 })
     .limit(limit)
     .populate('results.team', 'teamName teamTag logo')
     .populate('tournament', 'tournamentName shortName');
@@ -353,7 +353,7 @@ matchSchema.statics.findByMap = function (map, limit = 10) {
     status: 'completed',
     visibility: 'public'
   })
-    .sort({ actualEndTime: -1 })
+    .sort({ scheduledStartTime: -1 })
     .limit(limit);
 };
 

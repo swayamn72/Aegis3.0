@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 
-const API_URL = import.meta.env.VITE_BACKEND_URL;
+import { API_URL } from '../config/apiBase.js';
 
 const AuthContext = createContext();
 
@@ -24,41 +24,30 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const checkSession = async () => {
       try {
-        const storedRole = localStorage.getItem('userRole');
-        if (!storedRole) {
-          setLoading(false);
+        const playerRes = await fetch(`${API_URL}/api/players/me`, { credentials: 'include' });
+        if (playerRes.ok) {
+          const data = await playerRes.json();
+          setUser(data);
+          setUserRole('player');
+          setIsAuthenticated(true);
+          localStorage.setItem('userRole', 'player');
           return;
-        }
-        let endpoint = null;
-        if (storedRole === 'player') {
-          endpoint = `${API_URL}/api/players/me`;
-        } else if (storedRole === 'organization') {
-          endpoint = `${API_URL}/api/organizations/me`;
-        }
-        if (!endpoint) {
-          setLoading(false);
-          return;
-        }
-        const token = localStorage.getItem('token');
-        const headers = {};
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
         }
 
-        const response = await fetch(endpoint, {
-          credentials: "include",
-          headers: headers
-        });
-        if (response.ok) {
-          const data = await response.json();
+        const orgRes = await fetch(`${API_URL}/api/organizations/me`, { credentials: 'include' });
+        if (orgRes.ok) {
+          const data = await orgRes.json();
           setUser(data);
-          setUserRole(storedRole);
+          setUserRole('organization');
           setIsAuthenticated(true);
-        } else {
-          setUser(null);
-          setUserRole(null);
-          setIsAuthenticated(false);
+          localStorage.setItem('userRole', 'organization');
+          return;
         }
+
+        setUser(null);
+        setUserRole(null);
+        setIsAuthenticated(false);
+        localStorage.removeItem('userRole');
       } catch (err) {
         console.error("Auth check failed:", err);
       } finally {
@@ -92,10 +81,6 @@ export const AuthProvider = ({ children }) => {
         setIsAuthenticated(true);
         setUserRole(role);
         localStorage.setItem('userRole', role);
-        // Store token for socket auth and API requests
-        if (data.token) {
-          localStorage.setItem('token', data.token);
-        }
 
         if (role === 'organization') {
           setUser(data.organization);
@@ -141,7 +126,6 @@ export const AuthProvider = ({ children }) => {
       setUserRole(null);
       setIsAuthenticated(false);
       localStorage.removeItem('userRole');
-      localStorage.removeItem('token');
     }
   };
 
@@ -154,15 +138,8 @@ export const AuthProvider = ({ children }) => {
         ? `${API_URL}/api/organizations/me`
         : `${API_URL}/api/players/me`;
 
-      const token = localStorage.getItem('token');
-      const headers = {};
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
-
       const response = await fetch(endpoint, {
-        credentials: "include",
-        headers,
+        credentials: 'include',
       });
 
       if (response.ok) {

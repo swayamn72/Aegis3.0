@@ -16,6 +16,7 @@ import MatchRoomMessage from '../models/matchRoomMessage.model.js';
 import Match from '../models/match.model.js';
 import Registration from '../models/registration.model.js';
 import { verifyToken } from '../middleware/auth.js';
+import { assertMatchRoomParticipant } from '../utils/matchRoomAuth.js';
 
 const router = express.Router();
 
@@ -47,7 +48,7 @@ router.get('/my-matches', verifyToken, async (req, res) => {
       $or: [
         { 'vsResults.teamA': { $in: teamIds } },
         { 'vsResults.teamB': { $in: teamIds } },
-        { teams: { $in: teamIds } },
+        { 'results.team': { $in: teamIds } },
       ],
     })
       .populate('tournament', 'tournamentName gameTitle orgLogo orgName')
@@ -91,20 +92,13 @@ router.get('/:matchId/messages', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Invalid matchId' });
     }
 
-    // Authorization: verify the requesting user is registered in this match's tournament
     const match = await Match.findById(matchId).select('tournament vsResults').lean();
     if (!match) return res.status(404).json({ error: 'Match not found' });
 
-    const reg = await Registration.findOne({
-      tournament: match.tournament,
-      'roster.player': userId,
-      status: { $in: ['approved', 'checked_in'] },
-    }).select('_id').lean();
-
-    // Also allow org admins (req.user.role === 'organization') for the same tournament
-    const isOrg = req.user.role === 'organization';
-    if (!reg && !isOrg) {
-      return res.status(403).json({ error: 'You are not a participant in this match' });
+    try {
+      await assertMatchRoomParticipant(userId, req.user.role, matchId);
+    } catch (err) {
+      return res.status(err.statusCode || 403).json({ error: err.message });
     }
 
     const query = { match: matchId };
@@ -146,8 +140,14 @@ router.post('/:matchId/messages', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Message too long (max 500 characters)' });
     }
 
-    const match = await Match.findById(matchId).select('tournament status vsResults teams').lean();
+    const match = await Match.findById(matchId).select('tournament status vsResults').lean();
     if (!match) return res.status(404).json({ error: 'Match not found' });
+
+    try {
+      await assertMatchRoomParticipant(senderId, req.user.role, matchId);
+    } catch (err) {
+      return res.status(err.statusCode || 403).json({ error: err.message });
+    }
 
     const msg = await MatchRoomMessage.create({
       match: matchId,

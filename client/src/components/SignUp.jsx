@@ -263,12 +263,8 @@ const AegisSignup = () => {
           { withCredentials: true }
         );
 
-        if (response.data.token) {
-          // Store authentication data
-          localStorage.setItem('token', response.data.token);
-          // The backend returns 'player' object even for organizations if it's the same shared route, 
-          // or we handle based on role.
-          const userObj = response.data.player || response.data.organization;
+        const userObj = response.data.player || response.data.organization;
+        if (userObj) {
           localStorage.setItem('user', JSON.stringify(userObj));
           localStorage.setItem('userRole', formData.role);
 

@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import FantasyContest from '../models/fantasyContest.model.js';
 import FantasySquad from '../models/fantasySquad.model.js';
 import FantasyPlayerPool from '../models/fantasyPlayerPool.model.js';
-import { verifyAdminToken } from '../middleware/adminAuth.js';
+import { verifyAdminToken, requirePermission } from '../middleware/adminAuth.js';
 import auth from '../middleware/auth.js';
 import { scoreMatchForContest, scoreEntireContest } from '../services/fantasyScoring.service.js';
 import rateLimit from 'express-rate-limit';
@@ -12,12 +12,29 @@ const router = express.Router();
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false });
 
+const CONTEST_WRITABLE_FIELDS = [
+  'tournament', 'phase', 'matches', 'name', 'description', 'featuredImage',
+  'entryType', 'entryFee', 'prizePool', 'maxSquads', 'maxSquadsPerUser',
+  'squadSize', 'maxFromSameTeam', 'budgetCap', 'status', 'lockTime', 'scoringSystem',
+];
+
+const pickContestFields = (body) => {
+  const out = {};
+  for (const key of CONTEST_WRITABLE_FIELDS) {
+    if (body[key] !== undefined) out[key] = body[key];
+  }
+  return out;
+};
+
 // ===================== ADMIN ROUTES =====================
 
 // Create contest
-router.post('/contests', verifyAdminToken, limiter, async (req, res) => {
+router.post('/contests', verifyAdminToken, requirePermission('canCreateTournament'), limiter, async (req, res) => {
   try {
-    const contest = await FantasyContest.create({ ...req.body, createdBy: req.admin.adminId });
+    const contest = await FantasyContest.create({
+      ...pickContestFields(req.body),
+      createdBy: req.admin.adminId,
+    });
     res.status(201).json({ message: 'Contest created', contest });
   } catch (error) {
     console.error('Create contest error:', error);
@@ -26,10 +43,14 @@ router.post('/contests', verifyAdminToken, limiter, async (req, res) => {
 });
 
 // Update contest
-router.put('/contests/:id', verifyAdminToken, limiter, async (req, res) => {
+router.put('/contests/:id', verifyAdminToken, requirePermission('canEditTournament'), limiter, async (req, res) => {
   try {
     if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
-    const contest = await FantasyContest.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    const contest = await FantasyContest.findByIdAndUpdate(
+      req.params.id,
+      pickContestFields(req.body),
+      { new: true, runValidators: true }
+    );
     if (!contest) return res.status(404).json({ error: 'Contest not found' });
     res.json({ message: 'Contest updated', contest });
   } catch (error) {

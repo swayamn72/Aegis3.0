@@ -17,6 +17,7 @@ import ChatMessage from '../models/chat.model.js';
 import DirectMessageRequest from '../models/directMessageRequest.model.js';
 import { validateUploadedImage } from '../utils/imageValidation.js';
 import { getBlockedUserIdSetForUser } from '../utils/blockUtils.js';
+import { escapeRegex } from '../utils/escapeRegex.js';
 
 // ============================================================================
 // PHASE STATUS HELPER (mirrors team.routes.js)
@@ -280,9 +281,10 @@ router.get('/discover', auth, async (req, res) => {
     };
 
     if (q) {
+      const safeQ = escapeRegex(String(q).trim().slice(0, 100));
       query.$or = [
-        { username: { $regex: q, $options: 'i' } },
-        { realName: { $regex: q, $options: 'i' } },
+        { username: { $regex: safeQ, $options: 'i' } },
+        { realName: { $regex: safeQ, $options: 'i' } },
       ];
     }
 
@@ -966,13 +968,13 @@ router.get('/recent3matches', auth, async (req, res) => {
     }
 
     const matches = await Match.find({
-      'participatingTeams.team': { $in: teamIds },
+      'results.team': { $in: teamIds },
       status: { $in: ['completed', 'in_progress'] }
     })
-      .select('participatingTeams map actualEndTime scheduledStartTime tournament')
-      .sort({ actualEndTime: -1 })
+      .select('results map completedAt scheduledStartTime tournament')
+      .sort({ completedAt: -1, scheduledStartTime: -1 })
       .limit(3)
-      .populate('participatingTeams.team', 'teamName')
+      .populate('results.team', 'teamName')
       .populate('tournament', 'tournamentName')
       .lean();
 
@@ -980,26 +982,26 @@ router.get('/recent3matches', auth, async (req, res) => {
 
     const formattedMatches = matches
       .map(match => {
-        const playerTeam = match.participatingTeams.find(team =>
-          team.team && teamIdStrings.has(team.team._id.toString())
+        const playerResult = match.results?.find(r =>
+          r.team && teamIdStrings.has(r.team._id?.toString?.() || r.team.toString())
         );
 
-        if (!playerTeam) return null;
+        if (!playerResult) return null;
 
-        const otherTeams = match.participatingTeams.filter(
-          team => team.team && !teamIdStrings.has(team.team._id.toString())
+        const otherResults = (match.results || []).filter(r =>
+          r.team && !teamIdStrings.has(r.team._id?.toString?.() || r.team.toString())
         );
 
         let score;
-        if (playerTeam.finalPosition === 1) {
+        if (playerResult.placement === 1) {
           score = 'Won #1';
         } else {
-          const playerKills = playerTeam.kills?.total || 0;
-          const otherKills = otherTeams.reduce((sum, t) => sum + (t.kills?.total || 0), 0);
+          const playerKills = playerResult.kills?.total || 0;
+          const otherKills = otherResults.reduce((sum, r) => sum + (r.kills?.total || 0), 0);
           score = `${playerKills} - ${otherKills}`;
         }
 
-        const date = match.actualEndTime || match.scheduledStartTime;
+        const date = match.completedAt || match.scheduledStartTime;
         const time = date
           ? new Date(date).toLocaleString('en-US', {
             month: 'short',
@@ -1013,9 +1015,9 @@ router.get('/recent3matches', auth, async (req, res) => {
           _id: match._id,
           time,
           map: match.map || 'Unknown',
-          team1: playerTeam.team?.teamName || 'Your Team',
+          team1: playerResult.team?.teamName || 'Your Team',
           score,
-          team2: otherTeams[0]?.team?.teamName || 'Others'
+          team2: otherResults[0]?.team?.teamName || 'Others'
         };
       })
       .filter(Boolean);

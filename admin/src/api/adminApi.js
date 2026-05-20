@@ -6,21 +6,6 @@ const API = axios.create({
   timeout: 15000, // SECURITY: 15 second timeout to prevent hanging requests
 });
 
-// SECURITY: Add request interceptor to include auth token
-API.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('adminToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    console.error('Request error:', error);
-    return Promise.reject(error);
-  }
-);
-
 // SECURITY: Add response interceptor for error handling
 API.interceptors.response.use(
   (response) => response,
@@ -31,7 +16,6 @@ API.interceptors.response.use(
     // Handle authentication errors
     if (error.response?.status === 401) {
       // Token expired or invalid - clear token and redirect to login
-      localStorage.removeItem('adminToken');
       window.location.href = '/admin';
     }
 
@@ -315,11 +299,6 @@ export const submitValorantResultsAPI = async (matchId, resultData) => {
 
 // ==================== FANTASY ADMIN APIs ====================
 const FANTASY_API = axios.create({ baseURL: '/api/fantasy', withCredentials: true, timeout: 15000 });
-FANTASY_API.interceptors.request.use((config) => {
-  const token = localStorage.getItem('adminToken');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
 
 export const createFantasyContestAPI = async (contestData) => {
   const { data } = await FANTASY_API.post('/contests', contestData);

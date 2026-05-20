@@ -9,10 +9,19 @@
  */
 
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import auth from '../middleware/auth.js';
 import Player from '../models/player.model.js';
 
 const router = express.Router();
+
+const riotProfileLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many profile lookups. Try again later.' },
+});
 
 // Henrik Dev API (free tier, no Riot API key needed)
 // Production: swap to official Riot API with proper key
@@ -26,7 +35,7 @@ const CACHE_TTL_MS = 30 * 60 * 1000;
  * GET /api/riot/profile/:name/:tag
  * Fetch Valorant account + MMR data
  */
-router.get('/profile/:name/:tag', async (req, res) => {
+router.get('/profile/:name/:tag', riotProfileLimiter, async (req, res) => {
   try {
     const { name, tag } = req.params;
     const region = req.query.region || 'ap'; // Default to Asia-Pacific for Indian players

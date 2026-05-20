@@ -1,4 +1,4 @@
-# Aegis 3.0 Security Review Report
+# Aegis Security Review Report
 
 Audit date: 2026-04-30
 

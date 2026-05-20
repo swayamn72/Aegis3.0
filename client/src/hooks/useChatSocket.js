@@ -4,14 +4,14 @@ import { io } from 'socket.io-client';
 import { toast } from 'react-toastify';
 import { chatKeys } from './queryKeys';
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+import { SOCKET_URL } from '../config/apiBase.js';
 
 // Singleton socket instance
 let socketInstance = null;
 
 export const getSocket = () => {
     if (!socketInstance) {
-        socketInstance = io(API_URL, { withCredentials: true });
+        socketInstance = io(SOCKET_URL || undefined, { withCredentials: true });
     }
     return socketInstance;
 };
@@ -29,7 +29,7 @@ export const useChatSocket = ({
     useEffect(() => {
         if (!userId) return;
 
-        socketRef.current = io(API_URL, {
+        socketRef.current = io(SOCKET_URL || undefined, {
             withCredentials: true,
             transports: ['websocket', 'polling']
         });
@@ -198,7 +198,7 @@ export const useTryoutChatSocket = (chatId, userId, onMessageReceived, onTryoutE
 
         console.log('🔌 Connecting tryout socket for chat:', chatId);
 
-        socketRef.current = io(API_URL, {
+        socketRef.current = io(SOCKET_URL || undefined, {
             withCredentials: true,
             transports: ['websocket', 'polling']
         });

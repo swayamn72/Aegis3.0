@@ -5,7 +5,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test test/security.smoke.mjs",
     "start": "node index.js",
     "dev": "node index.js",
     "dev:test": "npx -y dotenv-cli -e .env.test -- node index.js",

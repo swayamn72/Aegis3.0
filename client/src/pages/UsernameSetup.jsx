@@ -33,14 +33,6 @@ export default function UsernameSetup() {
         e.preventDefault();
         setError('');
 
-        const token = localStorage.getItem('token');
-        if (!token) {
-            setError('Your session expired. Please log in again.');
-            toast.error('Session expired. Please log in again.');
-            navigate('/login');
-            return;
-        }
-
         if (username.length < 3 || username.length > 20) {
             setError('Username must be 3-20 characters');
             return;
@@ -57,12 +49,7 @@ export default function UsernameSetup() {
         try {
             const response = await axios.post(`${API_URL}/api/auth/set-username`, {
                 username,
-            }, {
-                withCredentials: true,
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            });
+            }, { withCredentials: true });
 
             if (response.data.success) {
                 toast.success(`🎉 Welcome, ${username}!`);

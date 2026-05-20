@@ -7,6 +7,7 @@ import Match from '../models/match.model.js';
 import Team from '../models/team.model.js';
 import TournamentAnnouncement from '../models/tournamentAnnouncement.model.js';
 import auth from '../middleware/auth.js';
+import { verifyApprovedOrgToken } from '../middleware/orgAuth.js';
 
 const router = express.Router();
 // ============================================================================
@@ -239,8 +240,8 @@ router.get('/:id', async (req, res) => {
           .limit(mobile === 'true' ? 10 : 20)
           .populate('results.team', 'teamName teamTag')
           .select(`
-            matchNumber matchType tournamentPhase scheduledStartTime actualStartTime 
-            actualEndTime status map results matchStats participatingGroups
+            matchNumber matchType tournamentPhase scheduledStartTime 
+            status map results matchStats participatingGroups
           `)
           .lean() :
         Promise.resolve([]),
@@ -372,17 +373,15 @@ router.get('/:id', async (req, res) => {
       phase: match.tournamentPhase || 'Group Stage',
       match: `Match ${match.matchNumber}`,
       matchType: match.matchType,
-      teams: match.participatingTeams?.slice(0, 2).map(pt =>
-        pt.team?.teamName || 'TBD'
+      teams: (match.results || []).slice(0, 2).map(r =>
+        r.team?.teamName || 'TBD'
       ).join(' vs ') || 'TBD vs TBD',
       map: match.map,
       date: match.scheduledStartTime ?
         new Date(match.scheduledStartTime).toISOString().split('T')[0] : null,
       time: match.scheduledStartTime ?
         new Date(match.scheduledStartTime).toTimeString().slice(0, 5) : null,
-      status: match.status,
-      actualStartTime: match.actualStartTime,
-      actualEndTime: match.actualEndTime
+      status: match.status
     }));
 
     // Build groups data from pre-fetched registrations and standings (OPTIMIZED)
@@ -577,8 +576,8 @@ router.get('/:id/teams', async (req, res) => {
   }
 });
 
-// Update groups for a specific phase
-router.put('/:id/groups', async (req, res) => {
+// Update groups for a specific phase (org-only; prefer org-tournaments assign-groups for new clients)
+router.put('/:id/groups', verifyApprovedOrgToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { groups, phaseId } = req.body;
@@ -591,13 +590,13 @@ router.put('/:id/groups', async (req, res) => {
       return res.status(400).json({ error: 'Groups must be a non-empty array' });
     }
 
-    const tournament = await Tournament.findById(id);
+    const tournament = await Tournament.findById(id).select('organizer.organizationRef phases');
     if (!tournament) {
       return res.status(404).json({ error: 'Tournament not found' });
     }
 
-    // Check authorization — only the tournament's organization can update groups
-    if (tournament.organization && req.user && tournament.organization.toString() !== req.user.id) {
+    const orgRef = tournament.organizer?.organizationRef?.toString();
+    if (!orgRef || orgRef !== req.organization._id.toString()) {
       return res.status(403).json({ error: 'Only the tournament organizer can update groups' });
     }
 

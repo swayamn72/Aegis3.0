@@ -13,6 +13,7 @@ import upload from '../config/multer.js';
 import { processScreenshots } from '../services/bgmiOcr.service.js';
 import notificationService from '../services/notification.service.js';
 import { getGameConfig, isValidMap, isHeadToHead, supportsOcr } from '../config/gameRegistry.js';
+import { toPublicMatch } from '../utils/matchHelpers.js';
 
 const router = express.Router();
 
@@ -1270,7 +1271,7 @@ router.get('/:matchId/live', async (req, res) => {
       .lean();
 
     const gameConfig = getGameConfig(match.gameTitle || 'BGMI');
-    res.json({ match, live, scoring: gameConfig?.scoring || null });
+    res.json({ match: toPublicMatch(match), live, scoring: gameConfig?.scoring || null });
   } catch (error) {
     console.error('Error fetching live match state:', error);
     res.status(500).json({ error: 'Failed to fetch live match info' });
@@ -1296,7 +1297,7 @@ router.get('/:matchId', async (req, res) => {
       return res.status(404).json({ error: 'Match not found' });
     }
 
-    res.json(match);
+    res.json(toPublicMatch(match));
   } catch (error) {
     console.error('Error fetching match by ID:', error);
     res.status(500).json({ error: 'Failed to fetch match info' });

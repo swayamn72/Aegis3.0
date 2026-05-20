@@ -53,10 +53,11 @@ export const errorHandler = (err, req, res, next) => {
 
     // Custom error status
     const statusCode = err.status || err.statusCode || 500;
-    const message = err.message || 'Internal server error';
+    const message = err.message || err.error || 'Internal server error';
 
     res.status(statusCode).json(
         errorPayload(message, requestId, {
+            ...(err.error && err.error !== message ? { error: err.error } : {}),
             ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
         })
     );

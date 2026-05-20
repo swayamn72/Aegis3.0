@@ -20,6 +20,8 @@ import {
   unsetTeamForGame,
   resolveTeamStatusAfterRemoval,
 } from '../utils/teamHelpers.js';
+import { escapeRegex } from '../utils/escapeRegex.js';
+import { validateUploadedImage } from '../utils/imageValidation.js';
 
 // ============================================================================
 // PHASE STATUS HELPER
@@ -143,10 +145,10 @@ router.get('/:id', auth, async (req, res) => {
       'results.team': team._id,
       status: 'completed'
     })
-      .sort({ actualEndTime: -1 })
+      .sort({ scheduledStartTime: -1 })
       .limit(5)
       .populate('tournament', 'tournamentName shortName media')
-      .select('matchNumber matchType map scheduledStartTime actualEndTime results tournament tournamentPhase')
+      .select('matchNumber matchType map scheduledStartTime results tournament tournamentPhase')
       .lean();
 
     // Format match data
@@ -159,7 +161,7 @@ router.get('/:id', auth, async (req, res) => {
         matchNumber: match.matchNumber,
         matchType: match.matchType,
         map: match.map,
-        date: match.actualEndTime || match.scheduledStartTime,
+        date: match.scheduledStartTime,
         tournament: match.tournament,
         phase: match.tournamentPhase,
         position: teamData?.finalPosition || null,
@@ -232,11 +234,11 @@ router.get('/:id/matches', auth, async (req, res) => {
 
     const [matches, total] = await Promise.all([
       Match.find(filter)
-        .sort({ actualEndTime: -1 })
+        .sort({ scheduledStartTime: -1 })
         .skip(skip)
         .limit(limit)
         .populate('tournament', 'tournamentName shortName media')
-        .select('matchNumber matchType map scheduledStartTime actualEndTime results tournament tournamentPhase')
+        .select('matchNumber matchType map scheduledStartTime results tournament tournamentPhase')
         .lean(),
       Match.countDocuments(filter),
     ]);
@@ -248,7 +250,7 @@ router.get('/:id/matches', auth, async (req, res) => {
         matchNumber: match.matchNumber,
         matchType: match.matchType,
         map: match.map,
-        date: match.actualEndTime || match.scheduledStartTime,
+        date: match.scheduledStartTime,
         tournament: match.tournament,
         phase: match.tournamentPhase,
         position: td?.finalPosition ?? null,
@@ -698,6 +700,7 @@ router.put('/:id', auth, upload.single('logo'), async (req, res) => {
 
     // 2. Handle logo upload (if file exists)
     if (req.file) {
+      await validateUploadedImage(req.file);
       const result = await new Promise((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
           {
@@ -847,7 +850,7 @@ router.get('/search/:query', async (req, res) => {
     // -------------------------------
     // 1. Normalize & validate input
     // -------------------------------
-    query = (query || '').trim();
+    query = (query || '').trim().slice(0, 100);
     searchType = String(searchType).toLowerCase();
 
     // Block empty & 1-char queries (prevents DB spam)
@@ -877,8 +880,8 @@ router.get('/search/:query', async (req, res) => {
         profileVisibility: 'public',
         status: 'active',
         $or: [
-          { teamName: { $regex: query, $options: 'i' } },
-          { teamTag: { $regex: query, $options: 'i' } }
+          { teamName: { $regex: escapeRegex(query), $options: 'i' } },
+          { teamTag: { $regex: escapeRegex(query), $options: 'i' } }
         ]
       };
 
@@ -902,8 +905,8 @@ router.get('/search/:query', async (req, res) => {
       const playerFilter = {
         profileVisibility: 'public',
         $or: [
-          { username: { $regex: query, $options: 'i' } },
-          { realName: { $regex: query, $options: 'i' } }
+          { username: { $regex: escapeRegex(query), $options: 'i' } },
+          { realName: { $regex: escapeRegex(query), $options: 'i' } }
         ]
       };
 

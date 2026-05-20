@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 
-const API_URL = import.meta.env.VITE_BACKEND_URL;
+import { SOCKET_URL } from '../config/apiBase.js';
 
 const SocketContext = createContext(null);
 
@@ -25,17 +25,12 @@ export const SocketProvider = ({ children, userId }) => {
 
         console.log('🔌 Initializing persistent socket connection for user:', userId);
 
-        // Create single socket instance with JWT auth
-        const token = localStorage.getItem('token');
-        socketRef.current = io(API_URL, {
+        socketRef.current = io(SOCKET_URL || undefined, {
             withCredentials: true,
             transports: ['websocket', 'polling'],
             reconnection: true,
             reconnectionDelay: 1000,
             reconnectionAttempts: 5,
-            auth: {
-                token: token, // JWT token for server-side authentication
-            }
         });
 
         // Connection event handlers

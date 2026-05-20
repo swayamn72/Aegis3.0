@@ -128,17 +128,12 @@ export default function EmailVerification() {
                 setSuccess(true);
                 toast.success('Email verified successfully! 🎉');
 
-                // Store token and user data for player or organization
-                if (response.data.token) {
-                    if (response.data.organization) {
-                        localStorage.setItem('token', response.data.token);
-                        localStorage.setItem('user', JSON.stringify(response.data.organization));
-                        localStorage.setItem('userRole', 'organization');
-                    } else if (response.data.player) {
-                        localStorage.setItem('token', response.data.token);
-                        localStorage.setItem('user', JSON.stringify(response.data.player));
-                        localStorage.setItem('userRole', 'player');
-                    }
+                if (response.data.organization) {
+                    localStorage.setItem('user', JSON.stringify(response.data.organization));
+                    localStorage.setItem('userRole', 'organization');
+                } else if (response.data.player) {
+                    localStorage.setItem('user', JSON.stringify(response.data.player));
+                    localStorage.setItem('userRole', 'player');
                 }
 
                 // Redirect after 1.5 seconds

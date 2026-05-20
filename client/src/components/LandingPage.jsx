@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Trophy, Shield, Zap, Search, Activity,
-  ChevronRight, Gamepad2, Target, Users, Code, Lock, ArrowUpRight
+  ChevronRight, Gamepad2, Target, Users, Code, Lock
 } from 'lucide-react';
 
 import BGMILogo from '../assets/gameLogos/BGMI_LOGO.png';
@@ -20,27 +20,7 @@ const NoiseSVG = () => (
   </svg>
 );
 
-/* ─── Animated counter ─────────────────────────────────────────────────────── */
-const Counter = ({ target, suffix = '' }) => {
-  const [count, setCount] = useState(0);
-  const ref = useRef(null);
-  useEffect(() => {
-    const observer = new IntersectionObserver(([e]) => {
-      if (!e.isIntersecting) return;
-      let start = 0;
-      const step = Math.ceil(target / 60);
-      const t = setInterval(() => {
-        start += step;
-        if (start >= target) { setCount(target); clearInterval(t); }
-        else setCount(start);
-      }, 16);
-      observer.disconnect();
-    }, { threshold: 0.3 });
-    if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, [target]);
-  return <span ref={ref}>{count.toLocaleString()}{suffix}</span>;
-};
+
 
 const LandingPage = () => {
   const navigate = useNavigate();
@@ -187,18 +167,8 @@ const LandingPage = () => {
       <main className="relative z-10">
 
         {/* ── Hero ──────────────────────────────────────────────────────────── */}
-        <section className="pt-28 pb-36 px-6 max-w-[1400px] mx-auto text-center">
+        <section className="pt-40 pb-36 px-6 max-w-[1400px] mx-auto text-center">
           <div ref={heroRef}>
-
-            {/* status chip */}
-            <div className="inline-flex items-center gap-2.5 hero-chip px-4 py-1.5 rounded-full mb-10 animate-slide-in">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" style={{ boxShadow: '0 0 8px rgba(52,211,153,0.9)' }}></span>
-              </span>
-              <span className="font-mono-custom text-[9px] tracking-[0.2em] text-zinc-400 uppercase">System Online — Ready for Deployment</span>
-            </div>
-
             {/* headline */}
             <h1 className="font-display text-[clamp(64px,12vw,140px)] leading-[0.92] mb-8 animate-slide-in" style={{ animationDelay: '0.1s', opacity: 0 }}>
               The Ultimate<br />
@@ -209,7 +179,7 @@ const LandingPage = () => {
                   Esports
                 </span>
               </span>{' '}
-              Pipeline
+              Platform
             </h1>
 
             <p className="max-w-xl mx-auto text-zinc-400 text-[15px] leading-relaxed font-medium mb-14 animate-slide-in" style={{ animationDelay: '0.2s', opacity: 0 }}>
@@ -232,22 +202,6 @@ const LandingPage = () => {
                 Login
               </button>
             </div>
-          </div>
-
-          {/* stats bar */}
-          <div className="mt-24 grid grid-cols-3 max-w-xl mx-auto animate-slide-in" style={{ animationDelay: '0.5s', opacity: 0 }}>
-            {[
-              { val: 12400, suffix: '+', label: 'Players' },
-              { val: 380, suffix: '+', label: 'Tournaments' },
-              { val: 2, suffix: '', label: 'Titles' },
-            ].map((s) => (
-              <div key={s.label} className="stat-item py-5 px-6 text-center">
-                <div className="font-display text-4xl text-white mb-1">
-                  <Counter target={s.val} suffix={s.suffix} />
-                </div>
-                <div className="font-mono-custom text-[9px] tracking-[0.18em] text-zinc-500 uppercase">{s.label}</div>
-              </div>
-            ))}
           </div>
         </section>
 
@@ -395,10 +349,6 @@ const LandingPage = () => {
                 </div>
                 <h4 className="font-display text-2xl text-white mb-3">{f.title}</h4>
                 <p className="text-zinc-500 text-sm leading-relaxed">{f.desc}</p>
-                <div className="mt-6 flex items-center gap-1.5 text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                  style={{ color: f.color }}>
-                  Learn more <ArrowUpRight className="w-3.5 h-3.5" />
-                </div>
               </div>
             ))}
           </div>
@@ -432,7 +382,7 @@ const LandingPage = () => {
         <div className="max-w-[1400px] mx-auto px-6 py-10 flex flex-col md:flex-row items-center justify-between gap-5">
           <div className="flex items-center gap-2.5">
             <Shield className="w-4 h-4 text-zinc-600" />
-            <span className="font-display text-lg tracking-wider text-zinc-500">AEGIS 3.0</span>
+            <span className="font-display text-lg tracking-wider text-zinc-500">AEGIS</span>
           </div>
 
           <div className="flex flex-wrap justify-center gap-6 text-[10px] font-mono-custom tracking-wider text-zinc-600 uppercase">

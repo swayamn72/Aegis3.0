@@ -24,6 +24,7 @@ import Registration from '../models/registration.model.js';
 import { processSubmissionOcr } from '../services/valorantOcr.service.js';
 import notificationService from '../services/notification.service.js';
 import logger from '../config/logger.js';
+import { validateUploadedImage } from '../utils/imageValidation.js';
 
 const router = express.Router();
 const upload = multer({
@@ -106,6 +107,7 @@ router.post('/:matchId', verifyToken, upload.array('screenshots', 5), async (req
     const screenshots = [];
     for (let i = 0; i < req.files.length; i++) {
       const file = req.files[i];
+      await validateUploadedImage(file, { maxBytes: 10 * 1024 * 1024 });
       const url = await uploadToCloudinary(
         file.buffer,
         buildFilename(matchId, teamId, i)

@@ -56,7 +56,9 @@ export const fetchTryoutMessages = async (
         tail.reverse(); // back to chronological ASC
         return tail.map((msg) => ({
             _id: msg._id,
+            id: msg._id?.toString(),
             sender: msg.sender,
+            senderId: msg.sender,
             message: msg.message,
             messageType: msg.messageType,
             ...(msg.metadata ? { metadata: msg.metadata } : {}),
@@ -71,7 +73,9 @@ export const fetchTryoutMessages = async (
 
     const transformedStored = storedMessages.map((msg) => ({
         _id: msg._id,
+        id: msg._id?.toString(),
         sender: msg.sender,
+        senderId: msg.sender,
         message: msg.message,
         messageType: msg.messageType,
         ...(msg.metadata ? { metadata: msg.metadata } : {}),
@@ -84,7 +88,9 @@ export const fetchTryoutMessages = async (
 
     const transformedLegacy = legacyMessages.map((msg, index) => ({
         _id: msg._id || `legacy_${index}`,
+        id: msg._id?.toString() || `legacy_${index}`,
         sender: msg.sender,
+        senderId: msg.sender,
         message: msg.message,
         messageType: msg.messageType || 'text',
         ...(msg.metadata ? { metadata: msg.metadata } : {}),

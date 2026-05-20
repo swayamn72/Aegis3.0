@@ -1,5 +1,5 @@
 /**
- * Standalone FCM Test Script (Aegis 3.0)
+ * Standalone FCM Test Script (Aegis)
  * Usage: node scripts/test-fcm.js [type]
  * Types: match_scheduled, room_credentials, team_offer, tryout_ended
  */

@@ -135,10 +135,8 @@ const AegisLogin = () => {
         { withCredentials: true }
       );
 
-      if (response.data.token) {
-        // Store authentication data
-        localStorage.setItem('token', response.data.token);
-        const userObj = response.data.player || response.data.organization;
+      const userObj = response.data.player || response.data.organization;
+      if (userObj) {
         localStorage.setItem('user', JSON.stringify(userObj));
         localStorage.setItem('userRole', formData.role);
 
@@ -202,10 +200,8 @@ const AegisLogin = () => {
           { withCredentials: true }
         );
 
-        if (response.data.token) {
-          // Store authentication data
-          localStorage.setItem('token', response.data.token);
-          const userObj = response.data.player || response.data.organization;
+        const userObj = response.data.player || response.data.organization;
+        if (userObj) {
           localStorage.setItem('user', JSON.stringify(userObj));
           localStorage.setItem('userRole', formData.role);
 

@@ -14,9 +14,32 @@
  */
 
 import { getGameConfig } from '../config/gameRegistry.js';
+import { persistVetoSession, deleteVetoSession } from '../utils/mapVetoStore.js';
 
 // Active veto sessions: matchId → VetoSession
 const activeSessions = new Map();
+
+function toStoredSession(session) {
+  if (!session) return null;
+  const { actionTimer, ...rest } = session;
+  return {
+    ...rest,
+    readyTeams: rest.readyTeams instanceof Set ? [...rest.readyTeams] : rest.readyTeams,
+    presentMembers: rest.presentMembers
+      ? Object.fromEntries(
+        Object.entries(rest.presentMembers).map(([tid, set]) => [
+          tid,
+          set instanceof Set ? [...set] : set,
+        ])
+      )
+      : {},
+  };
+}
+
+function setActiveSession(matchId, session) {
+  setActiveSession(matchId, session);
+  persistVetoSession(matchId, toStoredSession(session)).catch(() => {});
+}
 
 // Scheduled window timers: matchId → NodeJS.Timeout
 // These fire at T-30min to open the veto window
@@ -106,7 +129,7 @@ class MapVetoService {
       windowOpenAt: new Date(),
     };
 
-    activeSessions.set(matchId, session);
+    setActiveSession(matchId, session);
 
     // Broadcast window open to anyone watching the match room
     if (io) {
@@ -187,7 +210,7 @@ class MapVetoService {
       this._startVeto(matchId, io);
     }
 
-    activeSessions.set(matchId, session);
+    setActiveSession(matchId, session);
     return { status: session.status, readyTeams, bothReady };
   }
 
@@ -198,7 +221,7 @@ class MapVetoService {
     const session = activeSessions.get(matchId);
     if (!session) return;
     session.presentMembers[teamId]?.delete(userId);
-    activeSessions.set(matchId, session);
+    setActiveSession(matchId, session);
   }
 
   /**
@@ -216,7 +239,7 @@ class MapVetoService {
     session.status = 'in_progress';
     session.stepDeadline = new Date(Date.now() + (vetoConfig.timerSeconds * 1000));
 
-    activeSessions.set(matchId, session);
+    setActiveSession(matchId, session);
 
     if (io) {
       io.to(`match:${matchId}`).emit('mapVeto:started', {
@@ -268,7 +291,7 @@ class MapVetoService {
     }
 
     session.currentStep++;
-    activeSessions.set(matchId, session);
+    setActiveSession(matchId, session);
 
     // Check completion
     const completed = this._checkCompletion(matchId);
@@ -282,7 +305,7 @@ class MapVetoService {
     const config = getGameConfig('VALORANT');
     session.stepDeadline = new Date(Date.now() + (config.mapVeto.timerSeconds * 1000));
 
-    activeSessions.set(matchId, session);
+    setActiveSession(matchId, session);
     this._scheduleStepTimer(matchId, io);
 
     return { success: true, state: this.getState(matchId) };
@@ -339,7 +362,7 @@ class MapVetoService {
 
       session.status = 'completed';
       this._clearActionTimer(session);
-      activeSessions.set(matchId, session);
+      setActiveSession(matchId, session);
       return true;
     }
 
@@ -361,7 +384,7 @@ class MapVetoService {
       this.autoRandom(matchId, io);
     }, delayMs);
 
-    activeSessions.set(matchId, session);
+    setActiveSession(matchId, session);
   }
 
   _clearActionTimer(session) {
@@ -404,7 +427,7 @@ class MapVetoService {
     if (session) {
       this._clearActionTimer(session);
       session.status = 'cancelled';
-      activeSessions.set(matchId, session);
+      setActiveSession(matchId, session);
     }
     this.cancelWindowTimer(matchId);
     return this.getState(matchId);
@@ -415,6 +438,7 @@ class MapVetoService {
     if (session) this._clearActionTimer(session);
     this.cancelWindowTimer(matchId);
     activeSessions.delete(matchId);
+    deleteVetoSession(matchId).catch(() => {});
   }
 
   hasSession(matchId) {

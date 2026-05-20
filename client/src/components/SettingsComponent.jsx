@@ -313,7 +313,6 @@ const SettingsComponent = () => {
                   try {
                     await axiosInstance.delete('/api/auth/delete-account');
                     toast.success("Account deleted successfully");
-                    localStorage.removeItem('token');
                     localStorage.removeItem('user');
                     localStorage.removeItem('userRole');
                     window.location.href = '/login';

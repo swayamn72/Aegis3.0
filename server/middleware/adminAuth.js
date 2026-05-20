@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import extractToken from '../utils/extractToken.js';
+import Admin from '../models/admin.model.js';
 
 export const adminAuth = (req, res, next) => {
 
@@ -26,8 +27,8 @@ export const generateAdminToken = (adminId) => {
   return jwt.sign({ adminId }, process.env.JWT_SECRET, { expiresIn: '1h' });
 };
 
-// Verify admin token middleware
-export const verifyAdminToken = (req, res, next) => {
+// Verify admin token middleware — reload admin from DB (isActive + permissions)
+export const verifyAdminToken = async (req, res, next) => {
   const token = extractToken(req);
 
   if (!token) {
@@ -36,9 +37,34 @@ export const verifyAdminToken = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.admin = decoded;
+    const adminId = decoded.adminId;
+    if (!adminId) {
+      return res.status(401).json({ message: "Invalid token" });
+    }
+
+    const admin = await Admin.findById(adminId)
+      .select('permissions isActive username email role')
+      .lean();
+
+    if (!admin) {
+      return res.status(401).json({ message: "Admin not found" });
+    }
+    if (admin.isActive === false) {
+      return res.status(403).json({ message: "Admin account is deactivated" });
+    }
+
+    req.admin = {
+      adminId: admin._id,
+      permissions: admin.permissions || [],
+      username: admin.username,
+      email: admin.email,
+      role: admin.role,
+    };
     next();
   } catch (error) {
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: "Token expired" });
+    }
     res.status(401).json({ message: "Invalid token" });
   }
 };
@@ -46,7 +72,7 @@ export const verifyAdminToken = (req, res, next) => {
 // Check admin permissions middleware
 export const requirePermission = (permission) => {
   return (req, res, next) => {
-    if (!req.admin || !req.admin.permissions) {
+    if (!req.admin?.permissions?.length) {
       return res.status(403).json({ message: "Access denied" });
     }
 

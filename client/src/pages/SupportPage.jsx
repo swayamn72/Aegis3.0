@@ -8,7 +8,7 @@ const SupportPage = () => {
       <Navbar />
       <div className="pt-24 pb-16 px-6 max-w-4xl mx-auto">
         <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter mb-4 text-[#00FFFF]">
-          Aegis 3.0 Support
+          Aegis Support
         </h1>
         <p className="text-zinc-400 text-sm md:text-base font-medium mb-12">
           Encountered an issue? Our team is here to assist you.
@@ -51,7 +51,7 @@ const SupportPage = () => {
         </div>
 
         <div className="bg-zinc-950 border border-zinc-900 p-6 rounded-lg text-sm text-zinc-500">
-          <p className="mb-2"><strong className="text-zinc-300">Note:</strong> Please include your Aegis 3.0 username and relevant screenshots when submitting a support ticket to help us resolve your issue faster.</p>
+          <p className="mb-2"><strong className="text-zinc-300">Note:</strong> Please include your Aegis username and relevant screenshots when submitting a support ticket to help us resolve your issue faster.</p>
           <p>Expected response time: 24-48 business hours.</p>
         </div>
       </div>

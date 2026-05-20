@@ -21,7 +21,6 @@ const ConfirmAccountDeletion = () => {
       toast.success(response.data.message || 'Account successfully deleted');
       
       // Clear any local storage auth state if they happened to be logged in
-      localStorage.removeItem('token');
       localStorage.removeItem('user');
       localStorage.removeItem('userRole');
       

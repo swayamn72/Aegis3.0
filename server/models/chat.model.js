@@ -37,5 +37,20 @@ const ChatSchema = new Schema(
 ChatSchema.index({ senderId: 1, receiverId: 1, timestamp: -1 });
 ChatSchema.index({ receiverId: 1, timestamp: -1 });
 
+ChatSchema.pre('save', function (next) {
+  if (this.senderId) this.senderId = this.senderId.toString();
+  if (this.receiverId) this.receiverId = this.receiverId.toString();
+  next();
+});
+
+ChatSchema.pre(['updateOne', 'findOneAndUpdate', 'updateMany'], function (next) {
+  const update = this.getUpdate();
+  if (update.$set) {
+    if (update.$set.senderId) update.$set.senderId = update.$set.senderId.toString();
+    if (update.$set.receiverId) update.$set.receiverId = update.$set.receiverId.toString();
+  }
+  next();
+});
+
 const ChatMessage = mongoose.model("ChatMessage", ChatSchema);
 export default ChatMessage;

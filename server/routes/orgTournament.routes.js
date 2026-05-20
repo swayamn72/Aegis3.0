@@ -13,6 +13,7 @@ import TournamentAnnouncement from '../models/tournamentAnnouncement.model.js';
 import ChatMessage from '../models/chat.model.js';
 import { recalculateStatsForTeams } from './match.routes.js';
 import notificationService from '../services/notification.service.js';
+import { buildSafeRegex } from '../utils/escapeRegex.js';
 
 const router = express.Router();
 
@@ -1260,7 +1261,7 @@ router.get('/:tournamentId/registrations', verifyApprovedOrgToken, async (req, r
     // Handle search by team name or teamId
     const { search } = req.query;
     if (search) {
-      const searchRegex = new RegExp(search, 'i');
+      const searchRegex = buildSafeRegex(String(search).trim().slice(0, 100));
       const matchingTeams = await Team.find({
         $or: [
           { teamName: searchRegex },

@@ -1,6 +1,5 @@
 import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+import { API_URL } from '../config/apiBase.js';
 
 // Create axios instance with default config
 const axiosInstance = axios.create({
@@ -12,16 +11,9 @@ const axiosInstance = axios.create({
     },
 });
 
-// Request interceptor
+// Request interceptor — auth via httpOnly cookie (withCredentials)
 axiosInstance.interceptors.request.use(
-    (config) => {
-        // Add token from localStorage to Authorization header
-        const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
-        if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-    },
+    (config) => config,
     (error) => {
         console.error('Request error:', error);
         return Promise.reject(error);
@@ -40,11 +32,9 @@ axiosInstance.interceptors.response.use(
             const { status, data } = error.response;
 
             if (status === 401) {
-                // Unauthorized - clear token and redirect to login
-                console.error('Unauthorized access - clearing token');
-                localStorage.removeItem('token');
-                localStorage.removeItem('adminToken');
+                console.error('Unauthorized access');
                 localStorage.removeItem('user');
+                localStorage.removeItem('userRole');
                 if (!window.location.pathname.includes('/login')) {
                     window.location.href = '/login';
                 }

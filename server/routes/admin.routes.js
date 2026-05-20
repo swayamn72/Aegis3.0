@@ -1,6 +1,8 @@
 import express from 'express';
 import Admin from '../models/admin.model.js';
-import { generateAdminToken, verifyAdminToken } from '../middleware/adminAuth.js';
+import { generateAdminToken, verifyAdminToken, requirePermission } from '../middleware/adminAuth.js';
+import { getTeamIdsFromMatch } from '../utils/matchHelpers.js';
+import { escapeRegex } from '../utils/escapeRegex.js';
 import rateLimit from 'express-rate-limit';
 import Tournament from '../models/tournament.model.js';
 import Match from '../models/match.model.js';
@@ -246,10 +248,11 @@ router.get('/matches', verifyAdminToken, async (req, res) => {
 
     // Search across tournament name and match number
     if (search) {
+      const safeSearch = escapeRegex(String(search).trim().slice(0, 100));
       const tournaments = await Tournament.find({
         $or: [
-          { tournamentName: { $regex: search, $options: 'i' } },
-          { shortName: { $regex: search, $options: 'i' } }
+          { tournamentName: { $regex: safeSearch, $options: 'i' } },
+          { shortName: { $regex: safeSearch, $options: 'i' } }
         ]
       }).select('_id').lean();
 
@@ -286,7 +289,7 @@ router.get('/matches', verifyAdminToken, async (req, res) => {
     // Enhance matches with computed data
     const enhancedMatches = matches.map(match => ({
       ...match,
-      teamsCount: match.participatingTeams?.length || 0,
+      teamsCount: getTeamIdsFromMatch(match).length,
       isLive: match.status === 'in_progress',
       isUpcoming: match.status === 'scheduled' && new Date(match.scheduledStartTime) > new Date(),
       isPast: match.status === 'completed' || (match.status === 'scheduled' && new Date(match.scheduledStartTime) < new Date())
@@ -1137,7 +1140,7 @@ router.get('/tournaments/:id/phase-teams', verifyAdminToken, async (req, res) =>
 });
 
 // Assign teams to groups — writes to Registration.group + Tournament.phases[].groups
-router.put('/tournaments/:id/assign-groups', verifyAdminToken, async (req, res) => {
+router.put('/tournaments/:id/assign-groups', verifyAdminToken, requirePermission('canEditTournament'), async (req, res) => {
   try {
     const { id } = req.params;
     const { phase, groups } = req.body;

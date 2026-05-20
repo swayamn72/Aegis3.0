@@ -263,6 +263,92 @@ router.post('/approach-player/:playerId', auth, async (req, res) => {
   }
 });
 
+// Player approaches a team (inverse of approach-player)
+router.post('/approach-team/:teamId', auth, async (req, res) => {
+  try {
+    const { teamId } = req.params;
+    let { message = '' } = req.body || {};
+
+    if (!mongoose.Types.ObjectId.isValid(teamId)) {
+      return res.status(400).json({ error: 'Invalid teamId' });
+    }
+
+    message = String(message || '').trim().slice(0, MAX_MESSAGE_LEN);
+    if (!message) {
+      message = 'I would like to discuss joining your team.';
+    }
+
+    const team = await Team.findById(teamId).select('teamName captain players logo primaryGame status');
+    if (!team) return res.status(404).json({ error: 'Team not found' });
+    if (team.status !== 'active') {
+      return res.status(400).json({ error: 'Team is not actively recruiting' });
+    }
+
+    const player = await Player.findById(req.user.id).select('username teams primaryGame');
+    if (!player) return res.status(404).json({ error: 'Player profile not found' });
+
+    if (team.captain?.toString() === req.user.id.toString()) {
+      return res.status(400).json({ error: 'You cannot approach your own team' });
+    }
+
+    if (Array.isArray(team.players) && team.players.some(p => p.toString() === req.user.id)) {
+      return res.status(400).json({ error: 'You are already on this team' });
+    }
+
+    if (hasTeamForGame(player, team.primaryGame)) {
+      return res.status(400).json({ error: `You already have a ${team.primaryGame} team` });
+    }
+
+    if (Array.isArray(team.players) && team.players.length >= getMaxPlayers(team.primaryGame)) {
+      return res.status(400).json({ error: 'Team roster is full' });
+    }
+
+    const lastApproach = await RecruitmentApproach.findOne({
+      team: team._id,
+      player: player._id,
+    }).sort({ createdAt: -1 });
+
+    if (lastApproach) {
+      const diffDays = (Date.now() - lastApproach.createdAt) / (1000 * 60 * 60 * 24);
+      if (diffDays < 7) {
+        return res.status(400).json({
+          error: 'You can only send a new approach to this team after 7 days from the last approach.',
+        });
+      }
+    }
+
+    const approachDoc = await RecruitmentApproach.create({
+      team: team._id,
+      player: player._id,
+      message,
+      status: 'pending',
+    });
+
+    await approachDoc.populate('team', 'teamName logo');
+    await approachDoc.populate('player', 'username profilePicture');
+
+    if (team.captain) {
+      notificationService
+        .sendToPlayer(
+          String(team.captain),
+          'New Recruitment Approach',
+          `${player.username} wants to join ${team.teamName}`,
+          {
+            type: 'recruitment_approach',
+            approachId: String(approachDoc._id),
+            teamId: String(team._id),
+            playerId: String(player._id),
+          }
+        )
+        .catch((err) => console.error('Approach team notification error:', err));
+    }
+
+    res.status(201).json({ message: 'Approach request sent successfully', approach: approachDoc });
+  } catch (error) {
+    console.error('Error sending team approach:', error);
+    res.status(500).json({ error: 'Failed to send approach request' });
+  }
+});
 
 router.get('/lft-posts', async (req, res) => {
   try {

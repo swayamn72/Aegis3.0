@@ -11,6 +11,7 @@ import { createTryoutMessage } from '../services/tryoutMessage.service.js';
 import notificationService from '../services/notification.service.js';
 import { allowedOrigins } from './cors.js';
 import logger from './logger.js';
+import { extractSocketToken } from '../utils/extractToken.js';
 import { isEitherUserBlocked } from '../utils/blockUtils.js';
 import { ensurePendingMessageRequest, getMessageRequestRelationship } from '../utils/directMessageRequestUtils.js';
 
@@ -136,8 +137,7 @@ const initChat = async (server) => {
   // =========================================================================
   io.use((socket, next) => {
     try {
-      const token = socket.handshake.auth?.token ||
-        socket.handshake.headers?.authorization?.replace('Bearer ', '');
+      const token = extractSocketToken(socket);
 
       if (!token) {
         logger.warn('socket_auth_missing_token', { socketId: socket.id });
@@ -491,6 +491,13 @@ const initChat = async (server) => {
           return;
         }
         if (matchId && typeof matchId === 'string') {
+          const { assertMatchRoomParticipant } = await import('../utils/matchRoomAuth.js');
+          try {
+            await assertMatchRoomParticipant(socket.userId, socket.userRole, matchId);
+          } catch (authErr) {
+            socket.emit('error', { message: authErr.message || 'Not authorized' });
+            return;
+          }
           const roomName = `matchRoom:${matchId}`;
           socket.join(roomName);
           socket.emit('matchRoomJoined', { matchId, roomName });
@@ -524,14 +531,23 @@ const initChat = async (server) => {
           return;
         }
 
+        const { assertMatchRoomParticipant } = await import('../utils/matchRoomAuth.js');
+        try {
+          await assertMatchRoomParticipant(socket.userId, socket.userRole, matchId);
+        } catch (authErr) {
+          socket.emit('error', { message: authErr.message || 'Not authorized' });
+          return;
+        }
+
         // Lazy-import to avoid circular dependency
         const { default: MatchRoomMessage } = await import('../models/matchRoomMessage.model.js');
         const { default: PlayerModel } = await import('../models/player.model.js');
 
+        const senderModel = socket.userRole === 'organization' ? 'Organization' : 'Player';
         const msg = await MatchRoomMessage.create({
           match: matchId,
           sender: senderId,
-          senderModel: 'Player',
+          senderModel,
           message: trimmedMessage,
           messageType: 'text',
         });

@@ -17,18 +17,9 @@ const TeamSearchModal = ({ isOpen, onClose, onSelectTeam, gameTitle, selectedTea
     setError('');
 
     try {
-      const token = localStorage.getItem('adminToken');
-      const params = new URLSearchParams({
-        query,
-        gameTitle: gameTitle || '',
-        limit: 20
-      });
-
-      const response = await fetch(`/api/admin/teams/search?${params}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+      const response = await fetch(`/api/teams/search/${encodeURIComponent(query)}`, {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
       });
 
       if (!response.ok) {
@@ -36,7 +27,7 @@ const TeamSearchModal = ({ isOpen, onClose, onSelectTeam, gameTitle, selectedTea
       }
 
       const data = await response.json();
-      setTeams(data.teams || []);
+      setTeams(data.teams || data || []);
     } catch (error) {
       console.error('Error searching teams:', error);
       setError('Failed to search teams. Please try again.');
