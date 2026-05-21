@@ -175,7 +175,7 @@ export class VerificationService {
         return {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
             maxAge: AUTH_CONSTANTS.COOKIE_MAX_AGE,
         };
     }

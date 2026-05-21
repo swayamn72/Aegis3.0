@@ -197,7 +197,7 @@ router.post('/login', authLimiter, validateLogin, asyncHandler(async (req, res) 
   const cookieOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? 'strict' : 'lax',
+    sameSite: process.env.NODE_ENV === "production" ? 'none' : 'lax',
     maxAge: AUTH_CONSTANTS.COOKIE_MAX_AGE,
   };
 
@@ -364,7 +364,7 @@ router.post('/google', authLimiter, async (req, res) => {
     const cookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? 'strict' : 'lax',
+      sameSite: process.env.NODE_ENV === "production" ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     };
 
@@ -557,7 +557,7 @@ router.post('/organization/login', authLimiter, validateLogin, asyncHandler(asyn
   const cookieOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? 'strict' : 'lax',
+    sameSite: process.env.NODE_ENV === "production" ? 'none' : 'lax',
     maxAge: AUTH_CONSTANTS.COOKIE_MAX_AGE,
   };
 
@@ -650,7 +650,7 @@ router.post('/verify-email', authLimiter, validateVerificationCode, asyncHandler
   const cookieOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? 'strict' : 'lax',
+    sameSite: process.env.NODE_ENV === "production" ? 'none' : 'lax',
     maxAge: AUTH_CONSTANTS.COOKIE_MAX_AGE,
   };
 

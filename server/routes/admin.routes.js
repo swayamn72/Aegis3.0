@@ -69,8 +69,8 @@ router.post('/login', adminLoginLimiter, async (req, res) => {
     res.cookie('token', token, {
       httpOnly: true, // Prevent client-side JS access
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 60 * 60 * 1000 // 1 hour
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      maxAge: 12 * 60 * 60 * 1000 // 12 hours
     });
 
     res.json({
@@ -120,7 +120,7 @@ router.post('/logout', (req, res) => {
   res.clearCookie('token', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict'
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
   });
   res.json({ message: 'Logged out successfully' });
 });
