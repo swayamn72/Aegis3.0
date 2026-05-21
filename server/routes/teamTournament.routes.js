@@ -349,6 +349,20 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
       //   isOpenForAll=true + requiresApproval=true  → pending  (org manually reviews each)
       //   isOpenForAll=true + requiresApproval=false → approved (first-come-first-served)
       const autoApprove = tournament.isOpenForAll && !tournament.requiresApproval;
+      // Fetch coach info if team has one
+      let coachSnapshot;
+      if (req.team.coach) {
+        const coachPlayer = await Player.findById(req.team.coach)
+          .session(session).select('_id gameIds').lean();
+        if (coachPlayer) {
+          const coachGameId = coachPlayer.gameIds?.find(gid => gid.isPrimary) || coachPlayer.gameIds?.[0];
+          coachSnapshot = {
+            player: coachPlayer._id,
+            inGameName: coachGameId?.inGameName || 'Unknown',
+          };
+        }
+      }
+
       const registrations = await Registration.create([{
         tournament: tournamentId,
         team: req.team._id,
@@ -363,7 +377,8 @@ router.post('/register/:tournamentId', verifyTeamCaptain, async (req, res) => {
             player: player._id,
             inGameName: primaryGameId?.inGameName || 'Unknown'
           };
-        })
+        }),
+        coach: coachSnapshot || undefined,
       }], { session });
 
       const registration = registrations[0];

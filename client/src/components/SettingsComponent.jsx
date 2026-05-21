@@ -623,8 +623,8 @@ const SettingsComponent = () => {
 
                     <div>
                       <label className="block text-zinc-300 font-medium mb-3">In-Game Role</label>
-                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                        {['Assaulter', 'IGL', 'Support', 'Fragger', 'Sniper'].map(role => (
+                      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                        {['Assaulter', 'IGL', 'Support', 'Fragger', 'Sniper', 'Coach'].map(role => (
                           <button
                             key={role}
                             type="button"

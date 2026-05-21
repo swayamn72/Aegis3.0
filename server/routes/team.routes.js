@@ -123,6 +123,10 @@ router.get('/:id', auth, async (req, res) => {
         select: 'username profilePicture primaryGame realName age country aegisRating valRating statistics valorantStats inGameRole discordTag instagram youtube twitter verified tournamentsPlayed matchesPlayed'
       })
       .populate({
+        path: 'coach',
+        select: 'username profilePicture primaryGame realName age country aegisRating valRating statistics valorantStats inGameRole discordTag instagram youtube twitter verified tournamentsPlayed matchesPlayed'
+      })
+      .populate({
         path: 'players',
         select: 'username profilePicture primaryGame realName age country aegisRating valRating statistics valorantStats inGameRole discordTag verified tournamentsPlayed matchesPlayed'
       })
@@ -341,10 +345,12 @@ router.get('/user/my-teams', auth, async (req, res) => {
     const teams = await Team.find({
       $or: [
         { captain: req.user.id },
-        { players: req.user.id }
+        { players: req.user.id },
+        { coach: req.user.id }
       ]
     })
       .populate('captain', 'username profilePicture primaryGame')
+      .populate('coach', 'username profilePicture primaryGame')
       .populate('players', 'username profilePicture primaryGame')
       .populate('organization', 'orgName logo')
       .sort({ establishedDate: -1 })
@@ -665,9 +671,10 @@ router.delete('/:id', auth, async (req, res) => {
       }
     });
 
-    // Mark as disbanded and empty players array
+    // Mark as disbanded and empty players array, clear coach
     team.status = 'disbanded';
     team.players = [];
+    team.coach = null;
     await team.save();
 
     res.json({ message: 'Team disbanded successfully' });
@@ -840,6 +847,100 @@ router.put('/:id/transfer-captain', auth, async (req, res) => {
   }
 });
 
+// ============================================================================
+// SET TEAM COACH
+// ============================================================================
+router.put('/:id/coach', auth, async (req, res) => {
+  try {
+    const teamId = req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(teamId)) {
+      return res.status(400).json({ message: 'Invalid team ID format' });
+    }
+
+    const { playerId } = req.body;
+
+    if (!playerId) {
+      return res.status(400).json({ message: 'Player ID is required' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(playerId)) {
+      return res.status(400).json({ message: 'Invalid player ID format' });
+    }
+
+    const team = await Team.findById(teamId);
+    if (!team) {
+      return res.status(404).json({ message: 'Team not found' });
+    }
+
+    if (team.captain.toString() !== req.user.id.toString()) {
+      return res.status(403).json({ message: 'Only team captain can set a coach' });
+    }
+
+    const player = await Player.findById(playerId);
+    if (!player) {
+      return res.status(404).json({ message: 'Player not found' });
+    }
+
+    // Check if player is already coach of this team
+    if (team.coach && team.coach.toString() === playerId) {
+      return res.status(400).json({ message: 'Player is already the coach of this team' });
+    }
+
+    team.coach = playerId;
+    await team.save();
+
+    await team.populate('captain', 'username profilePicture primaryGame');
+    await team.populate('coach', 'username profilePicture primaryGame');
+    await team.populate('players', 'username profilePicture primaryGame');
+
+    res.json({ message: 'Coach set successfully', team });
+  } catch (error) {
+    console.error('Error setting coach:', error);
+    res.status(500).json({ message: 'Server error setting coach' });
+  }
+});
+
+// ============================================================================
+// REMOVE TEAM COACH
+// ============================================================================
+router.delete('/:id/coach', auth, async (req, res) => {
+  try {
+    const teamId = req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(teamId)) {
+      return res.status(400).json({ message: 'Invalid team ID format' });
+    }
+
+    const team = await Team.findById(teamId);
+    if (!team) {
+      return res.status(404).json({ message: 'Team not found' });
+    }
+
+    if (!team.coach) {
+      return res.status(400).json({ message: 'Team has no coach to remove' });
+    }
+
+    // Captain can remove coach, or coach can remove themselves
+    const isCaptain = team.captain.toString() === req.user.id.toString();
+    const isCoach = team.coach.toString() === req.user.id.toString();
+
+    if (!isCaptain && !isCoach) {
+      return res.status(403).json({ message: 'Only captain or the coach themselves can remove the coach' });
+    }
+
+    team.coach = null;
+    await team.save();
+
+    await team.populate('captain', 'username profilePicture primaryGame');
+    await team.populate('players', 'username profilePicture primaryGame');
+
+    res.json({ message: 'Coach removed successfully', team });
+  } catch (error) {
+    console.error('Error removing coach:', error);
+    res.status(500).json({ message: 'Server error removing coach' });
+  }
+});
 
 // GET /api/teams/search/:query - Search teams and players
 router.get('/search/:query', async (req, res) => {
@@ -893,7 +994,7 @@ router.get('/search/:query', async (req, res) => {
         .sort({ aegisRating: -1 })
         .limit(limit)
         .select(
-          'teamName teamTag logo primaryGame region aegisRating valRating captain players establishedDate'
+          'teamName teamTag logo primaryGame region aegisRating valRating captain coach players establishedDate'
         )
         .lean();
     }

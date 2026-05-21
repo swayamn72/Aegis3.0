@@ -202,6 +202,8 @@ const playerSchema = new mongoose.Schema(
           'IGL', 'Assaulter', 'Fragger', 'Support', 'Sniper', 'Substitute', 'Player',
           // Valorant roles
           'Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex',
+          // Shared
+          'Coach',
         ],
       },
     ],

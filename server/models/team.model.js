@@ -34,6 +34,11 @@ const teamSchema = new mongoose.Schema(
       ref: 'Player',
       required: true,
     },
+    coach: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Player',
+      default: null,
+    },
     players: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -171,6 +176,8 @@ const teamSchema = new mongoose.Schema(
           'IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger',
           // Valorant
           'Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex',
+          // Shared
+          'Coach',
         ],
       },
     ],
@@ -210,6 +217,7 @@ teamSchema.index({ totalEarnings: -1 });
 teamSchema.index({ aegisRating: -1 });
 teamSchema.index({ status: 1, lookingForPlayers: 1 });
 teamSchema.index({ players: 1 });
+teamSchema.index({ coach: 1 });
 teamSchema.index({ valRating: -1 });
 
 
@@ -222,6 +230,7 @@ teamSchema.statics.findByGameAndRegion = function (game, region, limit = 10) {
     status: 'active'
   })
     .populate('captain', 'username profilePicture')
+    .populate('coach', 'username profilePicture')
     .populate('players', 'username profilePicture')
     .sort({ aegisRating: -1 })
     .limit(limit);
@@ -240,6 +249,7 @@ teamSchema.statics.findLookingForPlayers = function (game, role, limit = 10) {
 
   return this.find(query)
     .populate('captain', 'username profilePicture')
+    .populate('coach', 'username profilePicture')
     .populate('players', 'username profilePicture')
     .sort({ aegisRating: -1 })
     .limit(limit);

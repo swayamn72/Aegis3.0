@@ -22,7 +22,11 @@ const addDays = (date, days) => {
   d.setDate(d.getDate() + days);
   return d;
 };
-const ALLOWED_ROLES = ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger'];
+const ALLOWED_ROLES = [
+  'IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger',
+  'Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex',
+  'Coach',
+];
 
 router.get('/recruiting-teams', async (req, res) => {
   try {
@@ -511,7 +515,7 @@ router.post('/:applicationId/accept', auth, async (req, res) => {
     }
 
     const application = await TeamApplication.findById(applicationId)
-      .populate('team', 'captain players')
+      .populate('team', 'captain coach players primaryGame')
       .populate('player', 'username team');
 
     if (!application) {
@@ -535,27 +539,44 @@ router.post('/:applicationId/accept', auth, async (req, res) => {
       return res.status(400).json({ error: 'Player must be in tryout to be accepted' });
     }
 
-    // Check if team is full
-    if (application.team.players.length >= getMaxPlayers(application.team.primaryGame)) {
-      return res.status(400).json({ error: 'Team roster is full' });
+    // Determine if this is a coach application
+    const isCoachApplication = Array.isArray(application.appliedRoles)
+      && application.appliedRoles.includes('Coach');
+
+    if (isCoachApplication) {
+      // --- Coach acceptance flow ---
+      // Check if team already has a coach
+      if (application.team.coach) {
+        return res.status(400).json({ error: 'Team already has a coach. Remove the current coach first.' });
+      }
+
+      // Set as coach (no roster size check, no hasTeamForGame check)
+      application.team.coach = application.player._id;
+      await application.team.save();
+    } else {
+      // --- Player acceptance flow (existing logic) ---
+      // Check if team is full
+      if (application.team.players.length >= getMaxPlayers(application.team.primaryGame)) {
+        return res.status(400).json({ error: 'Team roster is full' });
+      }
+
+      // Game-scoped: check if player already has a team for this game
+      if (hasTeamForGame(application.player, application.team.primaryGame)) {
+        return res.status(400).json({ error: `Player already has a ${application.team.primaryGame} team` });
+      }
+
+      // Add player to team
+      application.team.players.push(application.player._id);
+      await application.team.save();
+
+      // Update player — write to game-scoped teams map
+      await Player.findByIdAndUpdate(application.player._id, {
+        $set: {
+          ...setTeamForGame(application.team.primaryGame, application.team._id),
+          teamStatus: 'in a team',
+        },
+      });
     }
-
-    // Game-scoped: check if player already has a team for this game
-    if (hasTeamForGame(application.player, application.team.primaryGame)) {
-      return res.status(400).json({ error: `Player already has a ${application.team.primaryGame} team` });
-    }
-
-    // Add player to team
-    application.team.players.push(application.player._id);
-    await application.team.save();
-
-    // Update player — write to game-scoped teams map
-    await Player.findByIdAndUpdate(application.player._id, {
-      $set: {
-        ...setTeamForGame(application.team.primaryGame, application.team._id),
-        teamStatus: 'in a team',
-      },
-    });
 
     // Update application
     application.status = 'accepted';

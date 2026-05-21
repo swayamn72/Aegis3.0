@@ -49,8 +49,8 @@ const LFTPostForm = React.memo(({ onSubmit, onClose }) => {
     });
 
     const availableRoles = formData.game === 'VALORANT'
-        ? ['Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex']
-        : ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger'];
+        ? ['Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex', 'Coach']
+        : ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger', 'Coach'];
 
     const handleRoleToggle = (role) => {
         setFormData(prev => ({
@@ -172,8 +172,8 @@ const LFPPostForm = React.memo(({ onSubmit, onClose, userTeam }) => {
     });
 
     const availableRoles = formData.game === 'VALORANT'
-        ? ['Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex']
-        : ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger'];
+        ? ['Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex', 'Coach']
+        : ['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger', 'Coach'];
 
     const handleRoleToggle = (role) => {
         setFormData(prev => ({
@@ -786,7 +786,7 @@ const RecruitmentPage = () => {
                                     />
                                 </div>
                                 <FilterDropdown options={['BGMI', 'VALORANT']} selected={playerFilters.game} onSelect={(v) => handlePlayerFilterChange('game', v)} placeholder="All Games" icon={Gamepad2} />
-                                <FilterDropdown options={['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger', 'Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex']} selected={playerFilters.role} onSelect={(v) => handlePlayerFilterChange('role', v)} placeholder="All Roles" icon={User} />
+                                <FilterDropdown options={['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger', 'Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex', 'Coach']} selected={playerFilters.role} onSelect={(v) => handlePlayerFilterChange('role', v)} placeholder="All Roles" icon={User} />
                             </div>
                         </div>
 
@@ -869,7 +869,7 @@ const RecruitmentPage = () => {
                                     />
                                 </div>
                                 <FilterDropdown options={['BGMI', 'VALORANT']} selected={orgFilters.game} onSelect={(v) => handleOrgFilterChange('game', v)} placeholder="All Games" icon={Gamepad2} />
-                                <FilterDropdown options={['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger', 'Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex']} selected={orgFilters.role} onSelect={(v) => handleOrgFilterChange('role', v)} placeholder="All Roles" icon={Target} />
+                                <FilterDropdown options={['IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger', 'Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex', 'Coach']} selected={orgFilters.role} onSelect={(v) => handleOrgFilterChange('role', v)} placeholder="All Roles" icon={Target} />
                             </div>
                         </div>
 

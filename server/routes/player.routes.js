@@ -434,7 +434,7 @@ router.get("/me", auth, async (req, res) => {
       for (const [game, teamId] of Object.entries(user.teams)) {
         if (teamId) {
           const teamDoc = await Team.findById(teamId)
-            .select('_id teamName teamTag logo primaryGame region bio players captain')
+            .select('_id teamName teamTag logo primaryGame region bio players captain coach')
             .populate('captain', '_id username profilePicture')
             .lean();
           populatedTeams[game] = teamDoc;
@@ -1200,7 +1200,7 @@ router.get('/:id/matches', async (req, res) => {
     }
 
     // Collect all team IDs: current + previous teams
-    const currentTeams = await Team.find({ players: id }).select('_id').lean();
+    const currentTeams = await Team.find({ $or: [{ players: id }, { coach: id }] }).select('_id').lean();
     const currentTeamIds = currentTeams.map(t => t._id);
     const previousTeamIds = (player.previousTeams || [])
       .map(pt => pt.team)
@@ -1287,7 +1287,7 @@ router.get('/:id/tournaments', async (req, res) => {
     }
 
     // Collect all team IDs (current + previous)
-    const currentTeams = await Team.find({ players: id }).select('_id').lean();
+    const currentTeams = await Team.find({ $or: [{ players: id }, { coach: id }] }).select('_id').lean();
     const currentTeamIds = currentTeams.map(t => t._id);
     const previousTeamIds = (player.previousTeams || [])
       .map(pt => pt.team)
@@ -1383,7 +1383,7 @@ router.get('/:id/profile', async (req, res) => {
       for (const [game, teamId] of Object.entries(player.teams)) {
         if (teamId) {
           const teamDoc = await Team.findById(teamId)
-            .select('_id teamName teamTag logo primaryGame region players captain')
+            .select('_id teamName teamTag logo primaryGame region players captain coach')
             .populate('captain', '_id username profilePicture')
             .lean();
           populatedTeams[game] = teamDoc;
@@ -1461,7 +1461,7 @@ router.get('/:id/rating-history', async (req, res) => {
 async function isPlayerInOngoingTournament(playerId) {
   try {
     // Find teams this player is in
-    const teams = await Team.find({ players: playerId }).select('_id').lean();
+    const teams = await Team.find({ $or: [{ players: playerId }, { coach: playerId }] }).select('_id').lean();
 
     if (!teams || teams.length === 0) {
       return { inTournament: false };

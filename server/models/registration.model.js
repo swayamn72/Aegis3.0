@@ -151,6 +151,15 @@ const registrationSchema = new mongoose.Schema(
       },
     ],
 
+    // Coach snapshot at registration time (not part of playing roster)
+    coach: {
+      player: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Player',
+      },
+      inGameName: String,
+    },
+
     seedNumber: Number, // Seeding for brackets/groups
 
     notes: String, // Admin notes

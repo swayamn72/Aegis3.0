@@ -160,6 +160,7 @@ const DetailedTeamInfo = () => {
   };
 
   const isCaptain = user && teamData && teamData.captain && user._id === teamData.captain._id;
+  const isCoach = user && teamData && teamData.coach && user._id === teamData.coach._id;
 
   const uploadLogoMutation = useMutation({
     mutationFn: async (formData) => {
@@ -383,6 +384,34 @@ const DetailedTeamInfo = () => {
     },
     onError: (mutationError) => {
       toast.error(getErrorMessage(mutationError, 'Failed to disband team'));
+    },
+  });
+
+  const setCoachMutation = useMutation({
+    mutationFn: async ({ playerId }) => {
+      const response = await axiosInstance.put(`/api/teams/${id}/coach`, { playerId });
+      return response.data;
+    },
+    onSuccess: () => {
+      toast.success('Coach set successfully!');
+      queryClient.invalidateQueries({ queryKey: ['teamData', id] });
+    },
+    onError: (mutationError) => {
+      toast.error(getErrorMessage(mutationError, 'Failed to set coach'));
+    },
+  });
+
+  const removeCoachMutation = useMutation({
+    mutationFn: async () => {
+      const response = await axiosInstance.delete(`/api/teams/${id}/coach`);
+      return response.data;
+    },
+    onSuccess: () => {
+      toast.success('Coach removed successfully');
+      queryClient.invalidateQueries({ queryKey: ['teamData', id] });
+    },
+    onError: (mutationError) => {
+      toast.error(getErrorMessage(mutationError, 'Failed to remove coach'));
     },
   });
 
@@ -716,6 +745,21 @@ const DetailedTeamInfo = () => {
               </button>
             </div>
           )}
+
+          {/* Coach Self-Remove Action */}
+          {isCoach && !isCaptain && (
+            <div className="flex gap-3">
+              <button
+                onClick={() => removeCoachMutation.mutate()}
+                className="px-4 py-2 bg-red-600/20 text-red-400 hover:bg-red-600/40 border border-red-500/30 rounded-lg transition-colors flex items-center gap-2"
+                title="Leave Coach Role"
+                disabled={removeCoachMutation.isPending}
+              >
+                <AlertCircle className="w-4 h-4" />
+                <span className="hidden sm:inline">{removeCoachMutation.isPending ? 'Leaving...' : 'Leave Coach Role'}</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Team Header Card */}
@@ -965,6 +1009,76 @@ const DetailedTeamInfo = () => {
               ))}
             </div>
           )}
+
+          {/* Coach Section */}
+          <div className="mt-6 pt-6 border-t border-zinc-800">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Briefcase className="w-5 h-5 text-emerald-400" />
+                Coach
+              </h3>
+              {isCaptain && !teamData.coach && (
+                <button
+                  onClick={() => setShowInviteModal(true)}
+                  className="px-3 py-1.5 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-500/30 rounded-lg transition-colors flex items-center gap-2 text-sm"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  Set Coach
+                </button>
+              )}
+            </div>
+            {teamData.coach ? (
+              <div className="bg-zinc-800/50 border border-emerald-500/20 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div
+                    className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => navigate(`/player/${teamData.coach._id}`)}
+                  >
+                    {teamData.coach.profilePicture && !brokenImages[`coach-${teamData.coach._id}`] ? (
+                      <img
+                        src={teamData.coach.profilePicture}
+                        alt={teamData.coach.username}
+                        className="w-12 h-12 rounded-full object-cover ring-2 ring-emerald-500/30"
+                        onError={() => handleImageError(`coach-${teamData.coach._id}`)}
+                      />
+                    ) : (
+                      <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-full flex items-center justify-center">
+                        <User className="w-6 h-6 text-white" />
+                      </div>
+                    )}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-white font-semibold">{teamData.coach.username}</span>
+                        <span className="text-xs px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full border border-emerald-500/30 font-medium">
+                          Coach
+                        </span>
+                      </div>
+                      <div className="text-zinc-400 text-sm">
+                        {teamData.coach.inGameRole?.join(', ') || 'Coach'}
+                      </div>
+                    </div>
+                  </div>
+                  {isCaptain && (
+                    <button
+                      onClick={() => removeCoachMutation.mutate()}
+                      className="text-red-400 hover:text-red-300 text-xs px-3 py-1.5 rounded-lg hover:bg-red-500/20 transition-colors border border-red-500/30"
+                      disabled={removeCoachMutation.isPending}
+                    >
+                      {removeCoachMutation.isPending ? 'Removing...' : 'Remove'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-6 bg-zinc-800/30 rounded-lg border border-zinc-800 border-dashed">
+                <Briefcase className="w-8 h-8 text-zinc-600 mx-auto mb-2" />
+                <p className="text-zinc-500 text-sm">No coach assigned</p>
+                {isCaptain && (
+                  <p className="text-zinc-600 text-xs mt-1">Use the invite system or set a coach from your roster</p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Navigation Tabs */}

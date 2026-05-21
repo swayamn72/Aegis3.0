@@ -30,7 +30,7 @@ const BGMI = {
   maps: ['Erangel', 'Miramar', 'Sanhok', 'Vikendi', 'Rondo'],
 
   // Roles
-  roles: ['IGL', 'Assaulter', 'Fragger', 'Support', 'Sniper', 'Substitute', 'Player'],
+  roles: ['IGL', 'Assaulter', 'Fragger', 'Support', 'Sniper', 'Substitute', 'Player', 'Coach'],
 
   // Tournament Formats
   formats: ['Battle Royale Points System', 'Elimination Format', 'Custom'],
@@ -111,7 +111,7 @@ const VALORANT = {
   ],
 
   // Roles
-  roles: ['Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex', 'IGL', 'Substitute'],
+  roles: ['Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex', 'IGL', 'Substitute', 'Coach'],
 
   // Agents (updated — includes all 28 playable agents as of 2026)
   agents: [

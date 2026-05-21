@@ -46,11 +46,21 @@ const MyTeams = () => {
     const [createTeamError, setCreateTeamError] = useState('');
 
 
+    // Fetch teams from API (includes teams where user is captain, player, or coach)
+    const { data: apiTeamsData } = useQuery({
+        queryKey: ['myTeams'],
+        queryFn: async () => {
+            const response = await axiosInstance.get('/api/teams/user/my-teams');
+            return response.data.teams || [];
+        },
+        enabled: !!user,
+        staleTime: 2 * 60 * 1000,
+        gcTime: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
+    });
 
-
-
-    // Get list of teams from user map (filter out nulls if any)
-    const myTeamsList = user?.teams ? Object.values(user.teams).filter(Boolean) : [];
+    // Use API teams (includes coached teams), fallback to user.teams map
+    const myTeamsList = apiTeamsData || (user?.teams ? Object.values(user.teams).filter(Boolean) : []);
 
     // Manual fetch for invitations
     const handleRefreshInvitations = async () => {
@@ -228,6 +238,12 @@ const MyTeams = () => {
                                         <div className="flex items-center gap-1 text-amber-400 bg-amber-400/10 px-2 py-1 rounded-md">
                                             <Crown className="w-3 h-3" />
                                             <span className="text-xs font-medium">Captain</span>
+                                        </div>
+                                    )}
+                                    {(team.coach?._id === (user?._id || user?.id) || team.coach === (user?._id || user?.id)) && (
+                                        <div className="flex items-center gap-1 text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-md">
+                                            <Star className="w-3 h-3" />
+                                            <span className="text-xs font-medium">Coach</span>
                                         </div>
                                     )}
                                 </div>

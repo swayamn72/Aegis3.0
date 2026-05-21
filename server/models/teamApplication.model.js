@@ -30,6 +30,7 @@ const teamApplicationSchema = new mongoose.Schema(
         enum: [
           'IGL', 'Assaulter', 'Support', 'Sniper', 'Fragger',
           'Duelist', 'Initiator', 'Controller', 'Sentinel', 'Flex',
+          'Coach',
         ],
       },
     ],
